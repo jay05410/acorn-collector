@@ -1,0 +1,61 @@
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/lib/db';
+import { generateId } from '@/lib/utils';
+import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
+import type { Item } from '@/types';
+
+export function useItems(boothId: string) {
+  const items = useLiveQuery(
+    () => db.items.where('boothId').equals(boothId).toArray(),
+    [boothId]
+  );
+
+  const createItem = async (
+    data: Omit<Item, 'id' | 'createdAt' | 'checked' | 'quantity'> &
+      Partial<Pick<Item, 'checked' | 'quantity'>>
+  ): Promise<string> => {
+    const id = generateId();
+    const { badgeId, ...rest } = data;
+    await db.items.add({
+      checked: false,
+      quantity: 1,
+      badgeId: badgeId ?? DEFAULT_BADGE_ID,
+      ...rest,
+      id,
+      createdAt: Date.now(),
+    });
+    return id;
+  };
+
+  const updateItem = async (
+    id: string,
+    data: Partial<Omit<Item, 'id' | 'createdAt'>>
+  ): Promise<void> => {
+    await db.items.update(id, data);
+  };
+
+  const deleteItem = async (id: string): Promise<void> => {
+    await db.items.delete(id);
+  };
+
+  const toggleItemCheck = async (id: string): Promise<void> => {
+    const item = await db.items.get(id);
+    if (item) {
+      await db.items.update(id, { checked: !item.checked });
+    }
+  };
+
+  const checkedCount = items?.filter((i) => i.checked).length ?? 0;
+  const totalCount = items?.length ?? 0;
+
+  return {
+    items: items ?? [],
+    isLoading: items === undefined,
+    checkedCount,
+    totalCount,
+    createItem,
+    updateItem,
+    deleteItem,
+    toggleItemCheck,
+  };
+}
