@@ -13,8 +13,11 @@ export interface Booth {
   eventId: string;
   boothNumber: string;
   circleName: string;
+  zone: string | null;
   sourceUrl: string | null;
+  formUrl: string | null;
   memo: string | null;
+  imageUrls: string[] | null;
   order: number;
   createdAt: number;
   updatedAt: number;
@@ -45,5 +48,7 @@ export interface ParsedBooth {
   eventHint?: string;
   boothNumber?: string;
   circleName?: string;
+  zone?: string;
+  formUrl?: string;
   confidence: number;
 }

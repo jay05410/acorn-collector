@@ -2,7 +2,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import '@/app.css';
-import { initializeDatabase } from '@/lib/db';
+import { initializeDatabase, db } from '@/lib/db';
+
+window.addEventListener('beforeunload', () => {
+  db.close();
+});
 
 initializeDatabase().then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(

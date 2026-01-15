@@ -48,11 +48,38 @@ export function useItems(boothId: string) {
   const checkedCount = items?.filter((i) => i.checked).length ?? 0;
   const totalCount = items?.length ?? 0;
 
+  const badgeCounts = items?.reduce(
+    (acc, item) => {
+      if (!item.checked) {
+        acc[item.badgeId] = (acc[item.badgeId] || 0) + 1;
+      }
+      return acc;
+    },
+    {} as Record<string, number>
+  ) ?? {};
+
+  const badgeStats: Record<string, { total: number; checked: number }> = {};
+  if (items) {
+    for (const item of items) {
+      const existing = badgeStats[item.badgeId];
+      if (existing) {
+        existing.total += 1;
+        if (item.checked) {
+          existing.checked += 1;
+        }
+      } else {
+        badgeStats[item.badgeId] = { total: 1, checked: item.checked ? 1 : 0 };
+      }
+    }
+  }
+
   return {
     items: items ?? [],
     isLoading: items === undefined,
     checkedCount,
     totalCount,
+    badgeCounts,
+    badgeStats,
     createItem,
     updateItem,
     deleteItem,

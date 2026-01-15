@@ -6,7 +6,7 @@ import type { Badge, PresetBadgeId } from '@/types';
 
 export function useBadges() {
   const customBadges = useLiveQuery(() =>
-    db.badges.where('isPreset').equals(0).toArray()
+    db.badges.filter((badge) => !badge.isPreset).toArray()
   );
 
   const allBadges: Badge[] = [

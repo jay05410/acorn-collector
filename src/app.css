@@ -1,27 +1,85 @@
 @import 'tailwindcss';
 
-/* Base styles for extension popup */
+@theme {
+  --color-primary: var(--theme-primary);
+  --color-primary-light: var(--theme-primary-light);
+  --color-primary-dark: var(--theme-primary-dark);
+  --color-accent: var(--theme-accent);
+  --color-accent-light: var(--theme-accent-light);
+}
+
 :root {
-  --popup-width: 380px;
-  --popup-max-height: 600px;
+  --theme-primary: #d4a574;
+  --theme-primary-light: #f5e6d3;
+  --theme-primary-dark: #b8956a;
+  --theme-accent: #8b7355;
+  --theme-accent-light: #e8ddd0;
+}
+
+:root[data-theme='acorn'] {
+  --theme-primary: #d4a574;
+  --theme-primary-light: #f5e6d3;
+  --theme-primary-dark: #b8956a;
+  --theme-accent: #8b7355;
+  --theme-accent-light: #e8ddd0;
+}
+
+:root[data-theme='pink'] {
+  --theme-primary: #e8a0b4;
+  --theme-primary-light: #fce4ec;
+  --theme-primary-dark: #d4849a;
+  --theme-accent: #c06c84;
+  --theme-accent-light: #f8d7e0;
+}
+
+:root[data-theme='sky'] {
+  --theme-primary: #7eb8da;
+  --theme-primary-light: #e3f2fd;
+  --theme-primary-dark: #5a9bc7;
+  --theme-accent: #5c9dc4;
+  --theme-accent-light: #d4eaf7;
+}
+
+:root[data-theme='lavender'] {
+  --theme-primary: #b39ddb;
+  --theme-primary-light: #ede7f6;
+  --theme-primary-dark: #9575cd;
+  --theme-accent: #7e57c2;
+  --theme-accent-light: #e1d8f0;
+}
+
+.dark {
+  --theme-primary-light: color-mix(in srgb, var(--theme-primary) 20%, #1f2937);
+  --theme-accent-light: color-mix(in srgb, var(--theme-accent) 15%, #1f2937);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
 }
 
 body {
-  width: var(--popup-width);
-  min-height: 200px;
-  max-height: var(--popup-max-height);
-  margin: 0;
   font-family:
+    'Pretendard Variable',
+    Pretendard,
     -apple-system,
     BlinkMacSystemFont,
-    'Segoe UI',
+    system-ui,
     Roboto,
     'Helvetica Neue',
-    Arial,
+    'Segoe UI',
+    'Apple SD Gothic Neo',
+    'Noto Sans KR',
+    'Malgun Gothic',
     sans-serif;
 }
 
-/* Custom scrollbar */
+.dark {
+  color-scheme: dark;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -35,6 +93,14 @@ body {
   border-radius: 3px;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
 ::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
 }

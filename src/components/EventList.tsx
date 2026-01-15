@@ -1,21 +1,47 @@
 import { useState } from 'react';
-import { Calendar, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
+import {
+  ArrowDownAZ,
+  ArrowDownWideNarrow,
+  Calendar,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Image,
+  MapPin,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { useEvents } from '@/hooks/useEvents';
+import { useBooths } from '@/hooks/useBooths';
+import { useItems } from '@/hooks/useItems';
+import { useBadges } from '@/hooks/useBadges';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { PlaceAutocomplete } from '@/components/ui/PlaceAutocomplete';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate } from '@/lib/utils';
-import type { Event } from '@/types';
+import type { Event, Booth } from '@/types';
 
 interface EventListProps {
-  onSelectEvent: (eventId: string) => void;
+  onSelectBooth: (boothId: string, eventId: string) => void;
+  onExportEvent: (eventId: string) => void;
+  onAddBooth: (eventId: string) => void;
 }
 
-export function EventList({ onSelectEvent }: EventListProps) {
-  const { events, isLoading, createEvent, deleteEvent } = useEvents();
+export function EventList({
+  onSelectBooth,
+  onExportEvent,
+  onAddBooth,
+}: EventListProps) {
+  const { events, isLoading, createEvent, updateEvent, deleteEvent } =
+    useEvents();
   const [isAdding, setIsAdding] = useState(false);
   const [newEventName, setNewEventName] = useState('');
   const [newEventDate, setNewEventDate] = useState('');
+  const [newEventLocation, setNewEventLocation] = useState('');
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 
   const handleAddEvent = async () => {
     if (!newEventName.trim()) return;
@@ -23,47 +49,85 @@ export function EventList({ onSelectEvent }: EventListProps) {
     await createEvent({
       name: newEventName.trim(),
       date: newEventDate || null,
-      location: null,
+      location: newEventLocation || null,
       mapImageUrl: null,
     });
 
     setNewEventName('');
     setNewEventDate('');
+    setNewEventLocation('');
     setIsAdding(false);
   };
 
   const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm('이 행사를 삭제하시겠습니까? 포함된 모든 부스와 상품도 삭제됩니다.')) {
+    if (
+      confirm(
+        '이 행사를 삭제하시겠습니까? 포함된 모든 부스와 상품도 삭제됩니다.'
+      )
+    ) {
       await deleteEvent(id);
     }
   };
 
+  const toggleExpand = (eventId: string) => {
+    setExpandedEvents((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventId)) {
+        next.delete(eventId);
+      } else {
+        next.add(eventId);
+      }
+      return next;
+    });
+  };
+
+  const handleExportImage = (e: React.MouseEvent, eventId: string) => {
+    e.stopPropagation();
+    onExportEvent(eventId);
+  };
+
   if (isLoading) {
-    return <div className="p-4 text-center text-gray-500">로딩 중...</div>;
+    return (
+      <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+        로딩 중...
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col">
       {isAdding && (
-        <div className="p-4 border-b border-gray-200 bg-gray-50">
-          <div className="space-y-3">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAddEvent();
+            }}
+            className="space-y-3"
+          >
             <Input
               placeholder="행사 이름 (예: 서코 45회)"
               value={newEventName}
               onChange={(e) => setNewEventName(e.target.value)}
               autoFocus
             />
-            <Input
-              type="date"
+            <DatePicker
               value={newEventDate}
-              onChange={(e) => setNewEventDate(e.target.value)}
+              onChange={setNewEventDate}
+              placeholder="행사 날짜"
+            />
+            <PlaceAutocomplete
+              value={newEventLocation}
+              onChange={setNewEventLocation}
+              placeholder="장소 (예: 코엑스)"
             />
             <div className="flex gap-2">
-              <Button onClick={handleAddEvent} className="flex-1">
+              <Button type="submit" className="flex-1">
                 추가
               </Button>
               <Button
+                type="button"
                 variant="outline"
                 onClick={() => setIsAdding(false)}
                 className="flex-1"
@@ -71,7 +135,7 @@ export function EventList({ onSelectEvent }: EventListProps) {
                 취소
               </Button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -92,22 +156,27 @@ export function EventList({ onSelectEvent }: EventListProps) {
           {!isAdding && (
             <button
               onClick={() => setIsAdding(true)}
-              className="flex items-center gap-2 p-4 text-blue-600 hover:bg-blue-50 transition-colors"
+              className="flex items-center gap-2 p-4 text-primary-dark dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
             >
               <Plus className="w-5 h-5" />
               <span className="font-medium">새 행사 추가</span>
             </button>
           )}
-          <ul className="divide-y divide-gray-200">
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {events.map((event) => (
               <EventItem
                 key={event.id}
                 event={event}
-                onClick={() => onSelectEvent(event.id)}
+                isExpanded={expandedEvents.has(event.id)}
+                onToggleExpand={() => toggleExpand(event.id)}
+                onSelectBooth={(boothId) => onSelectBooth(boothId, event.id)}
+                onAddBooth={() => onAddBooth(event.id)}
+                onUpdate={(data) => updateEvent(event.id, data)}
                 onDelete={(e) => handleDeleteEvent(e, event.id)}
+                onExportImage={(e) => handleExportImage(e, event.id)}
               />
             ))}
-          </ul>
+          </div>
         </>
       )}
     </div>
@@ -116,45 +185,309 @@ export function EventList({ onSelectEvent }: EventListProps) {
 
 interface EventItemProps {
   event: Event;
-  onClick: () => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onSelectBooth: (boothId: string) => void;
+  onAddBooth: () => void;
+  onUpdate: (data: Partial<Event>) => Promise<void>;
   onDelete: (e: React.MouseEvent) => void;
+  onExportImage: (e: React.MouseEvent) => void;
 }
 
-function EventItem({ event, onClick, onDelete }: EventItemProps) {
-  return (
-    <li
-      onClick={onClick}
-      className="flex items-center justify-between p-4 hover:bg-gray-50 cursor-pointer transition-colors group"
-    >
-      <div className="flex-1 min-w-0">
-        <h3 className="font-medium text-gray-900 truncate">{event.name}</h3>
-        <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-          {event.date && (
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" />
-              {formatDate(event.date)}
-            </span>
-          )}
-          {event.location && (
-            <span className="flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5" />
-              {event.location}
-            </span>
-          )}
+function EventItem({
+  event,
+  isExpanded,
+  onToggleExpand,
+  onSelectBooth,
+  onAddBooth,
+  onUpdate,
+  onDelete,
+  onExportImage,
+}: EventItemProps) {
+  const { booths } = useBooths(event.id);
+  const boothCount = booths.length;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(event.name);
+  const [editDate, setEditDate] = useState(event.date || '');
+  const [editLocation, setEditLocation] = useState(event.location || '');
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditName(event.name);
+    setEditDate(event.date || '');
+    setEditLocation(event.location || '');
+    setIsEditing(true);
+  };
+
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!editName.trim()) return;
+    await onUpdate({
+      name: editName.trim(),
+      date: editDate || null,
+      location: editLocation.trim() || null,
+    });
+    setIsEditing(false);
+  };
+
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div
+        id={`event-${event.id}`}
+        className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+      >
+        <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+          <Input
+            placeholder="행사 이름"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            autoFocus
+          />
+          <DatePicker
+            value={editDate}
+            onChange={setEditDate}
+            placeholder="행사 날짜"
+          />
+          <PlaceAutocomplete
+            value={editLocation}
+            onChange={setEditLocation}
+            placeholder="장소"
+          />
+          <div className="flex gap-2">
+            <Button onClick={handleSave} className="flex-1">
+              저장
+            </Button>
+            <Button variant="outline" onClick={handleCancel} className="flex-1">
+              취소
+            </Button>
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50"
-          aria-label="삭제"
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
-        <ChevronRight className="w-5 h-5 text-gray-400" />
+    );
+  }
+
+  return (
+    <div id={`event-${event.id}`}>
+      <div
+        onClick={onToggleExpand}
+        className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors group"
+      >
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <button
+            className="text-gray-500 dark:text-gray-400"
+            onClick={onToggleExpand}
+          >
+            {isExpanded ? (
+              <ChevronDown className="w-5 h-5" />
+            ) : (
+              <ChevronRight className="w-5 h-5" />
+            )}
+          </button>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-medium text-gray-900 dark:text-white truncate">
+              {event.name}
+            </h3>
+            <div className="flex items-center gap-3 mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {event.date && (
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {formatDate(event.date)}
+                </span>
+              )}
+              {event.location && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5" />
+                  {event.location}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {boothCount}개 부스
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleEdit}
+            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
+            aria-label="수정"
+          >
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onExportImage}
+            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
+            aria-label="이미지로 저장"
+          >
+            <Image className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30"
+            aria-label="삭제"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
-    </li>
+      {isExpanded && (
+        <div className="pl-12 pr-4 pb-4">
+          <BoothPreviewList
+            eventId={event.id}
+            onSelectBooth={onSelectBooth}
+            onAddBooth={onAddBooth}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+type SortBy = 'order' | 'boothNumber';
+
+function BoothPreviewList({
+  eventId,
+  onSelectBooth,
+  onAddBooth,
+}: {
+  eventId: string;
+  onSelectBooth: (boothId: string) => void;
+  onAddBooth: () => void;
+}) {
+  const { booths } = useBooths(eventId);
+  const [sortBy, setSortBy] = useState<SortBy>('order');
+
+  const sortedBooths = [...booths].sort((a, b) => {
+    if (sortBy === 'boothNumber') {
+      return a.boothNumber.localeCompare(b.boothNumber, undefined, {
+        numeric: true,
+      });
+    }
+    return a.order - b.order;
+  });
+
+  return (
+    <div className="space-y-2">
+      {booths.length > 0 && (
+        <div className="flex items-center gap-1 pb-1">
+          <button
+            onClick={() => setSortBy('order')}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
+              sortBy === 'order'
+                ? 'bg-primary-light text-accent dark:text-primary'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+          >
+            <ArrowDownWideNarrow className="w-3.5 h-3.5" />
+            추가순
+          </button>
+          <button
+            onClick={() => setSortBy('boothNumber')}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
+              sortBy === 'boothNumber'
+                ? 'bg-primary-light text-accent dark:text-primary'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+          >
+            <ArrowDownAZ className="w-3.5 h-3.5" />
+            부스번호순
+          </button>
+        </div>
+      )}
+      {booths.length === 0 ? (
+        <p className="text-sm text-gray-500 dark:text-gray-400 py-2">
+          등록된 부스가 없습니다
+        </p>
+      ) : (
+        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+          {sortedBooths.map((booth) => (
+            <BoothPreviewItem
+              key={booth.id}
+              booth={booth}
+              onClick={() => onSelectBooth(booth.id)}
+            />
+          ))}
+        </div>
+      )}
+      <button
+        onClick={onAddBooth}
+        className="flex items-center gap-1 text-sm text-primary-dark dark:text-primary hover:underline py-1 cursor-pointer"
+      >
+        <Plus className="w-3.5 h-3.5" />새 부스 추가
+      </button>
+    </div>
+  );
+}
+
+function BoothPreviewItem({
+  booth,
+  onClick,
+}: {
+  booth: Booth;
+  onClick: () => void;
+}) {
+  const { checkedCount, totalCount, badgeStats } = useItems(booth.id);
+  const { getBadgeById } = useBadges();
+  const isComplete = totalCount > 0 && checkedCount === totalCount;
+
+  const badgeEntries = Object.entries(badgeStats).filter(
+    ([, stat]) => stat.total > 0
+  );
+
+  return (
+    <div
+      onClick={onClick}
+      className="flex items-center gap-2 py-2 px-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
+    >
+      <span className="font-mono text-xs font-medium text-accent dark:text-primary bg-primary-light dark:bg-primary-light px-1.5 py-0.5 rounded">
+        {booth.boothNumber}
+      </span>
+      <span className="text-gray-700 dark:text-gray-300 truncate flex-1">
+        {booth.circleName}
+      </span>
+      {totalCount > 0 && (
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {isComplete ? (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-green-500 px-2 py-0.5 rounded-full">
+              <Check className="w-3 h-3" />
+              완료
+            </span>
+          ) : (
+            <>
+              {badgeEntries.slice(0, 3).map(([badgeId, stat]) => {
+                const badge = getBadgeById(badgeId);
+                if (!badge) return null;
+                const isDone = stat.checked === stat.total;
+                return (
+                  <span
+                    key={badgeId}
+                    className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${isDone ? 'opacity-60' : ''}`}
+                    style={{
+                      backgroundColor: badge.color
+                        ? `${badge.color}25`
+                        : '#e5e7eb',
+                      color: badge.color ?? '#374151',
+                    }}
+                  >
+                    {badge.label} {stat.checked}/{stat.total}
+                  </span>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
