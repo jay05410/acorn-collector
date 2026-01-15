@@ -29,6 +29,7 @@ export function OCRModal({
   const [progress, setProgress] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [items, setItems] = useState<ImageAnalysisItem[]>([]);
+  const [refinedByAI, setRefinedByAI] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set()
   );
@@ -45,6 +46,7 @@ export function OCRModal({
       setProgress('');
       setError('');
       setItems([]);
+      setRefinedByAI(false);
       setSelectedIndices(new Set());
     }
   }, [isOpen]);
@@ -61,6 +63,7 @@ export function OCRModal({
 
       if (result && result.items.length > 0) {
         setItems(result.items);
+        setRefinedByAI(result.refinedByAI ?? false);
         setSelectedIndices(new Set(result.items.map((_, i) => i)));
         setStatus('success');
       } else {
@@ -112,10 +115,10 @@ export function OCRModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col animate-slideUp">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <div className="flex items-center gap-2">
             <Camera className="w-5 h-5 text-primary" />
@@ -132,28 +135,11 @@ export function OCRModal({
 
         <div className="flex-1 overflow-y-auto p-4">
           {status === 'loading' && (
-            <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              <div className="relative">
-                <Loader2 className="w-12 h-12 text-primary animate-spin" />
-              </div>
-              <div className="text-center space-y-2">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  {progress || '분석 중...'}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  이미지 {imageUrls.length}장 분석 중
-                </p>
-              </div>
-              <div className="w-full max-w-xs bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-primary h-2 rounded-full animate-pulse"
-                  style={{ width: '60%' }}
-                />
-              </div>
-              <Button variant="outline" size="sm" onClick={handleCancel}>
-                취소
-              </Button>
-            </div>
+            <LoadingState
+              progress={progress}
+              imageCount={imageUrls.length}
+              onCancel={handleCancel}
+            />
           )}
 
           {status === 'error' && (
@@ -181,9 +167,25 @@ export function OCRModal({
           {status === 'success' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  추출된 상품 ({items.length}개)
-                </p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={
+                      selectedIndices.size === items.length && items.length > 0
+                    }
+                    onChange={() => {
+                      if (selectedIndices.size === items.length) {
+                        setSelectedIndices(new Set());
+                      } else {
+                        setSelectedIndices(new Set(items.map((_, i) => i)));
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    전체 선택 ({items.length}개)
+                  </span>
+                </label>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
                   {selectedIndices.size}개 선택됨
                 </span>
@@ -202,12 +204,24 @@ export function OCRModal({
                         onChange={() => toggleItem(index)}
                         className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
                       />
-                      <span className="flex-1 text-sm text-gray-900 dark:text-white">
-                        {item.name}
-                      </span>
-                      {item.price && (
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-gray-900 dark:text-white block truncate">
+                          {item.name}
+                        </span>
+                        {item.category && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            {item.category}
+                          </span>
+                        )}
+                      </div>
+                      {item.price !== null && item.price > 0 && (
+                        <span className="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
                           {item.price.toLocaleString()}원
+                        </span>
+                      )}
+                      {item.price === 0 && (
+                        <span className="text-xs text-green-500 flex-shrink-0">
+                          무료
                         </span>
                       )}
                     </label>
@@ -220,6 +234,7 @@ export function OCRModal({
                   <HelpCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-700 dark:text-amber-300">
                     OCR 결과는 부정확할 수 있습니다. 추가 후 직접 확인해주세요.
+                    {refinedByAI && ' (AI 보정됨)'}
                   </p>
                 </div>
               </div>
@@ -243,6 +258,92 @@ export function OCRModal({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const PROGRESS_STEPS = [
+  { key: '준비', label: '준비 중...', percent: 5 },
+  { key: '연결', label: 'OCR 서버 연결 중...', percent: 15 },
+  { key: '분석', label: '이미지 분석 중...', percent: 45 },
+  { key: 'AI', label: 'AI로 결과 정제 중...', percent: 80 },
+  { key: '완료', label: '완료!', percent: 100 },
+] as const;
+
+function LoadingState({
+  progress,
+  imageCount,
+  onCancel,
+}: {
+  progress: string;
+  imageCount: number;
+  onCancel: () => void;
+}) {
+  const [displayPercent, setDisplayPercent] = useState(5);
+
+  const currentStep = PROGRESS_STEPS.find((s) => progress.includes(s.key));
+  const targetPercent = currentStep?.percent ?? 5;
+
+  useEffect(() => {
+    if (displayPercent >= targetPercent) return;
+
+    const timer = setInterval(() => {
+      setDisplayPercent((prev) => {
+        if (prev >= targetPercent) {
+          clearInterval(timer);
+          return targetPercent;
+        }
+        const remaining = targetPercent - prev;
+        const increment = Math.max(1, Math.ceil(remaining / 8));
+        return Math.min(prev + increment, targetPercent);
+      });
+    }, 80);
+
+    return () => clearInterval(timer);
+  }, [targetPercent]);
+
+  return (
+    <div className="flex flex-col items-center justify-center py-12 space-y-4">
+      <div className="relative">
+        <Loader2 className="w-12 h-12 text-primary animate-spin" />
+      </div>
+      <div className="text-center space-y-2">
+        <p className="text-sm font-medium text-gray-900 dark:text-white">
+          {progress || '준비 중...'}
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          이미지 {imageCount}장
+        </p>
+      </div>
+      <div className="w-full max-w-xs space-y-2">
+        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span
+            className={
+              progress.includes('연결') || progress.includes('분석')
+                ? 'text-primary font-medium'
+                : ''
+            }
+          >
+            OCR
+          </span>
+          <span
+            className={
+              progress.includes('AI') ? 'text-primary font-medium' : ''
+            }
+          >
+            AI 보정
+          </span>
+        </div>
+        <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+          <div
+            className="bg-primary h-2 rounded-full transition-all duration-300 ease-out"
+            style={{ width: `${displayPercent}%` }}
+          />
+        </div>
+      </div>
+      <Button variant="outline" size="sm" onClick={onCancel}>
+        취소
+      </Button>
     </div>
   );
 }

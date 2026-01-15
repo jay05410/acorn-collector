@@ -162,7 +162,7 @@ export function EventList({
               <span className="font-medium">새 행사 추가</span>
             </button>
           )}
-          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+          <div className="space-y-1 pb-3">
             {events.map((event) => (
               <EventItem
                 key={event.id}
@@ -272,14 +272,14 @@ function EventItem({
   }
 
   return (
-    <div id={`event-${event.id}`}>
+    <div id={`event-${event.id}`} className="mx-3 my-2">
       <div
         onClick={onToggleExpand}
-        className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors group"
+        className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl border-l-4 border-l-primary shadow-sm hover:shadow-md cursor-pointer transition-all group"
       >
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <button
-            className="text-gray-500 dark:text-gray-400"
+            className="text-primary dark:text-primary"
             onClick={onToggleExpand}
           >
             {isExpanded ? (
@@ -289,7 +289,7 @@ function EventItem({
             )}
           </button>
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-gray-900 dark:text-white truncate">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate">
               {event.name}
             </h3>
             <div className="flex items-center gap-3 mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -309,7 +309,7 @@ function EventItem({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
+          <span className="text-sm font-medium text-primary dark:text-primary bg-primary-light dark:bg-primary-light px-2 py-0.5 rounded-full">
             {boothCount}개 부스
           </span>
           <Button
@@ -342,7 +342,7 @@ function EventItem({
         </div>
       </div>
       {isExpanded && (
-        <div className="pl-12 pr-4 pb-4">
+        <div className="ml-6 mt-2 pl-6 border-l-2 border-gray-200 dark:border-gray-700 animate-expandDown">
           <BoothPreviewList
             eventId={event.id}
             onSelectBooth={onSelectBooth}
@@ -378,14 +378,14 @@ function BoothPreviewList({
   });
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 py-2">
       {booths.length > 0 && (
-        <div className="flex items-center gap-1 pb-1">
+        <div className="flex items-center justify-end gap-1 pb-1">
           <button
             onClick={() => setSortBy('order')}
             className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
               sortBy === 'order'
-                ? 'bg-primary-light text-accent dark:text-primary'
+                ? 'bg-primary-light text-accent dark:text-primary font-medium'
                 : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
@@ -396,7 +396,7 @@ function BoothPreviewList({
             onClick={() => setSortBy('boothNumber')}
             className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
               sortBy === 'boothNumber'
-                ? 'bg-primary-light text-accent dark:text-primary'
+                ? 'bg-primary-light text-accent dark:text-primary font-medium'
                 : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
@@ -410,7 +410,7 @@ function BoothPreviewList({
           등록된 부스가 없습니다
         </p>
       ) : (
-        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+        <div className="space-y-1.5">
           {sortedBooths.map((booth) => (
             <BoothPreviewItem
               key={booth.id}
@@ -422,7 +422,7 @@ function BoothPreviewList({
       )}
       <button
         onClick={onAddBooth}
-        className="flex items-center gap-1 text-sm text-primary-dark dark:text-primary hover:underline py-1 cursor-pointer"
+        className="flex items-center gap-1 text-sm text-primary-dark dark:text-primary hover:underline py-2 cursor-pointer"
       >
         <Plus className="w-3.5 h-3.5" />새 부스 추가
       </button>
@@ -448,12 +448,12 @@ function BoothPreviewItem({
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-2 py-2 px-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
+      className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700 cursor-pointer text-sm transition-colors"
     >
-      <span className="font-mono text-xs font-medium text-accent dark:text-primary bg-primary-light dark:bg-primary-light px-1.5 py-0.5 rounded">
+      <span className="font-mono text-xs font-bold text-white bg-primary px-2 py-1 rounded-md shadow-sm">
         {booth.boothNumber}
       </span>
-      <span className="text-gray-700 dark:text-gray-300 truncate flex-1">
+      <span className="text-gray-800 dark:text-gray-200 font-medium truncate flex-1">
         {booth.circleName}
       </span>
       {totalCount > 0 && (

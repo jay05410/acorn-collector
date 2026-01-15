@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { X, Sparkles, Loader2 } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useEvents } from '@/hooks/useEvents';
 import { db } from '@/lib/db';
 import { generateId } from '@/lib/utils';
 import { parseBoothText } from '@/lib/parser/text';
-import { parseWithAI, isAIEnabled } from '@/lib/ai';
 import type { ParsedBooth } from '@/types';
 
 interface AddBoothModalProps {
@@ -38,8 +37,6 @@ export function AddBoothModal({
   const [memo, setMemo] = useState('');
   const [parsed, setParsed] = useState<ParsedBooth | null>(null);
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
-  const [isAIParsing, setIsAIParsing] = useState(false);
-  const [usedAI, setUsedAI] = useState(false);
 
   useEffect(() => {
     if (isOpen && initialText) {
@@ -50,24 +47,6 @@ export function AddBoothModal({
       if (result.eventHint) setNewEventName(result.eventHint);
       if (result.zone) setZone(result.zone);
       if (result.formUrl) setFormUrl(result.formUrl);
-
-      isAIEnabled().then((enabled) => {
-        if (enabled) {
-          setIsAIParsing(true);
-          parseWithAI(initialText)
-            .then((aiResult) => {
-              if (aiResult) {
-                setUsedAI(true);
-                setParsed(aiResult);
-                if (aiResult.boothNumber) setBoothNumber(aiResult.boothNumber);
-                if (aiResult.circleName) setCircleName(aiResult.circleName);
-                if (aiResult.eventHint) setNewEventName(aiResult.eventHint);
-                if (aiResult.zone) setZone(aiResult.zone);
-              }
-            })
-            .finally(() => setIsAIParsing(false));
-        }
-      });
     }
   }, [isOpen, initialText, author]);
 
@@ -128,8 +107,6 @@ export function AddBoothModal({
     setNewEventName('');
     setParsed(null);
     setIsCreatingEvent(false);
-    setIsAIParsing(false);
-    setUsedAI(false);
     onClose();
   };
 
@@ -145,10 +122,10 @@ export function AddBoothModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto animate-slideUp">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             부스 정보 추가
@@ -165,19 +142,11 @@ export function AddBoothModal({
           }}
           className="p-4 space-y-4"
         >
-          {isAIParsing && (
-            <div className="flex items-center gap-2 text-sm text-primary-dark dark:text-primary bg-primary-light dark:bg-primary-light px-3 py-2 rounded-lg">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>AI 파싱 중...</span>
-            </div>
-          )}
-          {!isAIParsing && parsed && parsed.confidence > 0 && (
+          {parsed && parsed.confidence > 0 && (
             <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3 py-2 rounded-lg">
               <Sparkles className="w-4 h-4" />
               <span>
-                {usedAI
-                  ? 'AI 파싱 완료'
-                  : `자동 파싱됨 (정확도: ${Math.round(parsed.confidence * 100)}%)`}
+                자동 파싱됨 (정확도: {Math.round(parsed.confidence * 100)}%)
               </span>
             </div>
           )}

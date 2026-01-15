@@ -10,14 +10,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import {
-  appStorage,
-  type AppSettings,
-  type ColorTheme,
-  type AIProvider,
-} from '@/lib/storage';
+import { appStorage, type AppSettings, type ColorTheme } from '@/lib/storage';
 import { exportDataAsJson, importDataFromJson } from '@/lib/export';
-import { testApiKey } from '@/lib/ai';
+import { testGeminiApiKey } from '@/lib/ai';
 
 const COLOR_THEMES: {
   value: ColorTheme;
@@ -56,10 +51,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     colorTheme: 'acorn',
     defaultSortBy: 'createdAt',
     aiEnabled: false,
-    aiProvider: 'gemini',
     geminiApiKey: '',
-    openaiApiKey: '',
-    anthropicApiKey: '',
   });
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [apiKeyStatus, setApiKeyStatus] = useState<{
@@ -76,15 +68,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }, [isOpen]);
 
   const handleTestApiKey = async () => {
-    const apiKey =
-      settings.aiProvider === 'gemini'
-        ? settings.geminiApiKey
-        : settings.aiProvider === 'openai'
-          ? settings.openaiApiKey
-          : settings.anthropicApiKey;
-
     setApiKeyStatus({ testing: true });
-    const result = await testApiKey(settings.aiProvider, apiKey);
+    const result = await testGeminiApiKey(settings.geminiApiKey);
     setApiKeyStatus({ testing: false, result });
 
     setTimeout(() => setApiKeyStatus({ testing: false }), 5000);
@@ -101,15 +86,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     await appStorage.updateSettings({ aiEnabled });
   };
 
-  const handleAiProviderChange = async (aiProvider: AIProvider) => {
-    setSettings((prev) => ({ ...prev, aiProvider }));
-    await appStorage.updateSettings({ aiProvider });
-  };
-
-  const handleAiApiKeyChange = async (provider: AIProvider, key: string) => {
-    const keyField = `${provider}ApiKey` as const;
-    setSettings((prev) => ({ ...prev, [keyField]: key }));
-    await appStorage.updateSettings({ [keyField]: key });
+  const handleApiKeyChange = async (key: string) => {
+    setSettings((prev) => ({ ...prev, geminiApiKey: key }));
+    await appStorage.updateSettings({ geminiApiKey: key });
   };
 
   const handleExport = async () => {
@@ -152,10 +131,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto animate-slideUp">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             설정
@@ -210,7 +189,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
-                AI 파싱
+                AI 추가하기
               </h3>
               <button
                 onClick={handleAiToggle}
@@ -229,49 +208,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
             {settings.aiEnabled && (
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'gemini', label: 'Gemini' },
-                    { value: 'openai', label: 'OpenAI' },
-                    { value: 'anthropic', label: 'Claude' },
-                  ].map((option) => {
-                    const isSelected = settings.aiProvider === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        onClick={() =>
-                          handleAiProviderChange(option.value as AIProvider)
-                        }
-                        className={`py-2 px-3 text-sm font-medium rounded-lg border transition-colors ${
-                          isSelected
-                            ? 'border-primary bg-primary-light text-accent dark:text-primary'
-                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <Input
                       type="password"
-                      value={
-                        settings.aiProvider === 'gemini'
-                          ? settings.geminiApiKey
-                          : settings.aiProvider === 'openai'
-                            ? settings.openaiApiKey
-                            : settings.anthropicApiKey
-                      }
-                      onChange={(e) =>
-                        handleAiApiKeyChange(
-                          settings.aiProvider,
-                          e.target.value
-                        )
-                      }
-                      placeholder={`${settings.aiProvider === 'gemini' ? 'Gemini' : settings.aiProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API 키`}
+                      value={settings.geminiApiKey}
+                      onChange={(e) => handleApiKeyChange(e.target.value)}
+                      placeholder="Gemini API 키"
                       className="pl-9"
                     />
                   </div>
@@ -301,9 +245,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       : `✗ ${apiKeyStatus.result.error}`}
                   </p>
                 )}
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  부스 정보 파싱을 더 정확하게 합니다.
-                </p>
+                <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                  <p>
+                    AI로 OCR 결과 보정, 상품 분류 등 다양한 기능을 개선합니다.
+                  </p>
+                  <p className="text-gray-400 dark:text-gray-500">
+                    무료: 분당 10회, 하루 20회 제한 (프로젝트당)
+                  </p>
+                </div>
               </div>
             )}
           </div>

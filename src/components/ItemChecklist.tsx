@@ -258,7 +258,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
             )}
 
             {hasImages && (
-              <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
+              <div className="flex items-center gap-2 text-xs text-primary-dark dark:text-primary bg-primary-light dark:bg-primary-light px-3 py-2 rounded-lg">
                 <Sparkles className="w-3 h-3 flex-shrink-0" />
                 <span>
                   이미지가 있어요! 닫고 &quot;이미지에서 상품 추출&quot;로 자동
@@ -302,7 +302,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
                   onClick={() => setIsOCRModalOpen(true)}
                   size="sm"
                   variant="outline"
-                  className="border-amber-300 text-amber-600 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                  className="border-primary text-primary hover:bg-primary-light dark:border-primary dark:text-primary dark:hover:bg-primary-light"
                 >
                   <Sparkles className="w-4 h-4 mr-1" />
                   이미지에서 상품 추출
@@ -323,7 +323,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
               {hasImages && (
                 <button
                   onClick={() => setIsOCRModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-3 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors cursor-pointer w-full"
+                  className="flex items-center gap-2 px-4 py-3 text-primary dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span className="text-sm font-medium">

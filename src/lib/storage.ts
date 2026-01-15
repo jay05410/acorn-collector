@@ -8,26 +8,19 @@ export interface PendingAddData {
 }
 
 export type ColorTheme = 'acorn' | 'pink' | 'sky' | 'lavender';
-export type AIProvider = 'gemini' | 'openai' | 'anthropic';
 
 export interface AppSettings {
   colorTheme: ColorTheme;
   defaultSortBy: 'boothNumber' | 'createdAt' | 'custom';
   aiEnabled: boolean;
-  aiProvider: AIProvider;
   geminiApiKey: string;
-  openaiApiKey: string;
-  anthropicApiKey: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   colorTheme: 'acorn',
   defaultSortBy: 'createdAt',
   aiEnabled: false,
-  aiProvider: 'gemini',
   geminiApiKey: '',
-  openaiApiKey: '',
-  anthropicApiKey: '',
 };
 
 function isPendingAddData(value: unknown): value is PendingAddData {
