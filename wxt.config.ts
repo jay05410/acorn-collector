@@ -4,6 +4,11 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   srcDir: 'src',
+  dev: {
+    server: {
+      port: 3000,
+    },
+  },
   vite: () => ({
     plugins: [tailwindcss()],
     define: {
@@ -12,7 +17,14 @@ export default defineConfig({
       ),
     },
   }),
-  manifest: {
+  manifest: ({ mode }) => ({
+    content_security_policy:
+      mode === 'development'
+        ? {
+            extension_pages:
+              "script-src 'self' http://localhost:3000; object-src 'self'",
+          }
+        : undefined,
     name: '도토리 주머니',
     description: '행사 준비용 체크리스트 관리',
     version: '1.0.0',
@@ -29,5 +41,5 @@ export default defineConfig({
     side_panel: {
       default_path: 'sidepanel.html',
     },
-  },
+  }),
 });
