@@ -34,9 +34,6 @@ const PRODUCT_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
   기타: ['세트', '랜덤박스', '럭키박스', '굿즈'],
 };
 
-// 평탄화된 키워드 목록 (검색용)
-const PRODUCT_KEYWORDS = Object.values(PRODUCT_KEYWORDS_BY_CATEGORY).flat();
-
 // 제외 키워드 (상품이 아닌 것들)
 const EXCLUDE_KEYWORDS = [
   '배송',
