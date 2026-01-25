@@ -1,200 +1,227 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, type Part } from '@google/genai';
 import { appStorage } from './storage';
+import { t } from './i18n';
 
-const OCR_WORKER_URL =
-  'https://acorn-ocr-proxy.acorn-collector.workers.dev/ocr';
-const OCR_TIMEOUT_MS = 30000;
 const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const MAX_IMAGES = 4;
 
 export interface ImageAnalysisItem {
   name: string;
   price: number | null;
   category: string | null;
+  options?: string[];
   confidence: number;
 }
 
 export interface ImageAnalysisResult {
   items: ImageAnalysisItem[];
-  rawText?: string;
   overallConfidence: number;
-  refinedByAI?: boolean;
+  tokenCount?: number;
 }
 
-export interface OCROptions {
+export interface AnalysisOptions {
   onProgress?: (status: string) => void;
   signal?: AbortSignal;
 }
 
-const imageAnalysisCache = new Map<string, ImageAnalysisResult>();
+const analysisCache = new Map<string, ImageAnalysisResult>();
 
 function getCacheKey(imageUrls: string[]): string {
   return imageUrls.sort().join('|');
 }
 
-const OCR_REFINE_PROMPT = `OCR→상품목록. 구매가능한 실제상품만 추출.
+function getPrompt(imageCount: number): string {
+  return `Extract product list from ${imageCount} doujin/fan event booth image(s).
 
-[필수제외-절대상품아님]
-- 상품설명/소재설명("~입니다","~합니다","칼선","쉐이커")
-- 사용법/주의사항("빼내","사용가능","고정된")
-- 배송/이벤트/SNS/작가소개/부스위치
+[PRODUCT NAME RULES - MOST IMPORTANT]
+1. Product name MUST be SPECIFIC and DESCRIPTIVE
+2. Product name must NEVER be just the category (sticker, keyring, postcard, etc.)
+3. Include character names, design names, or descriptive modifiers in the product name
 
-[카테고리-반드시1개선택]
-아크릴|키링|스탠드|포스터|엽서|스티커|포토카드|메모지|테이프|배지|책|달력|파우치|인형|의류|기타
+WRONG: name="스티커", category="sticker" (name is just category!)
+WRONG: name="엽서", category="postcard" (name is just category!)
+CORRECT: name="조각스티커 강민재&차주환", category="sticker"
+CORRECT: name="강하성 폴라로이드", category="photocard"
 
-[가격]무료=0,불명=null
+[OPTIONS vs SEPARATE PRODUCTS - CRITICAL]
+Use OPTIONS only when: ONE product name + multiple character/variant choices at SAME price
+- "뿅뿅키링 3000원 (A, B, C, D)" → name="뿅뿅키링", options=["A","B","C","D"]
 
-{"items":[{"name":"상품명만","price":숫자|null,"category":"필수"}]}
+Create SEPARATE products when: Each variant has its OWN name written separately
+- "가가 스티커 3000원" + "나나 스티커 3000원" → TWO separate products, NO options
+  → {name:"가가 스티커", price:3000}
+  → {name:"나나 스티커", price:3000}
+
+[EXTRACT PER PRODUCT]
+- name: SPECIFIC product name (MUST include character/design name if visible, NEVER just category)
+- price: Number only (free=0, unknown=null)
+- category: acrylic|keyring|stand|poster|postcard|sticker|photocard|memo|tape|badge|book|calendar|pouch|plush|apparel|other
+- options: ONLY when single product has selectable variants listed together
+
+[EXCLUDE]
+- Booth numbers, SNS, URLs, shipping info
+- Broken/garbled text
+
+[FINAL CHECK]
+- Is name DIFFERENT from category? If name="스티커" and category="sticker", FIX IT!
+- Does name include the character/design identifier visible in image?
+
+JSON only:
+{"items":[{"name":"string","price":number|null,"category":"string","options":["string"]?}]}
 `;
-
-let currentOCRController: AbortController | null = null;
-
-export function cancelOCR(): void {
-  if (currentOCRController) {
-    currentOCRController.abort();
-    currentOCRController = null;
-  }
 }
 
-async function runOCRViaWorker(
-  imageUrls: string[],
-  options?: OCROptions
-): Promise<ImageAnalysisResult> {
-  const controller = new AbortController();
-  currentOCRController = controller;
-
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, OCR_TIMEOUT_MS);
-
-  if (options?.signal) {
-    options.signal.addEventListener('abort', () => controller.abort());
-  }
-
-  try {
-    options?.onProgress?.('OCR 서버 연결 중...');
-
-    const response = await fetch(OCR_WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageUrls }),
-      signal: controller.signal,
-    });
-
-    options?.onProgress?.('이미지 분석 중...');
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OCR 서버 오류: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error || 'OCR 실패');
-    }
-
-    options?.onProgress?.('완료!');
-    return data.result;
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('OCR이 취소되었거나 시간 초과되었습니다');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-    currentOCRController = null;
-  }
+async function fetchImageAsBase64(
+  url: string
+): Promise<{ data: string; mimeType: string }> {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  const arrayBuffer = await blob.arrayBuffer();
+  const base64 = btoa(
+    new Uint8Array(arrayBuffer).reduce(
+      (data, byte) => data + String.fromCharCode(byte),
+      ''
+    )
+  );
+  return { data: base64, mimeType: blob.type || 'image/jpeg' };
 }
 
-async function refineWithAI(
-  rawText: string,
-  options?: OCROptions
-): Promise<ImageAnalysisItem[]> {
-  const settings = await appStorage.getSettings();
+async function loadImages(imageUrls: string[]): Promise<Part[]> {
+  const parts: Part[] = [];
+  const urls = imageUrls.slice(0, MAX_IMAGES);
 
-  if (!settings.aiEnabled || !settings.geminiApiKey) {
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      const { data, mimeType } = await fetchImageAsBase64(url);
+      parts.push({ inlineData: { data, mimeType } });
+    } catch (err) {
+      console.error('[AI] Image load failed:', err);
+    }
+  }
+
+  return parts;
+}
+
+function parseResponse(text: string): ImageAnalysisItem[] {
+  console.log('[AI] Raw response:', text);
+
+  if (!text || text.trim() === '') {
+    console.error('[AI] Empty response from model');
     return [];
   }
 
-  options?.onProgress?.('AI로 결과 정제 중...');
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.error('[AI] No JSON found in response');
+    return [];
+  }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
-
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: OCR_REFINE_PROMPT + rawText,
-      config: {
-        temperature: 0.1,
-        maxOutputTokens: 2048,
-      },
-    });
-
-    const content = response.text || '{}';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) return [];
-
     const parsed = JSON.parse(jsonMatch[0]);
-    const items: ImageAnalysisItem[] = (parsed.items || []).map(
-      (item: { name: string; price?: number | null; category?: string }) => ({
+    const items = (parsed.items || []).map(
+      (item: {
+        name: string;
+        price?: number | null;
+        category?: string;
+        options?: string[];
+      }) => ({
         name: item.name,
         price: item.price ?? null,
         category: item.category || null,
-        confidence: 90,
+        options: item.options?.length ? item.options : undefined,
+        confidence: 95,
       })
     );
-
+    console.log('[AI] Parsed items:', items.length);
     return items;
-  } catch (error) {
-    console.error('[AI Refine] Failed:', error);
+  } catch (e) {
+    console.error('[AI] JSON parse failed:', e, 'Text was:', jsonMatch[0]);
     return [];
   }
 }
 
 export async function analyzeImages(
   imageUrls: string[],
-  options?: OCROptions
+  options?: AnalysisOptions
 ): Promise<ImageAnalysisResult | null> {
-  if (!imageUrls || imageUrls.length === 0) {
-    return null;
+  if (!imageUrls?.length) return null;
+
+  const settings = await appStorage.getSettings();
+  if (!settings.aiEnabled || !settings.geminiApiKey) {
+    console.error('[AI] API key not configured');
+    throw new Error(t('analysis', 'failed') + ': API 키가 설정되지 않았습니다');
   }
 
   const cacheKey = getCacheKey(imageUrls);
-  const cached = imageAnalysisCache.get(cacheKey);
+  const cached = analysisCache.get(cacheKey);
   if (cached) {
-    options?.onProgress?.('캐시에서 불러옴');
+    options?.onProgress?.('100');
     return cached;
   }
 
   try {
-    const ocrResult = await runOCRViaWorker(imageUrls, options);
+    // Step 1: Download images (0-40%)
+    options?.onProgress?.('10');
+    const imageParts = await loadImages(imageUrls);
+    options?.onProgress?.('40');
 
-    const textForAI =
-      ocrResult.rawText ||
-      ocrResult.items.map((i) => `${i.name} ${i.price ?? ''}`).join('\n');
-
-    if (textForAI) {
-      const aiItems = await refineWithAI(textForAI, options);
-
-      if (aiItems.length > 0) {
-        const refinedResult: ImageAnalysisResult = {
-          items: aiItems,
-          rawText: ocrResult.rawText,
-          overallConfidence: ocrResult.overallConfidence,
-          refinedByAI: true,
-        };
-        imageAnalysisCache.set(cacheKey, refinedResult);
-        return refinedResult;
-      }
+    if (imageParts.length === 0) {
+      throw new Error('이미지를 불러올 수 없습니다');
     }
 
-    imageAnalysisCache.set(cacheKey, ocrResult);
-    return ocrResult;
+    // Step 2: AI Analysis (40-90%)
+    options?.onProgress?.('50');
+
+    const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [...imageParts, { text: getPrompt(imageParts.length) }],
+      config: {
+        temperature: 0.1,
+        maxOutputTokens: 2048,
+        responseMimeType: 'application/json',
+      },
+    });
+
+    options?.onProgress?.('90');
+
+    // Step 3: Parse response (90-100%)
+    const items = parseResponse(response.text || '');
+    options?.onProgress?.('100');
+
+    const result: ImageAnalysisResult = {
+      items,
+      overallConfidence: 95,
+      tokenCount: response.usageMetadata?.totalTokenCount,
+    };
+
+    analysisCache.set(cacheKey, result);
+    return result;
   } catch (error) {
-    console.error('[Image Analysis] Failed:', error);
-    throw error;
+    console.error('[AI] Analysis error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+
+    if (
+      message.includes('API_KEY') ||
+      message.includes('401') ||
+      message.includes('403')
+    ) {
+      throw new Error('API 키가 유효하지 않습니다');
+    }
+    if (message.includes('429')) {
+      throw new Error('API 요청 한도 초과. 잠시 후 다시 시도해주세요');
+    }
+    if (message.includes('fetch') || message.includes('network')) {
+      throw new Error('네트워크 오류. 인터넷 연결을 확인해주세요');
+    }
+
+    throw new Error(message);
   }
+}
+
+export function cancelAnalysis(): void {
+  analysisCache.clear();
 }
 
 export async function isAIEnabled(): Promise<boolean> {
@@ -206,27 +233,27 @@ export async function testGeminiApiKey(
   apiKey: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!apiKey.trim()) {
-    return { success: false, error: 'API 키를 입력해주세요' };
+    return { success: false, error: t('settings', 'apiKeyInvalid') };
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     await ai.models.generateContent({
       model: GEMINI_MODEL,
-      contents: '테스트',
+      contents: 'test',
     });
     return { success: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : '알 수 없는 오류';
+    const message = error instanceof Error ? error.message : 'Unknown error';
     if (
       message.includes('401') ||
       message.includes('403') ||
       message.includes('API_KEY')
     ) {
-      return { success: false, error: 'API 키가 유효하지 않습니다' };
+      return { success: false, error: t('settings', 'apiKeyInvalid') };
     }
     if (message.includes('429')) {
-      return { success: false, error: '요청 한도 초과 (키는 유효함)' };
+      return { success: false, error: t('settings', 'apiKeyInvalid') };
     }
     return { success: false, error: message };
   }
