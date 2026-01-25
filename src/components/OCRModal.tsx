@@ -6,37 +6,62 @@ import {
   Check,
   Camera,
   HelpCircle,
+  Plus,
+  Minus,
+  ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { analyzeImages, cancelOCR, type ImageAnalysisItem } from '@/lib/ai';
+import {
+  analyzeImages,
+  cancelAnalysis,
+  type ImageAnalysisItem,
+} from '@/lib/ai';
+import { t, tWithParams, getCategoryLabel } from '@/lib/i18n';
 
-interface OCRModalProps {
+interface Props {
   isOpen: boolean;
   onClose: () => void;
   imageUrls: string[];
-  onItemsSelected: (items: ImageAnalysisItem[]) => void;
+  onItemsSelected: (items: SelectedItem[]) => void;
+  onOpenSettings?: () => void;
 }
 
-type OCRStatus = 'idle' | 'loading' | 'success' | 'error';
+export interface SelectedItem {
+  name: string;
+  price: number | null;
+  category: string | null;
+  selectedOption?: string;
+  quantity: number;
+}
+
+interface ItemState {
+  selected: boolean;
+  quantity: number;
+  selectedOption?: string;
+  editedName?: string;
+}
+
+type Status = 'idle' | 'loading' | 'success' | 'error';
 
 export function OCRModal({
   isOpen,
   onClose,
   imageUrls,
   onItemsSelected,
-}: OCRModalProps) {
-  const [status, setStatus] = useState<OCRStatus>('idle');
-  const [progress, setProgress] = useState<string>('');
-  const [error, setError] = useState<string>('');
+  onOpenSettings,
+}: Props) {
+  const [status, setStatus] = useState<Status>('idle');
+  const [progress, setProgress] = useState('');
+  const [error, setError] = useState('');
   const [items, setItems] = useState<ImageAnalysisItem[]>([]);
-  const [refinedByAI, setRefinedByAI] = useState(false);
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
-    new Set()
+  const [itemStates, setItemStates] = useState<Map<number, ItemState>>(
+    new Map()
   );
 
   useEffect(() => {
     if (isOpen && imageUrls.length > 0 && status === 'idle') {
-      startOCR();
+      runAnalysis();
     }
   }, [isOpen, imageUrls]);
 
@@ -46,15 +71,13 @@ export function OCRModal({
       setProgress('');
       setError('');
       setItems([]);
-      setRefinedByAI(false);
-      setSelectedIndices(new Set());
+      setItemStates(new Map());
     }
   }, [isOpen]);
 
-  const startOCR = async () => {
+  const runAnalysis = async () => {
     setStatus('loading');
     setError('');
-    setProgress('OCR 서버 연결 중...');
 
     try {
       const result = await analyzeImages(imageUrls, {
@@ -63,67 +86,136 @@ export function OCRModal({
 
       if (result && result.items.length > 0) {
         setItems(result.items);
-        setRefinedByAI(result.refinedByAI ?? false);
-        setSelectedIndices(new Set(result.items.map((_, i) => i)));
+        const states = new Map<number, ItemState>();
+        result.items.forEach((item, i) => {
+          states.set(i, {
+            selected: true,
+            quantity: 1,
+            selectedOption: item.options?.[0],
+          });
+        });
+        setItemStates(states);
         setStatus('success');
       } else {
-        setError('이미지에서 상품 정보를 찾을 수 없습니다');
+        setError(t('analysis', 'noItems'));
         setStatus('error');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : '알 수 없는 오류';
-      setError(message);
+      setError(err instanceof Error ? err.message : 'Unknown error');
       setStatus('error');
     }
   };
 
+  const handleReanalyze = () => {
+    cancelAnalysis();
+    setItems([]);
+    setItemStates(new Map());
+    runAnalysis();
+  };
+
   const handleCancel = () => {
-    cancelOCR();
+    cancelAnalysis();
     onClose();
   };
 
-  const handleRetry = () => {
-    setStatus('idle');
-    startOCR();
+  const handleConfirm = () => {
+    const selectedItems: SelectedItem[] = [];
+    items.forEach((item, i) => {
+      const state = itemStates.get(i);
+      if (state?.selected) {
+        const baseName = state.editedName || item.name;
+        selectedItems.push({
+          name: state.selectedOption
+            ? `${baseName} (${state.selectedOption})`
+            : baseName,
+          price: item.price,
+          category: item.category,
+          selectedOption: state.selectedOption,
+          quantity: state.quantity,
+        });
+      }
+    });
+    onItemsSelected(selectedItems);
+    onClose();
   };
 
   const toggleItem = (index: number) => {
-    setSelectedIndices((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
+    setItemStates((prev) => {
+      const next = new Map(prev);
+      const current = next.get(index);
+      if (current) {
+        next.set(index, { ...current, selected: !current.selected });
       }
       return next;
     });
   };
 
-  const handleConfirm = () => {
-    const selectedItems = items.filter((_, i) => selectedIndices.has(i));
-    onItemsSelected(selectedItems);
-    onClose();
+  const updateQuantity = (index: number, delta: number) => {
+    setItemStates((prev) => {
+      const next = new Map(prev);
+      const current = next.get(index);
+      if (current) {
+        const newQty = Math.max(1, Math.min(99, current.quantity + delta));
+        next.set(index, { ...current, quantity: newQty });
+      }
+      return next;
+    });
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && status !== 'loading') {
-      onClose();
-    }
+  const updateOption = (index: number, option: string) => {
+    setItemStates((prev) => {
+      const next = new Map(prev);
+      const current = next.get(index);
+      if (current) {
+        next.set(index, { ...current, selectedOption: option });
+      }
+      return next;
+    });
   };
+
+  const updateName = (index: number, name: string) => {
+    setItemStates((prev) => {
+      const next = new Map(prev);
+      const current = next.get(index);
+      if (current) {
+        next.set(index, { ...current, editedName: name });
+      }
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    const allSelected = Array.from(itemStates.values()).every(
+      (s) => s.selected
+    );
+    setItemStates((prev) => {
+      const next = new Map(prev);
+      next.forEach((state, key) => {
+        next.set(key, { ...state, selected: !allSelected });
+      });
+      return next;
+    });
+  };
+
+  const selectedCount = Array.from(itemStates.values()).filter(
+    (s) => s.selected
+  ).length;
 
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
-      onClick={handleBackdropClick}
+      onClick={(e) =>
+        e.target === e.currentTarget && status !== 'loading' && onClose()
+      }
     >
       <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col animate-slideUp">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <div className="flex items-center gap-2">
             <Camera className="w-5 h-5 text-primary" />
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              이미지 OCR
+              {t('analysis', 'title')}
             </h2>
           </div>
           {status !== 'loading' && (
@@ -147,7 +239,7 @@ export function OCRModal({
               <AlertCircle className="w-12 h-12 text-red-500" />
               <div className="text-center space-y-2">
                 <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  OCR 실패
+                  {t('analysis', 'failed')}
                 </p>
                 <p className="text-xs text-red-500 dark:text-red-400">
                   {error}
@@ -155,11 +247,23 @@ export function OCRModal({
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={onClose}>
-                  닫기
+                  {t('common', 'close')}
                 </Button>
-                <Button size="sm" onClick={handleRetry}>
-                  다시 시도
-                </Button>
+                {error.includes('API') && onOpenSettings ? (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onClose();
+                      onOpenSettings();
+                    }}
+                  >
+                    {t('analysis', 'goToSettings')}
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={runAnalysis}>
+                    {t('common', 'retry')}
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -170,61 +274,32 @@ export function OCRModal({
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={
-                      selectedIndices.size === items.length && items.length > 0
-                    }
-                    onChange={() => {
-                      if (selectedIndices.size === items.length) {
-                        setSelectedIndices(new Set());
-                      } else {
-                        setSelectedIndices(new Set(items.map((_, i) => i)));
-                      }
-                    }}
+                    checked={selectedCount === items.length && items.length > 0}
+                    onChange={toggleAll}
                     className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
                   />
                   <span className="text-sm font-medium text-gray-900 dark:text-white">
-                    전체 선택 ({items.length}개)
+                    {t('analysis', 'selectAll')} ({items.length})
                   </span>
                 </label>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {selectedIndices.size}개 선택됨
+                  {selectedCount}
+                  {t('analysis', 'selected')}
                 </span>
               </div>
 
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                <div className="max-h-60 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
+                <div className="max-h-80 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
                   {items.map((item, index) => (
-                    <label
+                    <ProductItem
                       key={index}
-                      className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedIndices.has(index)}
-                        onChange={() => toggleItem(index)}
-                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm text-gray-900 dark:text-white block truncate">
-                          {item.name}
-                        </span>
-                        {item.category && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">
-                            {item.category}
-                          </span>
-                        )}
-                      </div>
-                      {item.price !== null && item.price > 0 && (
-                        <span className="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
-                          {item.price.toLocaleString()}원
-                        </span>
-                      )}
-                      {item.price === 0 && (
-                        <span className="text-xs text-green-500 flex-shrink-0">
-                          무료
-                        </span>
-                      )}
-                    </label>
+                      item={item}
+                      state={itemStates.get(index)!}
+                      onToggle={() => toggleItem(index)}
+                      onQuantityChange={(delta) => updateQuantity(index, delta)}
+                      onOptionChange={(option) => updateOption(index, option)}
+                      onNameChange={(name) => updateName(index, name)}
+                    />
                   ))}
                 </div>
               </div>
@@ -233,8 +308,7 @@ export function OCRModal({
                 <div className="flex gap-2">
                   <HelpCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-700 dark:text-amber-300">
-                    OCR 결과는 부정확할 수 있습니다. 추가 후 직접 확인해주세요.
-                    {refinedByAI && ' (AI 보정됨)'}
+                    {t('analysis', 'warning')}
                   </p>
                 </div>
               </div>
@@ -244,16 +318,25 @@ export function OCRModal({
 
         {status === 'success' && (
           <div className="p-4 border-t dark:border-gray-700 flex gap-2">
+            <Button
+              variant="outline"
+              onClick={handleReanalyze}
+              size="icon"
+              title={t('analysis', 'reanalyze')}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
             <Button variant="outline" onClick={onClose} className="flex-1">
-              취소
+              {t('common', 'cancel')}
             </Button>
             <Button
               onClick={handleConfirm}
               className="flex-1"
-              disabled={selectedIndices.size === 0}
+              disabled={selectedCount === 0}
             >
               <Check className="w-4 h-4 mr-1" />
-              {selectedIndices.size}개 추가
+              {selectedCount}
+              {t('analysis', 'addItems')}
             </Button>
           </div>
         )}
@@ -262,13 +345,151 @@ export function OCRModal({
   );
 }
 
-const PROGRESS_STEPS = [
-  { key: '준비', label: '준비 중...', percent: 5 },
-  { key: '연결', label: 'OCR 서버 연결 중...', percent: 15 },
-  { key: '분석', label: '이미지 분석 중...', percent: 45 },
-  { key: 'AI', label: 'AI로 결과 정제 중...', percent: 80 },
-  { key: '완료', label: '완료!', percent: 100 },
-] as const;
+function ProductItem({
+  item,
+  state,
+  onToggle,
+  onQuantityChange,
+  onOptionChange,
+  onNameChange,
+}: {
+  item: ImageAnalysisItem;
+  state: ItemState;
+  onToggle: () => void;
+  onQuantityChange: (delta: number) => void;
+  onOptionChange: (option: string) => void;
+  onNameChange: (name: string) => void;
+}) {
+  const [optionOpen, setOptionOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(state.editedName || item.name);
+  const hasOptions = item.options && item.options.length > 0;
+  const displayName = state.editedName || item.name;
+
+  const handleNameSave = () => {
+    if (editValue.trim()) {
+      onNameChange(editValue.trim());
+    } else {
+      setEditValue(displayName);
+    }
+    setIsEditing(false);
+  };
+
+  return (
+    <div className={`px-3 py-2 ${state.selected ? 'bg-primary/5' : ''}`}>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={state.selected}
+          onChange={onToggle}
+          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer flex-shrink-0"
+        />
+
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          {isEditing ? (
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={handleNameSave}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleNameSave();
+                if (e.key === 'Escape') {
+                  setEditValue(displayName);
+                  setIsEditing(false);
+                }
+              }}
+              className="flex-1 text-sm font-medium bg-white dark:bg-gray-700 border border-primary rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+              autoFocus
+            />
+          ) : (
+            <span
+              onClick={() => setIsEditing(true)}
+              className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-primary"
+              title={t('analysis', 'clickToEdit')}
+            >
+              {displayName}
+            </span>
+          )}
+          {item.category && !isEditing && (
+            <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
+              {getCategoryLabel(item.category)}
+            </span>
+          )}
+        </div>
+
+        {state.selected && hasOptions && (
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => setOptionOpen(!optionOpen)}
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+            >
+              <span className="max-w-16 truncate">
+                {state.selectedOption || item.options![0]}
+              </span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {optionOpen && (
+              <div className="absolute right-0 z-10 mt-1 w-32 max-h-32 overflow-y-auto bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded shadow-lg">
+                {item.options!.map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => {
+                      onOptionChange(opt);
+                      setOptionOpen(false);
+                    }}
+                    className={`w-full px-2 py-1 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-600 ${
+                      state.selectedOption === opt
+                        ? 'bg-primary/10 text-primary font-medium'
+                        : 'text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {state.selected && (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button
+              onClick={() => onQuantityChange(-1)}
+              disabled={state.quantity <= 1}
+              className="w-5 h-5 flex items-center justify-center rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40"
+            >
+              <Minus className="w-2.5 h-2.5" />
+            </button>
+            <span className="w-5 text-center text-xs font-medium">
+              {state.quantity}
+            </span>
+            <button
+              onClick={() => onQuantityChange(1)}
+              disabled={state.quantity >= 99}
+              className="w-5 h-5 flex items-center justify-center rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40"
+            >
+              <Plus className="w-2.5 h-2.5" />
+            </button>
+          </div>
+        )}
+
+        <div className="flex-shrink-0 text-right min-w-12">
+          {item.price !== null && item.price > 0 && (
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {item.price.toLocaleString()}
+            </span>
+          )}
+          {item.price === 0 && (
+            <span className="text-xs text-green-500">
+              {t('common', 'free')}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function LoadingState({
   progress,
@@ -279,70 +500,54 @@ function LoadingState({
   imageCount: number;
   onCancel: () => void;
 }) {
-  const [displayPercent, setDisplayPercent] = useState(5);
-
-  const currentStep = PROGRESS_STEPS.find((s) => progress.includes(s.key));
-  const targetPercent = currentStep?.percent ?? 5;
+  const [displayPercent, setDisplayPercent] = useState(0);
+  const targetPercent = parseInt(progress) || 0;
 
   useEffect(() => {
     if (displayPercent >= targetPercent) return;
 
     const timer = setInterval(() => {
       setDisplayPercent((prev) => {
-        if (prev >= targetPercent) {
-          clearInterval(timer);
-          return targetPercent;
-        }
-        const remaining = targetPercent - prev;
-        const increment = Math.max(1, Math.ceil(remaining / 8));
-        return Math.min(prev + increment, targetPercent);
+        if (prev >= targetPercent) return targetPercent;
+        const step = Math.max(1, Math.ceil((targetPercent - prev) / 5));
+        return Math.min(prev + step, targetPercent);
       });
-    }, 80);
+    }, 50);
 
     return () => clearInterval(timer);
-  }, [targetPercent]);
+  }, [targetPercent, displayPercent]);
+
+  const getStatusText = () => {
+    if (targetPercent <= 10) return t('analysis', 'analyzing');
+    if (targetPercent <= 40) return t('analysis', 'downloading');
+    if (targetPercent <= 90) return t('analysis', 'processing');
+    return t('analysis', 'complete');
+  };
 
   return (
     <div className="flex flex-col items-center justify-center py-12 space-y-4">
-      <div className="relative">
-        <Loader2 className="w-12 h-12 text-primary animate-spin" />
-      </div>
+      <Loader2 className="w-12 h-12 text-primary animate-spin" />
       <div className="text-center space-y-2">
         <p className="text-sm font-medium text-gray-900 dark:text-white">
-          {progress || '준비 중...'}
+          {getStatusText()}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          이미지 {imageCount}장
+          {tWithParams('analysis', 'analyzingImages', { count: imageCount })}
         </p>
       </div>
-      <div className="w-full max-w-xs space-y-2">
-        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span
-            className={
-              progress.includes('연결') || progress.includes('분석')
-                ? 'text-primary font-medium'
-                : ''
-            }
-          >
-            OCR
-          </span>
-          <span
-            className={
-              progress.includes('AI') ? 'text-primary font-medium' : ''
-            }
-          >
-            AI 보정
-          </span>
-        </div>
+      <div className="w-full max-w-xs">
         <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
           <div
-            className="bg-primary h-2 rounded-full transition-all duration-300 ease-out"
+            className="bg-primary h-2 rounded-full transition-all duration-150 ease-out"
             style={{ width: `${displayPercent}%` }}
           />
         </div>
+        <p className="text-xs text-center text-gray-400 mt-1">
+          {displayPercent}%
+        </p>
       </div>
       <Button variant="outline" size="sm" onClick={onCancel}>
-        취소
+        {t('common', 'cancel')}
       </Button>
     </div>
   );
