@@ -7,6 +7,7 @@ import { db } from '@/lib/db';
 import { generateId } from '@/lib/utils';
 import { parseBoothText } from '@/lib/parser/text';
 import type { ParsedBooth } from '@/types';
+import { t } from '@/lib/i18n';
 
 interface AddBoothModalProps {
   isOpen: boolean;
@@ -128,7 +129,7 @@ export function AddBoothModal({
       <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto animate-slideUp">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            부스 정보 추가
+            {t('booths', 'addBooth')}
           </h2>
           <Button variant="ghost" size="icon" onClick={handleClose}>
             <X className="w-5 h-5" />
@@ -153,12 +154,12 @@ export function AddBoothModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              이벤트
+              {t('events', 'title')}
             </label>
             {needsNewEvent ? (
               <div className="space-y-2">
                 <Input
-                  placeholder="새 행사 이름 (예: 서코 45회)"
+                  placeholder={t('events', 'eventNamePlaceholder')}
                   value={newEventName}
                   onChange={(e) => setNewEventName(e.target.value)}
                 />
@@ -168,7 +169,7 @@ export function AddBoothModal({
                     onClick={() => setIsCreatingEvent(false)}
                     className="text-sm text-primary-dark dark:text-primary hover:underline"
                   >
-                    기존 행사 선택
+                    {t('events', 'title')}
                   </button>
                 )}
               </div>
@@ -190,7 +191,7 @@ export function AddBoothModal({
                   onClick={() => setIsCreatingEvent(true)}
                   className="text-sm text-primary-dark dark:text-primary hover:underline"
                 >
-                  + 새 행사 만들기
+                  + {t('events', 'addEvent')}
                 </button>
               </div>
             )}
@@ -199,20 +200,20 @@ export function AddBoothModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                부스 번호 *
+                {t('booths', 'boothNumber')} *
               </label>
               <Input
-                placeholder="예: A-01"
+                placeholder={t('booths', 'boothNumberPlaceholder')}
                 value={boothNumber}
                 onChange={(e) => setBoothNumber(e.target.value)}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                존 (선택)
+                {t('booths', 'zone')}
               </label>
               <Input
-                placeholder="예: 쁘띠존"
+                placeholder={t('booths', 'zonePlaceholder')}
                 value={zone}
                 onChange={(e) => setZone(e.target.value)}
               />
@@ -221,10 +222,10 @@ export function AddBoothModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              서클/작가명 *
+              {t('booths', 'circleName')} *
             </label>
             <Input
-              placeholder="서클명 또는 작가명"
+              placeholder={t('booths', 'circleNamePlaceholder')}
               value={circleName}
               onChange={(e) => setCircleName(e.target.value)}
             />
@@ -232,7 +233,7 @@ export function AddBoothModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              판매폼/인포 링크
+              {t('booths', 'formUrl')}
             </label>
             <Input
               placeholder="https://witchform.com/..."
@@ -243,10 +244,10 @@ export function AddBoothModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              메모
+              {t('booths', 'memo')}
             </label>
             <Input
-              placeholder="예: 13시 이후 방문"
+              placeholder={t('booths', 'memoPlaceholder')}
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
             />
@@ -269,7 +270,7 @@ export function AddBoothModal({
               onClick={handleClose}
               className="flex-1"
             >
-              취소
+              {t('common', 'cancel')}
             </Button>
             <Button
               type="submit"
@@ -280,7 +281,7 @@ export function AddBoothModal({
                 (needsNewEvent && !newEventName.trim())
               }
             >
-              저장
+              {t('common', 'save')}
             </Button>
           </div>
         </form>

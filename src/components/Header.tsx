@@ -1,5 +1,6 @@
 import { ChevronLeft, Nut, Plus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { t } from '@/lib/i18n';
 
 interface HeaderProps {
   currentView: string;
@@ -19,11 +20,11 @@ export function Header({
   const getTitle = () => {
     switch (currentView) {
       case 'events':
-        return '도토리 주머니';
+        return t('settings', 'version');
       case 'booth-detail':
-        return '부스 상세';
+        return t('booths', 'title');
       default:
-        return '도토리 주머니';
+        return t('settings', 'version');
     }
   };
 

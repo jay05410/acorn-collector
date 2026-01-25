@@ -11,12 +11,14 @@ import { ItemChecklist } from '@/components/ItemChecklist';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useUIStore } from '@/stores/useUIStore';
+import { t } from '@/lib/i18n';
 
 interface BoothDetailProps {
   boothId: string;
+  onOpenSettings?: () => void;
 }
 
-export function BoothDetail({ boothId }: BoothDetailProps) {
+export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
   const { booth, isLoading } = useBooth(boothId);
   const { updateBooth, deleteBooth } = useBooths(booth?.eventId || '');
   const { setSelectedBoothId } = useUIStore();
@@ -29,7 +31,7 @@ export function BoothDetail({ boothId }: BoothDetailProps) {
   if (isLoading) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        로딩 중...
+        {t('common', 'loading')}
       </div>
     );
   }
@@ -37,7 +39,7 @@ export function BoothDetail({ boothId }: BoothDetailProps) {
   if (!booth) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        부스를 찾을 수 없습니다
+        {t('booths', 'noBooths')}
       </div>
     );
   }
@@ -62,7 +64,7 @@ export function BoothDetail({ boothId }: BoothDetailProps) {
   };
 
   const handleDelete = async () => {
-    if (confirm('이 부스를 삭제하시겠습니까?')) {
+    if (confirm(t('booths', 'deleteConfirm'))) {
       await deleteBooth(boothId);
       setSelectedBoothId(null);
     }
@@ -74,35 +76,35 @@ export function BoothDetail({ boothId }: BoothDetailProps) {
         {isEditing ? (
           <div className="space-y-3">
             <Input
-              placeholder="부스 번호"
+              placeholder={t('booths', 'boothNumber')}
               value={editBoothNumber}
               onChange={(e) => setEditBoothNumber(e.target.value)}
             />
             <Input
-              placeholder="서클/작가명"
+              placeholder={t('booths', 'circleName')}
               value={editCircleName}
               onChange={(e) => setEditCircleName(e.target.value)}
             />
             <Input
-              placeholder="판매폼/인포 링크"
+              placeholder={t('booths', 'formUrl')}
               value={editFormUrl}
               onChange={(e) => setEditFormUrl(e.target.value)}
             />
             <Input
-              placeholder="메모"
+              placeholder={t('booths', 'memo')}
               value={editMemo}
               onChange={(e) => setEditMemo(e.target.value)}
             />
             <div className="flex gap-2">
               <Button onClick={handleSaveEdit} className="flex-1">
-                저장
+                {t('common', 'save')}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => setIsEditing(false)}
                 className="flex-1"
               >
-                취소
+                {t('common', 'cancel')}
               </Button>
             </div>
           </div>
@@ -154,7 +156,9 @@ export function BoothDetail({ boothId }: BoothDetailProps) {
                         rel="noopener noreferrer"
                         className="text-amber-600 dark:text-amber-400 hover:underline truncate"
                       >
-                        {hasMultiple ? `판매폼 ${index + 1}` : '판매폼 열기'}
+                        {hasMultiple
+                          ? `${t('booths', 'openForm')} ${index + 1}`
+                          : t('booths', 'openForm')}
                       </a>
                     </div>
                   ));
@@ -168,7 +172,7 @@ export function BoothDetail({ boothId }: BoothDetailProps) {
                     rel="noopener noreferrer"
                     className="text-primary-dark dark:text-primary hover:underline truncate"
                   >
-                    원본 트윗 열기
+                    {t('booths', 'openSource')}
                   </a>
                 </div>
               )}
@@ -183,7 +187,11 @@ export function BoothDetail({ boothId }: BoothDetailProps) {
         )}
       </div>
 
-      <ItemChecklist boothId={boothId} imageUrls={booth.imageUrls} />
+      <ItemChecklist
+        boothId={boothId}
+        imageUrls={booth.imageUrls}
+        onOpenSettings={onOpenSettings}
+      />
     </div>
   );
 }

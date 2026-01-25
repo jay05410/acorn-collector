@@ -22,6 +22,7 @@ import { DatePicker } from '@/components/ui/DatePicker';
 import { PlaceAutocomplete } from '@/components/ui/PlaceAutocomplete';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 import type { Event, Booth } from '@/types';
 
 interface EventListProps {
@@ -61,11 +62,7 @@ export function EventList({
 
   const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (
-      confirm(
-        '이 행사를 삭제하시겠습니까? 포함된 모든 부스와 상품도 삭제됩니다.'
-      )
-    ) {
+    if (confirm(t('events', 'deleteConfirm'))) {
       await deleteEvent(id);
     }
   };
@@ -90,7 +87,7 @@ export function EventList({
   if (isLoading) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        로딩 중...
+        {t('common', 'loading')}
       </div>
     );
   }
@@ -107,7 +104,7 @@ export function EventList({
             className="space-y-3"
           >
             <Input
-              placeholder="행사 이름 (예: 서코 45회)"
+              placeholder={t('events', 'eventNamePlaceholder')}
               value={newEventName}
               onChange={(e) => setNewEventName(e.target.value)}
               autoFocus
@@ -115,16 +112,16 @@ export function EventList({
             <DatePicker
               value={newEventDate}
               onChange={setNewEventDate}
-              placeholder="행사 날짜"
+              placeholder={t('events', 'eventDate')}
             />
             <PlaceAutocomplete
               value={newEventLocation}
               onChange={setNewEventLocation}
-              placeholder="장소 (예: 코엑스)"
+              placeholder={t('events', 'eventLocationPlaceholder')}
             />
             <div className="flex gap-2">
               <Button type="submit" className="flex-1">
-                추가
+                {t('common', 'add')}
               </Button>
               <Button
                 type="button"
@@ -132,7 +129,7 @@ export function EventList({
                 onClick={() => setIsAdding(false)}
                 className="flex-1"
               >
-                취소
+                {t('common', 'cancel')}
               </Button>
             </div>
           </form>
@@ -142,12 +139,12 @@ export function EventList({
       {events.length === 0 && !isAdding ? (
         <EmptyState
           icon={<Calendar className="w-12 h-12" />}
-          title="등록된 행사가 없습니다"
-          description="새로운 행사를 추가해보세요"
+          title={t('events', 'noEvents')}
+          description={t('events', 'noEventsDesc')}
           action={
             <Button onClick={() => setIsAdding(true)}>
               <Plus className="w-4 h-4 mr-2" />
-              행사 추가
+              {t('events', 'addEvent')}
             </Button>
           }
         />
@@ -159,7 +156,7 @@ export function EventList({
               className="flex items-center gap-2 p-4 text-primary-dark dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
             >
               <Plus className="w-5 h-5" />
-              <span className="font-medium">새 행사 추가</span>
+              <span className="font-medium">{t('events', 'addEvent')}</span>
             </button>
           )}
           <div className="space-y-1 pb-3">
@@ -243,7 +240,7 @@ function EventItem({
       >
         <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
           <Input
-            placeholder="행사 이름"
+            placeholder={t('events', 'eventName')}
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             autoFocus
@@ -251,19 +248,19 @@ function EventItem({
           <DatePicker
             value={editDate}
             onChange={setEditDate}
-            placeholder="행사 날짜"
+            placeholder={t('events', 'eventDate')}
           />
           <PlaceAutocomplete
             value={editLocation}
             onChange={setEditLocation}
-            placeholder="장소"
+            placeholder={t('events', 'eventLocation')}
           />
           <div className="flex gap-2">
             <Button onClick={handleSave} className="flex-1">
-              저장
+              {t('common', 'save')}
             </Button>
             <Button variant="outline" onClick={handleCancel} className="flex-1">
-              취소
+              {t('common', 'cancel')}
             </Button>
           </div>
         </div>
@@ -275,8 +272,9 @@ function EventItem({
     <div id={`event-${event.id}`} className="mx-3 my-2">
       <div
         onClick={onToggleExpand}
-        className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl border-l-4 border-l-primary shadow-sm hover:shadow-md cursor-pointer transition-all group"
+        className="relative flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md cursor-pointer transition-all group overflow-hidden"
       >
+        <div className="absolute left-0 top-2 bottom-2 w-1 bg-primary rounded-r-full" />
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <button
             className="text-primary dark:text-primary"
@@ -310,7 +308,8 @@ function EventItem({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-primary dark:text-primary bg-primary-light dark:bg-primary-light px-2 py-0.5 rounded-full">
-            {boothCount}개 부스
+            {boothCount}
+            {t('events', 'boothCount')}
           </span>
           <Button
             variant="ghost"
@@ -390,7 +389,7 @@ function BoothPreviewList({
             }`}
           >
             <ArrowDownWideNarrow className="w-3.5 h-3.5" />
-            추가순
+            {t('booths', 'sortByOrder')}
           </button>
           <button
             onClick={() => setSortBy('boothNumber')}
@@ -401,13 +400,13 @@ function BoothPreviewList({
             }`}
           >
             <ArrowDownAZ className="w-3.5 h-3.5" />
-            부스번호순
+            {t('booths', 'sortByNumber')}
           </button>
         </div>
       )}
       {booths.length === 0 ? (
         <p className="text-sm text-gray-500 dark:text-gray-400 py-2">
-          등록된 부스가 없습니다
+          {t('booths', 'noBooths')}
         </p>
       ) : (
         <div className="space-y-1.5">
@@ -424,7 +423,8 @@ function BoothPreviewList({
         onClick={onAddBooth}
         className="flex items-center gap-1 text-sm text-primary-dark dark:text-primary hover:underline py-2 cursor-pointer"
       >
-        <Plus className="w-3.5 h-3.5" />새 부스 추가
+        <Plus className="w-3.5 h-3.5" />
+        {t('booths', 'addBooth')}
       </button>
     </div>
   );
@@ -461,7 +461,7 @@ function BoothPreviewItem({
           {isComplete ? (
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-green-500 px-2 py-0.5 rounded-full">
               <Check className="w-3 h-3" />
-              완료
+              {t('common', 'complete')}
             </span>
           ) : (
             <>

@@ -160,7 +160,10 @@ export default function App() {
           />
         )}
         {currentView === 'booth-detail' && selectedBoothId && (
-          <BoothDetail boothId={selectedBoothId} />
+          <BoothDetail
+            boothId={selectedBoothId}
+            onOpenSettings={() => setShowSettings(true)}
+          />
         )}
       </main>
 

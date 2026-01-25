@@ -10,33 +10,39 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { appStorage, type AppSettings, type ColorTheme } from '@/lib/storage';
+import {
+  appStorage,
+  type AppSettings,
+  type ColorTheme,
+  type Language,
+} from '@/lib/storage';
+import { setLanguage, LANGUAGE_OPTIONS, t } from '@/lib/i18n';
 import { exportDataAsJson, importDataFromJson } from '@/lib/export';
 import { testGeminiApiKey } from '@/lib/ai';
 
 const COLOR_THEMES: {
   value: ColorTheme;
-  label: string;
+  labelKey: 'acorn' | 'pink' | 'sky' | 'lavender';
   colors: { primary: string; accent: string };
 }[] = [
   {
     value: 'acorn',
-    label: '도토리',
+    labelKey: 'acorn',
     colors: { primary: '#d4a574', accent: '#f5e6d3' },
   },
   {
     value: 'pink',
-    label: '분홍',
+    labelKey: 'pink',
     colors: { primary: '#e8a0b4', accent: '#fce4ec' },
   },
   {
     value: 'sky',
-    label: '하늘',
+    labelKey: 'sky',
     colors: { primary: '#7eb8da', accent: '#e3f2fd' },
   },
   {
     value: 'lavender',
-    label: '연보라',
+    labelKey: 'lavender',
     colors: { primary: '#b39ddb', accent: '#ede7f6' },
   },
 ];
@@ -52,6 +58,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     defaultSortBy: 'createdAt',
     aiEnabled: false,
     geminiApiKey: '',
+    language: 'ko',
   });
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [apiKeyStatus, setApiKeyStatus] = useState<{
@@ -78,6 +85,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const handleColorThemeChange = async (colorTheme: ColorTheme) => {
     setSettings((prev) => ({ ...prev, colorTheme }));
     await appStorage.updateSettings({ colorTheme });
+  };
+
+  const handleLanguageChange = async (language: Language) => {
+    setSettings((prev) => ({ ...prev, language }));
+    setLanguage(language);
+    await appStorage.updateSettings({ language });
   };
 
   const handleAiToggle = async () => {
@@ -137,7 +150,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto animate-slideUp">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            설정
+            {t('settings', 'title')}
           </h2>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="w-5 h-5" />
@@ -147,10 +160,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <div className="p-4 space-y-6">
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              컬러 테마
+              {t('settings', 'colorTheme')}
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              다크모드는 브라우저 설정에 따라 자동 적용됩니다
+              {t('settings', 'colorThemeDesc')}
             </p>
             <div className="grid grid-cols-4 gap-2">
               {COLOR_THEMES.map((theme) => {
@@ -172,8 +185,37 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       }}
                     />
                     <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                      {theme.label}
+                      {t('themes', theme.labelKey)}
                     </span>
+                    {isSelected && (
+                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center">
+                        <Check className="w-2.5 h-2.5 text-white dark:text-gray-900" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              {t('settings', 'language')}
+            </h3>
+            <div className="grid grid-cols-4 gap-2">
+              {LANGUAGE_OPTIONS.map((lang) => {
+                const isSelected = settings.language === lang.value;
+                return (
+                  <button
+                    key={lang.value}
+                    onClick={() => handleLanguageChange(lang.value)}
+                    className={`relative flex items-center justify-center p-2 rounded-lg border transition-colors text-sm ${
+                      isSelected
+                        ? 'border-gray-900 dark:border-white bg-gray-100 dark:bg-gray-700'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'
+                    }`}
+                  >
+                    {lang.label}
                     {isSelected && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center">
                         <Check className="w-2.5 h-2.5 text-white dark:text-gray-900" />
@@ -189,7 +231,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
-                AI 추가하기
+                {t('settings', 'aiFeatures')}
               </h3>
               <button
                 onClick={handleAiToggle}
@@ -215,7 +257,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       type="password"
                       value={settings.geminiApiKey}
                       onChange={(e) => handleApiKeyChange(e.target.value)}
-                      placeholder="Gemini API 키"
+                      placeholder={t('settings', 'apiKeyPlaceholder')}
                       className="pl-9"
                     />
                   </div>
@@ -228,7 +270,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     {apiKeyStatus.testing ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      '확인'
+                      t('common', 'confirm')
                     )}
                   </Button>
                 </div>
@@ -241,16 +283,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     }`}
                   >
                     {apiKeyStatus.result.success
-                      ? '✓ API 키가 유효합니다'
+                      ? `✓ ${t('settings', 'apiKeyValid')}`
                       : `✗ ${apiKeyStatus.result.error}`}
                   </p>
                 )}
                 <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                  <p>
-                    AI로 OCR 결과 보정, 상품 분류 등 다양한 기능을 개선합니다.
-                  </p>
+                  <p>{t('settings', 'aiDesc')}</p>
                   <p className="text-gray-400 dark:text-gray-500">
-                    무료: 분당 10회, 하루 20회 제한 (프로젝트당)
+                    {t('settings', 'aiLimit')}
                   </p>
                 </div>
               </div>
@@ -259,7 +299,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              데이터 백업
+              {t('settings', 'dataBackup')}
             </h3>
             <div className="space-y-2">
               <Button
@@ -268,7 +308,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 onClick={handleExport}
               >
                 <Upload className="w-4 h-4 mr-2" />
-                데이터 내보내기 (JSON)
+                {t('settings', 'exportData')}
               </Button>
               <Button
                 variant="outline"
@@ -276,7 +316,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 onClick={handleImportClick}
               >
                 <Download className="w-4 h-4 mr-2" />
-                데이터 가져오기
+                {t('settings', 'importData')}
               </Button>
               <input
                 ref={fileInputRef}
@@ -296,7 +336,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         <div className="p-4 border-t dark:border-gray-700">
           <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-            도토리 주머니 v1.0.0
+            {t('settings', 'version')} v1.0.0
           </p>
         </div>
       </div>

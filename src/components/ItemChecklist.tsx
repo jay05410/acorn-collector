@@ -7,18 +7,23 @@ import { Input } from '@/components/ui/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { OCRModal } from '@/components/OCRModal';
+import { OCRModal, type SelectedItem } from '@/components/OCRModal';
 import { formatPrice } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import type { Item } from '@/types';
-import type { ImageAnalysisItem } from '@/lib/ai';
 
 interface ItemChecklistProps {
   boothId: string;
   imageUrls?: string[] | null;
+  onOpenSettings?: () => void;
 }
 
-export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
+export function ItemChecklist({
+  boothId,
+  imageUrls,
+  onOpenSettings,
+}: ItemChecklistProps) {
   const {
     items,
     isLoading,
@@ -56,7 +61,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
       name: itemName.trim(),
       price: itemPrice ? parseInt(itemPrice, 10) : null,
       badgeId: selectedBadgeId,
-      quantity: itemQuantity,
+      quantity: Math.max(1, itemQuantity),
     });
 
     setItemName('');
@@ -84,14 +89,14 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
     setIsCreatingBadge(false);
   };
 
-  const handleOCRItemsSelected = async (ocrItems: ImageAnalysisItem[]) => {
-    for (const item of ocrItems) {
+  const handleOCRItemsSelected = async (items: SelectedItem[]) => {
+    for (const item of items) {
       await createItem({
         boothId,
         name: item.name,
         price: item.price,
         badgeId: DEFAULT_BADGE_ID,
-        quantity: 1,
+        quantity: item.quantity,
       });
     }
   };
@@ -99,7 +104,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
   if (isLoading) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        로딩 중...
+        {t('common', 'loading')}
       </div>
     );
   }
@@ -107,7 +112,9 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
   return (
     <div className="flex flex-col">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <h3 className="font-medium text-gray-900 dark:text-white">상품 목록</h3>
+        <h3 className="font-medium text-gray-900 dark:text-white">
+          {t('items', 'title')}
+        </h3>
       </div>
 
       {isAdding && (
@@ -115,14 +122,14 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
           <div className="space-y-3">
             <Input
               ref={nameInputRef}
-              placeholder="상품명 (Enter로 추가)"
+              placeholder={t('items', 'itemNamePlaceholder')}
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
               onKeyDown={handleKeyDown}
             />
             <Input
               type="number"
-              placeholder="가격 (선택)"
+              placeholder={t('items', 'pricePlaceholder')}
               value={itemPrice}
               onChange={(e) => setItemPrice(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -130,7 +137,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                수량
+                {t('items', 'quantity')}
               </label>
               <div className="flex items-center gap-2">
                 {[1, 2, 3, 4].map((num) => (
@@ -181,7 +188,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                뱃지 선택
+                {t('items', 'badge')}
               </label>
               <div className="flex flex-wrap gap-2">
                 {badges.map((badge) => (
@@ -229,7 +236,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
             {isCreatingBadge && (
               <div className="flex gap-2 items-center">
                 <Input
-                  placeholder="새 뱃지 이름"
+                  placeholder={t('items', 'newBadge')}
                   value={newBadgeLabel}
                   onChange={(e) => setNewBadgeLabel(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateBadge()}
@@ -260,16 +267,13 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
             {hasImages && (
               <div className="flex items-center gap-2 text-xs text-primary-dark dark:text-primary bg-primary-light dark:bg-primary-light px-3 py-2 rounded-lg">
                 <Sparkles className="w-3 h-3 flex-shrink-0" />
-                <span>
-                  이미지가 있어요! 닫고 &quot;이미지에서 상품 추출&quot;로 자동
-                  입력해보세요.
-                </span>
+                <span>{t('items', 'imageHint')}</span>
               </div>
             )}
 
             <div className="flex gap-2">
               <Button onClick={handleAddItem} className="flex-1">
-                추가
+                {t('common', 'add')}
               </Button>
               <Button
                 variant="outline"
@@ -280,7 +284,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
                 }}
                 className="flex-1"
               >
-                닫기
+                {t('common', 'close')}
               </Button>
             </div>
           </div>
@@ -289,12 +293,8 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
 
       {items.length === 0 && !isAdding ? (
         <EmptyState
-          title="등록된 상품이 없습니다"
-          description={
-            hasImages
-              ? '이미지에서 상품을 자동으로 추출하거나 직접 추가해보세요'
-              : '구매/수령할 상품을 추가해보세요'
-          }
+          title={t('items', 'noItems')}
+          description={t('items', 'noItemsDesc')}
           action={
             <div className="flex flex-col gap-2">
               {hasImages && (
@@ -305,12 +305,12 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
                   className="border-primary text-primary hover:bg-primary-light dark:border-primary dark:text-primary dark:hover:bg-primary-light"
                 >
                   <Sparkles className="w-4 h-4 mr-1" />
-                  이미지에서 상품 추출
+                  {t('items', 'extractFromImage')}
                 </Button>
               )}
               <Button onClick={() => setIsAdding(true)} size="sm">
                 <Plus className="w-4 h-4 mr-1" />
-                상품 추가
+                {t('items', 'addItem')}
               </Button>
             </div>
           }
@@ -327,7 +327,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
                 >
                   <Sparkles className="w-4 h-4" />
                   <span className="text-sm font-medium">
-                    이미지에서 상품 추출
+                    {t('items', 'extractFromImage')}
                   </span>
                   <Camera className="w-3 h-3 ml-1 opacity-60" />
                 </button>
@@ -337,7 +337,9 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
                 className="flex items-center gap-2 px-4 py-3 text-primary-dark dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
               >
                 <Plus className="w-4 h-4" />
-                <span className="text-sm font-medium">상품 추가</span>
+                <span className="text-sm font-medium">
+                  {t('items', 'addItem')}
+                </span>
               </button>
             </div>
           )}
@@ -363,6 +365,7 @@ export function ItemChecklist({ boothId, imageUrls }: ItemChecklistProps) {
           onClose={() => setIsOCRModalOpen(false)}
           imageUrls={imageUrls}
           onItemsSelected={handleOCRItemsSelected}
+          onOpenSettings={onOpenSettings}
         />
       )}
     </div>
@@ -429,14 +432,14 @@ function ItemRow({
       >
         <div className="space-y-2">
           <Input
-            placeholder="상품명"
+            placeholder={t('items', 'itemName')}
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             autoFocus
           />
           <Input
             type="number"
-            placeholder="가격"
+            placeholder={t('items', 'price')}
             value={editPrice}
             onChange={(e) => setEditPrice(e.target.value)}
           />
@@ -471,7 +474,7 @@ function ItemRow({
           </div>
           <div className="flex gap-2">
             <Button onClick={handleSave} size="sm" className="flex-1">
-              저장
+              {t('common', 'save')}
             </Button>
             <Button
               variant="outline"
@@ -479,7 +482,7 @@ function ItemRow({
               size="sm"
               className="flex-1"
             >
-              취소
+              {t('common', 'cancel')}
             </Button>
           </div>
         </div>
