@@ -7,6 +7,7 @@ import { useBadges } from '@/hooks/useBadges';
 import { Button } from '@/components/ui/Button';
 import { exportChecklistAsImage } from '@/lib/export';
 import { formatPrice } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 import type { Booth, Item } from '@/types';
 
 type ExportMode = 'receipt' | 'checklist';
@@ -106,7 +107,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
       <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-sm max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            체크리스트 내보내기
+            {t('export', 'title')}
           </h2>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="w-5 h-5" />
@@ -124,7 +125,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
               }`}
             >
               <Check className="w-4 h-4" />
-              체크리스트
+              {t('export', 'boothList')}
             </button>
             <button
               onClick={() => setMode('receipt')}
@@ -135,12 +136,9 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
               }`}
             >
               <Receipt className="w-4 h-4" />
-              영수증
+              {t('export', 'eventInfo')}
             </button>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-            {mode === 'checklist' ? '방문할 부스 목록용' : '금액 정산 포함'}
-          </p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -150,9 +148,8 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
             style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
           >
             <div className="text-center mb-3">
-              <div className="text-2xl mb-1">🌰</div>
               <h1 className="text-lg font-bold text-gray-800">
-                {eventName || '체크리스트'}
+                {eventName || t('export', 'title')}
               </h1>
               {eventDate && (
                 <p className="text-sm text-gray-500">{eventDate}</p>
@@ -166,7 +163,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
 
             {booths.length === 0 ? (
               <p className="text-center text-gray-400 py-4">
-                등록된 부스가 없습니다
+                {t('booths', 'noBooths')}
               </p>
             ) : (
               <div className="space-y-3">
@@ -185,26 +182,20 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
 
             <div className="text-sm text-gray-600">
               <div className="flex justify-between mb-1">
-                <span>총 부스</span>
-                <span className="font-medium">{totalBooths}개</span>
+                <span>{t('booths', 'title')}</span>
+                <span className="font-medium">{totalBooths}</span>
               </div>
               <div className="flex justify-between mb-1">
-                <span>총 상품</span>
-                <span className="font-medium">
-                  {totals.checkedItems}/{totals.totalItems}개 완료
-                </span>
+                <span>{t('items', 'title')}</span>
+                <span className="font-medium">{totals.totalItems}</span>
               </div>
               {mode === 'receipt' && totals.totalEstimated > 0 && (
                 <>
                   <div className="border-t border-dashed border-gray-200 my-2" />
                   <div className="flex justify-between mb-1">
-                    <span>예상 지출</span>
-                    <span className="font-medium">
-                      {formatPrice(totals.totalEstimated)}
-                    </span>
+                    <span>{formatPrice(totals.totalEstimated)}</span>
                   </div>
                   <div className="flex justify-between text-green-600 font-semibold">
-                    <span>구매 완료</span>
                     <span>{formatPrice(totals.totalSpent)}</span>
                   </div>
                 </>
@@ -212,7 +203,9 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
             </div>
 
             <div className="text-center mt-3 pt-2 border-t border-dashed border-gray-300">
-              <p className="text-xs text-gray-400">도토리 주머니 🌰</p>
+              <p className="text-xs text-gray-400">
+                {t('settings', 'version')}
+              </p>
             </div>
           </div>
         </div>
@@ -220,7 +213,6 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
         <div className="flex gap-2 p-4 border-t dark:border-gray-700">
           <Button variant="outline" onClick={handleShare} className="flex-1">
             <Share2 className="w-4 h-4 mr-2" />
-            공유
           </Button>
           <Button
             onClick={handleExport}
@@ -228,7 +220,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
             disabled={isExporting}
           >
             <Download className="w-4 h-4 mr-2" />
-            {isExporting ? '저장 중...' : '이미지 저장'}
+            {isExporting ? t('common', 'loading') : t('common', 'save')}
           </Button>
         </div>
       </div>
@@ -322,7 +314,7 @@ function BoothSection({ booth, onItemsLoaded, showPrices }: BoothSectionProps) {
           })}
         </ul>
       ) : (
-        <p className="text-xs text-gray-400 italic">아이템 없음</p>
+        <p className="text-xs text-gray-400 italic">{t('items', 'noItems')}</p>
       )}
 
       {showPrices && boothTotal > 0 && (
