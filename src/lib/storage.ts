@@ -8,12 +8,23 @@ export interface PendingAddData {
 }
 
 export type ColorTheme = 'acorn' | 'pink' | 'sky' | 'lavender';
+export type Language = 'ko' | 'en' | 'ja' | 'zh';
 
 export interface AppSettings {
   colorTheme: ColorTheme;
   defaultSortBy: 'boothNumber' | 'createdAt' | 'custom';
   aiEnabled: boolean;
   geminiApiKey: string;
+  language: Language;
+}
+
+function getDefaultLanguage(): Language {
+  const browserLang = navigator.language.split('-')[0];
+  if (browserLang === 'ko') return 'ko';
+  if (browserLang === 'ja') return 'ja';
+  if (browserLang === 'zh') return 'zh';
+  if (browserLang === 'en') return 'en';
+  return 'ko';
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -21,6 +32,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultSortBy: 'createdAt',
   aiEnabled: false,
   geminiApiKey: '',
+  language: getDefaultLanguage(),
 };
 
 function isPendingAddData(value: unknown): value is PendingAddData {
