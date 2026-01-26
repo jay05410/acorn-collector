@@ -1,6 +1,7 @@
-import { ChevronLeft, Nut, Plus, Settings } from 'lucide-react';
+import { ChevronLeft, Nut, Plus, Settings, User, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { t } from '@/lib/i18n';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 interface HeaderProps {
   currentView: string;
@@ -8,6 +9,7 @@ interface HeaderProps {
   showBack: boolean;
   onAddClick: () => void;
   onSettingsClick: () => void;
+  onCreditClick?: () => void;
 }
 
 export function Header({
@@ -16,7 +18,10 @@ export function Header({
   showBack,
   onAddClick,
   onSettingsClick,
+  onCreditClick,
 }: HeaderProps) {
+  const { isAuthenticated, credits, user } = useAuthStore();
+
   const getTitle = () => {
     switch (currentView) {
       case 'events':
@@ -50,6 +55,27 @@ export function Header({
         </h1>
       </div>
       <div className="flex items-center gap-1">
+        {isAuthenticated && (
+          <button
+            onClick={onCreditClick}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100 transition-colors"
+            title={user?.email}
+          >
+            <Coins className="w-4 h-4 text-amber-600" />
+            <span className="text-sm font-medium text-amber-700">
+              {credits.toLocaleString()}
+            </span>
+          </button>
+        )}
+        {!isAuthenticated && (
+          <button
+            onClick={onSettingsClick}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors text-sm text-gray-600"
+          >
+            <User className="w-4 h-4" />
+            로그인
+          </button>
+        )}
         <Button
           variant="ghost"
           size="icon"
