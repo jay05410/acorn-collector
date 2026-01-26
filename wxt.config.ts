@@ -15,6 +15,9 @@ export default defineConfig({
       'import.meta.env.VITE_KAKAO_API_KEY': JSON.stringify(
         process.env.VITE_KAKAO_API_KEY || ''
       ),
+      'import.meta.env.VITE_GOOGLE_PLACES_API_KEY': JSON.stringify(
+        process.env.VITE_GOOGLE_PLACES_API_KEY || ''
+      ),
     },
   }),
   manifest: ({ mode }) => ({
@@ -25,8 +28,9 @@ export default defineConfig({
               "script-src 'self' http://localhost:3000; object-src 'self'",
           }
         : undefined,
-    name: '도토리 주머니',
-    description: '행사 준비용 체크리스트 관리',
+    name: '__MSG_appName__',
+    description: '__MSG_appDescription__',
+    default_locale: 'ko',
     version: '1.0.0',
     permissions: ['storage', 'contextMenus', 'activeTab', 'sidePanel'],
     host_permissions: ['<all_urls>'],

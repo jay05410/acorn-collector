@@ -2,17 +2,12 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { MapPin, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { searchPlaces, hasKakaoApiKey, type KakaoPlace } from '@/lib/kakao';
-
-const COMMON_VENUES = [
-  { name: '코엑스', address: '서울 강남구 영동대로 513' },
-  { name: '세텍 (SETEC)', address: '서울 강남구 남부순환로 3104' },
-  { name: 'aT센터', address: '서울 서초구 강남대로 27' },
-  { name: '킨텍스 (KINTEX)', address: '경기 고양시 일산서구 킨텍스로 217-60' },
-  { name: '벡스코 (BEXCO)', address: '부산 해운대구 APEC로 55' },
-  { name: '대구 엑스코 (EXCO)', address: '대구 북구 엑스코로 10' },
-  { name: '송도컨벤시아', address: '인천 연수구 센트럴로 123' },
-  { name: 'DDP (동대문디자인플라자)', address: '서울 중구 을지로 281' },
-];
+import {
+  searchGooglePlaces,
+  hasGooglePlacesApiKey,
+  type GooglePlace,
+} from '@/lib/google-places';
+import { getLanguage } from '@/lib/i18n';
 
 interface Venue {
   name: string;
@@ -29,7 +24,7 @@ interface PlaceAutocompleteProps {
 export function PlaceAutocomplete({
   value,
   onChange,
-  placeholder = '장소 검색',
+  placeholder,
   className,
 }: PlaceAutocompleteProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -39,7 +34,9 @@ export function PlaceAutocomplete({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasApiKey = hasKakaoApiKey();
+
+  const isKorean = getLanguage() === 'ko';
+  const hasApiKey = isKorean ? hasKakaoApiKey() : hasGooglePlacesApiKey();
 
   useEffect(() => {
     setInputValue(value);
@@ -62,48 +59,35 @@ export function PlaceAutocomplete({
   const searchWithApi = useCallback(
     async (query: string) => {
       if (!hasApiKey || !query.trim()) {
-        if (!query.trim()) {
-          setVenues(COMMON_VENUES);
-        } else {
-          const filtered = COMMON_VENUES.filter(
-            (venue) =>
-              venue.name.toLowerCase().includes(query.toLowerCase()) ||
-              venue.address.toLowerCase().includes(query.toLowerCase())
-          );
-          setVenues(filtered);
-        }
+        setVenues([]);
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
       try {
-        const results = await searchPlaces(query);
-        const mappedVenues: Venue[] = results.map((place: KakaoPlace) => ({
-          name: place.place_name,
-          address: place.road_address_name || place.address_name,
-        }));
-        setVenues(
-          mappedVenues.length > 0
-            ? mappedVenues
-            : COMMON_VENUES.filter(
-                (venue) =>
-                  venue.name.toLowerCase().includes(query.toLowerCase()) ||
-                  venue.address.toLowerCase().includes(query.toLowerCase())
-              )
-        );
+        if (isKorean) {
+          const results = await searchPlaces(query);
+          const mappedVenues: Venue[] = results.map((place: KakaoPlace) => ({
+            name: place.place_name,
+            address: place.road_address_name || place.address_name,
+          }));
+          setVenues(mappedVenues);
+        } else {
+          const results = await searchGooglePlaces(query);
+          const mappedVenues: Venue[] = results.map((place: GooglePlace) => ({
+            name: place.name,
+            address: place.formatted_address,
+          }));
+          setVenues(mappedVenues);
+        }
       } catch {
-        const filtered = COMMON_VENUES.filter(
-          (venue) =>
-            venue.name.toLowerCase().includes(query.toLowerCase()) ||
-            venue.address.toLowerCase().includes(query.toLowerCase())
-        );
-        setVenues(filtered);
+        setVenues([]);
       } finally {
         setIsLoading(false);
       }
     },
-    [hasApiKey]
+    [hasApiKey, isKorean]
   );
 
   const handleInputChange = useCallback(
@@ -111,6 +95,9 @@ export function PlaceAutocomplete({
       const newValue = e.target.value;
       setInputValue(newValue);
       onChange(newValue);
+
+      if (!hasApiKey) return;
+
       setIsOpen(true);
 
       if (debounceRef.current) {
@@ -121,7 +108,7 @@ export function PlaceAutocomplete({
         searchWithApi(newValue);
       }, 300);
     },
-    [onChange, searchWithApi]
+    [onChange, searchWithApi, hasApiKey]
   );
 
   const handleSelectVenue = useCallback(
@@ -135,13 +122,11 @@ export function PlaceAutocomplete({
   );
 
   const handleFocus = useCallback(() => {
-    setIsOpen(true);
-    if (inputValue) {
+    if (hasApiKey && inputValue) {
+      setIsOpen(true);
       searchWithApi(inputValue);
-    } else {
-      setVenues(COMMON_VENUES);
     }
-  }, [inputValue, searchWithApi]);
+  }, [inputValue, searchWithApi, hasApiKey]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
