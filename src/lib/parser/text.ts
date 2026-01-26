@@ -1,5 +1,123 @@
 import type { ParsedBooth } from '@/types';
 
+const EVENT_KEYWORDS = {
+  ko: [
+    '서코',
+    '코믹월드',
+    '서울코믹월드',
+    '디페스타',
+    '동네페스타',
+    '디페',
+    '일러스타',
+    '아이소',
+    '부스데이즈',
+    '온리전',
+    '팬미팅',
+  ],
+  en: [
+    'Comiket',
+    'Comic Market',
+    'Anime Expo',
+    'AX',
+    'Anime NYC',
+    'Otakon',
+    'Fanime',
+    'Anime Central',
+    'Artist Alley',
+    'Fan Expo',
+    'Comic Con',
+    'SDCC',
+    'NYCC',
+    'Anime Boston',
+    'Katsucon',
+    'AWA',
+  ],
+  ja: [
+    'コミケ',
+    'コミックマーケット',
+    'コミティア',
+    'COMITIA',
+    'コミトレ',
+    'コミックトレジャー',
+    'サンクリ',
+    'サンシャインクリエイション',
+    'スパコミ',
+    'SUPER COMIC CITY',
+    'コミックシティ',
+    'COMIC CITY',
+    'ワンフェス',
+    'ワンダーフェスティバル',
+    'C\\d+',
+  ],
+  zh: [
+    'CP',
+    'BW',
+    'ComiCon',
+    '漫展',
+    '同人展',
+    '国漫',
+    'ChinaJoy',
+    'CJ',
+    'CICF',
+    'COMICUP',
+    '魔都同人祭',
+    'SHCC',
+    'BJCC',
+  ],
+};
+
+const ZONE_KEYWORDS = {
+  ko: [
+    '쁘띠존',
+    '프리존',
+    '신간존',
+    '합동존',
+    '기업존',
+    '동인존',
+    '일반존',
+    '특별존',
+  ],
+  en: [
+    'Artist Alley',
+    'Dealer',
+    'Small Press',
+    'Corporate',
+    'Indie',
+    'Fan Table',
+  ],
+  ja: [
+    '企業ブース',
+    '同人ブース',
+    'サークルスペース',
+    '壁サークル',
+    '島中',
+    'お誕生日席',
+  ],
+  zh: ['同人区', '企业区', '画师区', '独立区'],
+};
+
+const BOOTH_SUFFIXES = {
+  ko: ['부스', '번'],
+  en: ['booth', 'table'],
+  ja: ['ブース', '番', 'スペース'],
+  zh: ['摊位', '号'],
+};
+
+function buildEventRegex(): RegExp {
+  const allKeywords = Object.values(EVENT_KEYWORDS).flat();
+  return new RegExp(`(${allKeywords.join('|')})\\d*`, 'i');
+}
+
+function buildZoneRegex(): RegExp {
+  const allKeywords = Object.values(ZONE_KEYWORDS).flat();
+  return new RegExp(`(${allKeywords.join('|')})`, 'i');
+}
+
+function buildBoothSuffixPattern(): string {
+  const allSuffixes = Object.values(BOOTH_SUFFIXES).flat();
+  return `(?:${allSuffixes.join('|')})?`;
+}
+
 interface ParseOptions {
   author?: string;
 }
@@ -14,15 +132,17 @@ export function parseBoothText(
 
   let confidence = 0;
 
-  // 부스번호 파싱: [이벤트/A-01], A-01, A01, C18부스 등
   const bracketMatch = text.match(/\[([^\]/]+)\/([A-Z]-?\d+)\]/i);
   if (bracketMatch && bracketMatch[1] && bracketMatch[2]) {
     result.eventHint = bracketMatch[1].trim();
     result.boothNumber = bracketMatch[2].toUpperCase();
     confidence += 0.5;
   } else {
-    // "C18부스", "A-01", "A01" 등
-    const boothMatch = text.match(/\b([A-Z]-?\d{1,3})(?:부스|번)?\b/i);
+    const boothPattern = new RegExp(
+      `\\b([A-Z]-?\\d{1,3})${buildBoothSuffixPattern()}\\b`,
+      'i'
+    );
+    const boothMatch = text.match(boothPattern);
     if (boothMatch && boothMatch[1]) {
       result.boothNumber = boothMatch[1].toUpperCase();
       confidence += 0.3;
@@ -30,18 +150,16 @@ export function parseBoothText(
   }
 
   if (!result.eventHint) {
-    const eventMatch = text.match(
-      /(서코\d*|코믹월드\d*|서울코믹월드|디페스타|동네페스타|디페\d*|일러스타\d*|아이소|부스데이즈|온리전|팬미팅)/i
-    );
+    const eventRegex = buildEventRegex();
+    const eventMatch = text.match(eventRegex);
     if (eventMatch) {
       result.eventHint = eventMatch[1];
       confidence += 0.1;
     }
   }
 
-  const zoneMatch = text.match(
-    /(쁘띠존|프리존|신간존|합동존|기업존|동인존|일반존|특별존)/i
-  );
+  const zoneRegex = buildZoneRegex();
+  const zoneMatch = text.match(zoneRegex);
   if (zoneMatch) {
     result.zone = zoneMatch[1];
     confidence += 0.1;
