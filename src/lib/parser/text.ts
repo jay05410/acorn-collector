@@ -103,6 +103,14 @@ const BOOTH_SUFFIXES = {
   zh: ['摊位', '号'],
 };
 
+// Mail order keywords - when detected, use as booth number instead of physical location
+const MAIL_ORDER_KEYWORDS = {
+  ko: ['통판', '통신판매', '온라인판매'],
+  en: ['mail order', 'online order', 'pre-order', 'preorder'],
+  ja: ['通販', '通信販売', 'オンライン販売'],
+  zh: ['通贩', '通販', '网购', '邮购'],
+};
+
 function buildEventRegex(): RegExp {
   const allKeywords = Object.values(EVENT_KEYWORDS).flat();
   return new RegExp(`(${allKeywords.join('|')})\\d*`, 'i');
@@ -116,6 +124,11 @@ function buildZoneRegex(): RegExp {
 function buildBoothSuffixPattern(): string {
   const allSuffixes = Object.values(BOOTH_SUFFIXES).flat();
   return `(?:${allSuffixes.join('|')})?`;
+}
+
+function buildMailOrderRegex(): RegExp {
+  const allKeywords = Object.values(MAIL_ORDER_KEYWORDS).flat();
+  return new RegExp(`(${allKeywords.join('|')})`, 'i');
 }
 
 interface ParseOptions {
@@ -132,20 +145,27 @@ export function parseBoothText(
 
   let confidence = 0;
 
-  const bracketMatch = text.match(/\[([^\]/]+)\/([A-Z]-?\d+)\]/i);
-  if (bracketMatch && bracketMatch[1] && bracketMatch[2]) {
-    result.eventHint = bracketMatch[1].trim();
-    result.boothNumber = bracketMatch[2].toUpperCase();
-    confidence += 0.5;
+  const mailOrderRegex = buildMailOrderRegex();
+  const mailOrderMatch = text.match(mailOrderRegex);
+  if (mailOrderMatch) {
+    result.boothNumber = '통판';
+    confidence += 0.4;
   } else {
-    const boothPattern = new RegExp(
-      `\\b([A-Z]-?\\d{1,3})${buildBoothSuffixPattern()}\\b`,
-      'i'
-    );
-    const boothMatch = text.match(boothPattern);
-    if (boothMatch && boothMatch[1]) {
-      result.boothNumber = boothMatch[1].toUpperCase();
-      confidence += 0.3;
+    const bracketMatch = text.match(/\[([^\]/]+)\/([A-Z]-?\d+)\]/i);
+    if (bracketMatch && bracketMatch[1] && bracketMatch[2]) {
+      result.eventHint = bracketMatch[1].trim();
+      result.boothNumber = bracketMatch[2].toUpperCase();
+      confidence += 0.5;
+    } else {
+      const boothPattern = new RegExp(
+        `\\b([A-Z]-?\\d{1,3})${buildBoothSuffixPattern()}\\b`,
+        'i'
+      );
+      const boothMatch = text.match(boothPattern);
+      if (boothMatch && boothMatch[1]) {
+        result.boothNumber = boothMatch[1].toUpperCase();
+        confidence += 0.3;
+      }
     }
   }
 

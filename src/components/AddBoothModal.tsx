@@ -126,7 +126,7 @@ export function AddBoothModal({
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto animate-slideUp">
+      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 animate-slideUp">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             {t('booths', 'addBooth')}
