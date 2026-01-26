@@ -9,27 +9,17 @@ export default defineConfig({
       port: 3000,
     },
   },
-  vite: () => {
-    console.log(
-      '[Build] VITE_KAKAO_API_KEY exists:',
-      !!process.env.VITE_KAKAO_API_KEY
-    );
-    console.log(
-      '[Build] VITE_GOOGLE_PLACES_API_KEY exists:',
-      !!process.env.VITE_GOOGLE_PLACES_API_KEY
-    );
-    return {
-      plugins: [tailwindcss()],
-      define: {
-        'import.meta.env.VITE_KAKAO_API_KEY': JSON.stringify(
-          process.env.VITE_KAKAO_API_KEY || ''
-        ),
-        'import.meta.env.VITE_GOOGLE_PLACES_API_KEY': JSON.stringify(
-          process.env.VITE_GOOGLE_PLACES_API_KEY || ''
-        ),
-      },
-    };
-  },
+  vite: () => ({
+    plugins: [tailwindcss()],
+    define: {
+      'import.meta.env.VITE_KAKAO_API_KEY': JSON.stringify(
+        process.env.VITE_KAKAO_API_KEY || ''
+      ),
+      'import.meta.env.VITE_GOOGLE_PLACES_API_KEY': JSON.stringify(
+        process.env.VITE_GOOGLE_PLACES_API_KEY || ''
+      ),
+    },
+  }),
   manifest: ({ mode }) => ({
     content_security_policy:
       mode === 'development'
