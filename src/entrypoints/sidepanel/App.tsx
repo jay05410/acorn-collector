@@ -11,6 +11,7 @@ import {
   type PendingAddData,
   type ColorTheme,
 } from '@/lib/storage';
+import { setLanguage } from '@/lib/i18n';
 
 type View = 'events' | 'booth-detail';
 
@@ -56,6 +57,7 @@ export default function App() {
 
     appStorage.getSettings().then((settings) => {
       applySettings(settings.colorTheme);
+      setLanguage(settings.language);
     });
 
     const unwatch = appStorage.watchSettings((settings) => {
