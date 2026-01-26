@@ -1,0 +1,20 @@
+name = "acorn-collector-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "acorn-db"
+database_id = "placeholder-update-after-creation"
+
+[vars]
+ENVIRONMENT = "development"
+
+# Production secrets (set via wrangler secret put)
+# GEMINI_API_KEY
+# STRIPE_SECRET_KEY
+# STRIPE_WEBHOOK_SECRET
+# TOSS_SECRET_KEY
+# TOSS_WEBHOOK_SECRET
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
