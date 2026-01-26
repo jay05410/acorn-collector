@@ -31,7 +31,7 @@ function getCacheKey(imageUrls: string[]): string {
 }
 
 function getPrompt(imageCount: number): string {
-  return `Extract product list from ${imageCount} doujin/fan event booth image(s).
+  const instruction = `Extract product list from ${imageCount} doujin/fan event booth image(s).
 
 [PRODUCT NAME RULES - MOST IMPORTANT]
 1. Product name MUST be SPECIFIC and DESCRIPTIVE
@@ -67,8 +67,11 @@ Create SEPARATE products when: Each variant has its OWN name written separately
 - Does name include the character/design identifier visible in image?
 
 JSON only:
-{"items":[{"name":"string","price":number|null,"category":"string","options":["string"]?}]}
-`;
+{"items":[{"name":"string","price":number|null,"category":"string","options":["string"]?}]}`;
+
+  // Prompt Repetition: Repeating the prompt twice improves accuracy
+  // Research: https://arxiv.org/abs/... (Google Research 2025)
+  return `${instruction}\n\n---\n\n${instruction}`;
 }
 
 async function fetchImageAsBase64(
