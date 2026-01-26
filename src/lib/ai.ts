@@ -1,8 +1,9 @@
 import { GoogleGenAI, type Part } from '@google/genai';
 import { appStorage } from './storage';
 import { t } from './i18n';
+import { apiClient, ApiError } from './api-client';
 
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const GEMINI_MODEL = 'gemini-2.0-flash-lite';
 const MAX_IMAGES = 4;
 
 export interface ImageAnalysisItem {
@@ -17,11 +18,14 @@ export interface ImageAnalysisResult {
   items: ImageAnalysisItem[];
   overallConfidence: number;
   tokenCount?: number;
+  creditUsed?: number;
+  remainingCredits?: number;
 }
 
 export interface AnalysisOptions {
   onProgress?: (status: string) => void;
   signal?: AbortSignal;
+  useProxy?: boolean;
 }
 
 const analysisCache = new Map<string, ImageAnalysisResult>();
@@ -30,48 +34,41 @@ function getCacheKey(imageUrls: string[]): string {
   return imageUrls.sort().join('|');
 }
 
-function getPrompt(imageCount: number): string {
-  const instruction = `Extract product list from ${imageCount} doujin/fan event booth image(s).
+function getBaseInstruction(imageCount: number): string {
+  return `Extract UNIQUE products from ${imageCount} booth price list image(s).
 
-[PRODUCT NAME RULES - MOST IMPORTANT]
-1. Product name MUST be SPECIFIC and DESCRIPTIVE
-2. Product name must NEVER be just the category (sticker, keyring, postcard, etc.)
-3. Include character names, design names, or descriptive modifiers in the product name
+[CRITICAL - NO DUPLICATES]
+- Each product appears ONCE in output
+- If same product shown multiple times, output it ONLY ONCE
 
-WRONG: name="스티커", category="sticker" (name is just category!)
-WRONG: name="엽서", category="postcard" (name is just category!)
-CORRECT: name="조각스티커 강민재&차주환", category="sticker"
-CORRECT: name="강하성 폴라로이드", category="photocard"
+[LAYOUT]
+- Product name/price are NEAR each other spatially
+- Ignore distant text (booth name, event name, artist name)
 
-[OPTIONS vs SEPARATE PRODUCTS - CRITICAL]
-Use OPTIONS only when: ONE product name + multiple character/variant choices at SAME price
-- "뿅뿅키링 3000원 (A, B, C, D)" → name="뿅뿅키링", options=["A","B","C","D"]
+[NAME RULES]
+- Use ONLY text directly next to product
+- NEVER add distant prefixes (event/booth/artist name)
 
-Create SEPARATE products when: Each variant has its OWN name written separately
-- "가가 스티커 3000원" + "나나 스티커 3000원" → TWO separate products, NO options
-  → {name:"가가 스티커", price:3000}
-  → {name:"나나 스티커", price:3000}
+WRONG: "ORV 엽서" (ORV is distant booth name)
+RIGHT: "엽서 세트" (actual product name)
 
-[EXTRACT PER PRODUCT]
-- name: SPECIFIC product name (MUST include character/design name if visible, NEVER just category)
-- price: Number only (free=0, unknown=null)
+[OPTIONS vs SEPARATE]
+- OPTIONS: "키링 3000원 (A,B,C)" → {name:"키링", options:["A","B","C"]}
+- SEPARATE: Different names → separate items
+
+[FORMAT]
+- name: Direct product text only
+- price: Number (free=0, unknown=null)  
 - category: acrylic|keyring|stand|poster|postcard|sticker|photocard|memo|tape|badge|book|calendar|pouch|plush|apparel|other
-- options: ONLY when single product has selectable variants listed together
 
 [EXCLUDE]
-- Booth numbers, SNS, URLs, shipping info
-- Broken/garbled text
+Booth#, SNS, URL, shipping
 
-[FINAL CHECK]
-- Is name DIFFERENT from category? If name="스티커" and category="sticker", FIX IT!
-- Does name include the character/design identifier visible in image?
+JSON: {"items":[{"name":"string","price":number|null,"category":"string","options"?:["string"]}]}`;
+}
 
-JSON only:
-{"items":[{"name":"string","price":number|null,"category":"string","options":["string"]?}]}`;
-
-  // Prompt Repetition: Repeating the prompt twice improves accuracy
-  // Research: https://arxiv.org/abs/... (Google Research 2025)
-  return `${instruction}\n\n---\n\n${instruction}`;
+function getPrompt(imageCount: number): string {
+  return getBaseInstruction(imageCount);
 }
 
 async function fetchImageAsBase64(
@@ -89,21 +86,30 @@ async function fetchImageAsBase64(
   return { data: base64, mimeType: blob.type || 'image/jpeg' };
 }
 
-async function loadImages(imageUrls: string[]): Promise<Part[]> {
-  const parts: Part[] = [];
-  const urls = imageUrls.slice(0, MAX_IMAGES);
+async function loadImages(
+  imageUrls: string[],
+  onProgress?: (loaded: number, total: number) => void
+): Promise<Part[]> {
+  const urls = imageUrls.slice(0, MAX_IMAGES).filter(Boolean);
+  let loaded = 0;
 
-  for (const url of urls) {
-    if (!url) continue;
-    try {
-      const { data, mimeType } = await fetchImageAsBase64(url);
-      parts.push({ inlineData: { data, mimeType } });
-    } catch (err) {
-      console.error('[AI] Image load failed:', err);
-    }
-  }
+  const results = await Promise.all(
+    urls.map(async (url) => {
+      try {
+        const { data, mimeType } = await fetchImageAsBase64(url);
+        loaded++;
+        onProgress?.(loaded, urls.length);
+        return { inlineData: { data, mimeType } } as Part;
+      } catch (err) {
+        console.error('[AI] Image load failed:', err);
+        loaded++;
+        onProgress?.(loaded, urls.length);
+        return null;
+      }
+    })
+  );
 
-  return parts;
+  return results.filter((p): p is Part => p !== null);
 }
 
 function parseResponse(text: string): ImageAnalysisItem[] {
@@ -122,7 +128,7 @@ function parseResponse(text: string): ImageAnalysisItem[] {
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
-    const items = (parsed.items || []).map(
+    const rawItems = (parsed.items || []).map(
       (item: {
         name: string;
         price?: number | null;
@@ -136,11 +142,97 @@ function parseResponse(text: string): ImageAnalysisItem[] {
         confidence: 95,
       })
     );
-    console.log('[AI] Parsed items:', items.length);
+
+    const seen = new Set<string>();
+    const items = rawItems.filter((item: ImageAnalysisItem) => {
+      const dedupeKey = `${item.name}|${item.price}|${item.category}`;
+      if (seen.has(dedupeKey)) return false;
+      seen.add(dedupeKey);
+      return true;
+    });
+
+    console.log(
+      '[AI] Parsed items:',
+      rawItems.length,
+      '→ unique:',
+      items.length
+    );
     return items;
   } catch (e) {
     console.error('[AI] JSON parse failed:', e, 'Text was:', jsonMatch[0]);
     return [];
+  }
+}
+
+async function analyzeWithDirectApi(
+  imageUrls: string[],
+  apiKey: string,
+  options?: AnalysisOptions
+): Promise<ImageAnalysisResult> {
+  options?.onProgress?.('5');
+  const imageParts = await loadImages(imageUrls, (loaded, total) => {
+    const percent = Math.round((loaded / total) * 30) + 5;
+    options?.onProgress?.(String(percent));
+  });
+
+  if (imageParts.length === 0) {
+    throw new Error('이미지를 불러올 수 없습니다');
+  }
+
+  options?.onProgress?.('40');
+
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [...imageParts, { text: getPrompt(imageParts.length) }],
+    config: {
+      temperature: 0.1,
+      maxOutputTokens: 4096,
+      responseMimeType: 'application/json',
+    },
+  });
+
+  options?.onProgress?.('95');
+
+  const items = parseResponse(response.text || '');
+  options?.onProgress?.('100');
+
+  return {
+    items,
+    overallConfidence: 95,
+    tokenCount: response.usageMetadata?.totalTokenCount,
+  };
+}
+
+async function analyzeWithProxy(
+  imageUrls: string[],
+  options?: AnalysisOptions
+): Promise<ImageAnalysisResult> {
+  options?.onProgress?.('10');
+
+  try {
+    const response = await apiClient.analyzeImages(imageUrls);
+    options?.onProgress?.('100');
+
+    return {
+      items: response.items.map((item) => ({ ...item, confidence: 95 })),
+      overallConfidence: 95,
+      creditUsed: response.creditUsed,
+      remainingCredits: response.remainingCredits,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 402) {
+        throw new InsufficientCreditsError(
+          (error.data?.currentBalance as number) ?? 0,
+          (error.data?.required as number) ?? 0
+        );
+      }
+      if (error.status === 401) {
+        throw new Error('로그인이 필요합니다');
+      }
+    }
+    throw error;
   }
 }
 
@@ -150,12 +242,6 @@ export async function analyzeImages(
 ): Promise<ImageAnalysisResult | null> {
   if (!imageUrls?.length) return null;
 
-  const settings = await appStorage.getSettings();
-  if (!settings.aiEnabled || !settings.geminiApiKey) {
-    console.error('[AI] API key not configured');
-    throw new Error(t('analysis', 'failed') + ': API 키가 설정되지 않았습니다');
-  }
-
   const cacheKey = getCacheKey(imageUrls);
   const cached = analysisCache.get(cacheKey);
   if (cached) {
@@ -163,46 +249,31 @@ export async function analyzeImages(
     return cached;
   }
 
+  const settings = await appStorage.getSettings();
+  const hasOwnApiKey = settings.aiEnabled && !!settings.geminiApiKey;
+
   try {
-    // Step 1: Download images (0-40%)
-    options?.onProgress?.('10');
-    const imageParts = await loadImages(imageUrls);
-    options?.onProgress?.('40');
+    let result: ImageAnalysisResult;
 
-    if (imageParts.length === 0) {
-      throw new Error('이미지를 불러올 수 없습니다');
+    if (hasOwnApiKey && !options?.useProxy) {
+      result = await analyzeWithDirectApi(
+        imageUrls,
+        settings.geminiApiKey,
+        options
+      );
+    } else {
+      result = await analyzeWithProxy(imageUrls, options);
     }
-
-    // Step 2: AI Analysis (40-90%)
-    options?.onProgress?.('50');
-
-    const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [...imageParts, { text: getPrompt(imageParts.length) }],
-      config: {
-        temperature: 0.1,
-        maxOutputTokens: 2048,
-        responseMimeType: 'application/json',
-      },
-    });
-
-    options?.onProgress?.('90');
-
-    // Step 3: Parse response (90-100%)
-    const items = parseResponse(response.text || '');
-    options?.onProgress?.('100');
-
-    const result: ImageAnalysisResult = {
-      items,
-      overallConfidence: 95,
-      tokenCount: response.usageMetadata?.totalTokenCount,
-    };
 
     analysisCache.set(cacheKey, result);
     return result;
   } catch (error) {
     console.error('[AI] Analysis error:', error);
+
+    if (error instanceof InsufficientCreditsError) {
+      throw error;
+    }
+
     const message = error instanceof Error ? error.message : 'Unknown error';
 
     if (
@@ -232,6 +303,19 @@ export async function isAIEnabled(): Promise<boolean> {
   return settings.aiEnabled && !!settings.geminiApiKey;
 }
 
+export async function canUseAI(): Promise<{
+  enabled: boolean;
+  method: 'direct' | 'proxy' | 'none';
+}> {
+  const settings = await appStorage.getSettings();
+
+  if (settings.aiEnabled && settings.geminiApiKey) {
+    return { enabled: true, method: 'direct' };
+  }
+
+  return { enabled: true, method: 'proxy' };
+}
+
 export async function testGeminiApiKey(
   apiKey: string
 ): Promise<{ success: boolean; error?: string }> {
@@ -259,5 +343,15 @@ export async function testGeminiApiKey(
       return { success: false, error: t('settings', 'apiKeyInvalid') };
     }
     return { success: false, error: message };
+  }
+}
+
+export class InsufficientCreditsError extends Error {
+  constructor(
+    public currentBalance: number,
+    public required: number
+  ) {
+    super(`크레딧이 부족합니다. 현재: ${currentBalance}, 필요: ${required}`);
+    this.name = 'InsufficientCreditsError';
   }
 }
