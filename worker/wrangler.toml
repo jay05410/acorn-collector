@@ -1,6 +1,0 @@
-name = "acorn-ocr-proxy"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
-
-[vars]
-AZURE_ENDPOINT = "https://acorn-collector-ocr.cognitiveservices.azure.com"
