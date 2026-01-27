@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import {
   type AuthState,
+  type AuthProvider,
   initAuth,
   signInWithGoogle,
+  signInWithTwitter,
   signOut as authSignOut,
   refreshCredits,
   updateCredits,
@@ -10,7 +12,7 @@ import {
 
 interface AuthStore extends AuthState {
   init: () => Promise<void>;
-  signIn: () => Promise<void>;
+  signIn: (provider?: AuthProvider) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   setCredits: (credits: number) => void;
@@ -33,10 +35,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
 
-  signIn: async () => {
+  signIn: async (provider: AuthProvider = 'google') => {
     set({ isLoading: true });
     try {
-      const state = await signInWithGoogle();
+      const state =
+        provider === 'twitter'
+          ? await signInWithTwitter()
+          : await signInWithGoogle();
       set(state);
     } catch (error) {
       set({ isLoading: false });

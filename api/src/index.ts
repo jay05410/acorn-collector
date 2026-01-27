@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env } from './config/types';
 import { auth } from './interface/routes/auth';
+import { oauth } from './interface/routes/oauth';
 import { analysis } from './interface/routes/analysis';
 import { credits } from './interface/routes/credits';
 import { payments } from './interface/routes/payments';
@@ -20,6 +21,7 @@ app.use(
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
 app.route('/auth', auth);
+app.route('/oauth', oauth);
 app.route('/analysis', analysis);
 app.route('/credits', credits);
 app.route('/payments', payments);
