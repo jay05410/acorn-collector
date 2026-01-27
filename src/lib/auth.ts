@@ -20,6 +20,8 @@ async function getStoredAuth(): Promise<{
   credits: number;
   token: string;
 } | null> {
+  if (!chrome?.storage?.local) return null;
+
   const result = await chrome.storage.local.get([
     AUTH_STORAGE_KEY,
     TOKEN_STORAGE_KEY,
@@ -38,6 +40,8 @@ async function storeAuth(
   credits: number,
   token: string
 ): Promise<void> {
+  if (!chrome?.storage?.local) return;
+
   await chrome.storage.local.set({
     [AUTH_STORAGE_KEY]: { user, credits },
     [TOKEN_STORAGE_KEY]: token,
@@ -46,6 +50,8 @@ async function storeAuth(
 }
 
 async function clearAuth(): Promise<void> {
+  if (!chrome?.storage?.local) return;
+
   await chrome.storage.local.remove([AUTH_STORAGE_KEY, TOKEN_STORAGE_KEY]);
   apiClient.setToken(null);
 }
@@ -70,6 +76,12 @@ export async function initAuth(): Promise<AuthState> {
 }
 
 export async function signInWithGoogle(): Promise<AuthState> {
+  if (!chrome?.identity?.getAuthToken) {
+    throw new Error(
+      'Chrome Extension 환경에서만 로그인할 수 있습니다. 익스텐션으로 로드해주세요.'
+    );
+  }
+
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive: true }, async (result) => {
       const token = typeof result === 'string' ? result : result?.token;
@@ -102,13 +114,15 @@ export async function signInWithGoogle(): Promise<AuthState> {
 }
 
 export async function signOut(): Promise<AuthState> {
-  const result = await chrome.storage.local.get(TOKEN_STORAGE_KEY);
-  const token = result[TOKEN_STORAGE_KEY] as string | undefined;
+  if (chrome?.storage?.local) {
+    const result = await chrome.storage.local.get(TOKEN_STORAGE_KEY);
+    const token = result[TOKEN_STORAGE_KEY] as string | undefined;
 
-  if (token) {
-    await new Promise<void>((resolve) => {
-      chrome.identity.removeCachedAuthToken({ token }, resolve);
-    });
+    if (token && chrome?.identity?.removeCachedAuthToken) {
+      await new Promise<void>((resolve) => {
+        chrome.identity.removeCachedAuthToken({ token }, resolve);
+      });
+    }
   }
 
   await clearAuth();
@@ -125,7 +139,7 @@ export async function refreshCredits(): Promise<number> {
   const balance = await apiClient.getBalance();
   const stored = await getStoredAuth();
 
-  if (stored) {
+  if (stored && chrome?.storage?.local) {
     await chrome.storage.local.set({
       [AUTH_STORAGE_KEY]: { user: stored.user, credits: balance.balance },
     });
@@ -136,7 +150,7 @@ export async function refreshCredits(): Promise<number> {
 
 export async function updateCredits(newCredits: number): Promise<void> {
   const stored = await getStoredAuth();
-  if (stored) {
+  if (stored && chrome?.storage?.local) {
     await chrome.storage.local.set({
       [AUTH_STORAGE_KEY]: { user: stored.user, credits: newCredits },
     });
