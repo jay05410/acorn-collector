@@ -1,4 +1,13 @@
-import { ChevronLeft, Nut, Plus, Settings, User, Coins } from 'lucide-react';
+import { useState } from 'react';
+import {
+  ChevronLeft,
+  Nut,
+  Plus,
+  Settings,
+  User,
+  Coins,
+  Loader2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { t } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -20,7 +29,19 @@ export function Header({
   onSettingsClick,
   onCreditClick,
 }: HeaderProps) {
-  const { isAuthenticated, credits, user } = useAuthStore();
+  const { isAuthenticated, credits, user, signIn } = useAuthStore();
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const handleLoginClick = async () => {
+    setLoginLoading(true);
+    try {
+      await signIn();
+    } catch (error) {
+      console.error('Login failed:', error);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
 
   const getTitle = () => {
     switch (currentView) {
@@ -69,10 +90,15 @@ export function Header({
         )}
         {!isAuthenticated && (
           <button
-            onClick={onSettingsClick}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors text-sm text-gray-600"
+            onClick={handleLoginClick}
+            disabled={loginLoading}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors text-sm text-gray-600 disabled:opacity-50"
           >
-            <User className="w-4 h-4" />
+            {loginLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <User className="w-4 h-4" />
+            )}
             로그인
           </button>
         )}

@@ -7,10 +7,6 @@ import {
   Sparkles,
   Check,
   Loader2,
-  LogIn,
-  LogOut,
-  User,
-  Coins,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -23,7 +19,6 @@ import {
 import { setLanguage, LANGUAGE_OPTIONS, t } from '@/lib/i18n';
 import { exportDataAsJson, importDataFromJson } from '@/lib/export';
 import { testGeminiApiKey } from '@/lib/ai';
-import { useAuthStore } from '@/stores/useAuthStore';
 
 const COLOR_THEMES: {
   value: ColorTheme;
@@ -70,32 +65,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     testing: boolean;
     result?: { success: boolean; error?: string };
   }>({ testing: false });
-  const [authLoading, setAuthLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const { isAuthenticated, user, credits, signIn, signOut } = useAuthStore();
-
-  const handleSignIn = async () => {
-    setAuthLoading(true);
-    try {
-      await signIn();
-    } catch (error) {
-      console.error('Login failed:', error);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setAuthLoading(true);
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('Logout failed:', error);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
 
   useEffect(() => {
     if (isOpen) {
@@ -188,75 +158,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         <div className="p-4 space-y-6">
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-              <User className="w-4 h-4" />
-              계정
-            </h3>
-            {isAuthenticated ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center">
-                      <User className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {user?.name || user?.email}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {user?.email}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Coins className="w-4 h-4 text-amber-600" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">
-                      보유 크레딧
-                    </span>
-                  </div>
-                  <span className="text-lg font-bold text-amber-600">
-                    {credits.toLocaleString()}
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleSignOut}
-                  disabled={authLoading}
-                >
-                  {authLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  ) : (
-                    <LogOut className="w-4 h-4 mr-2" />
-                  )}
-                  로그아웃
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Google 계정으로 로그인하면 크레딧을 사용하여 AI 분석을 이용할
-                  수 있습니다.
-                </p>
-                <Button
-                  className="w-full"
-                  onClick={handleSignIn}
-                  disabled={authLoading}
-                >
-                  {authLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  ) : (
-                    <LogIn className="w-4 h-4 mr-2" />
-                  )}
-                  Google 계정으로 로그인
-                </Button>
-              </div>
-            )}
-          </div>
-
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               {t('settings', 'colorTheme')}
