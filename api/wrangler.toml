@@ -5,7 +5,7 @@ compatibility_date = "2024-12-30"
 [[d1_databases]]
 binding = "DB"
 database_name = "acorn-db"
-database_id = "placeholder-update-after-creation"
+database_id = "0cc4b9b1-0bae-48f0-b676-9adfba9301fe"
 
 [vars]
 ENVIRONMENT = "development"
