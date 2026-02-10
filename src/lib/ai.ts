@@ -1,9 +1,9 @@
 import { GoogleGenAI, type Part } from '@google/genai';
 import { appStorage } from './storage';
-import { t } from './i18n';
+import { t, getLanguageForAI, getLanguageCode } from './i18n';
 import { apiClient, ApiError } from './api-client';
 
-const GEMINI_MODEL = 'gemini-2.0-flash-lite';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const MAX_IMAGES = 4;
 
 export interface ImageAnalysisItem {
@@ -20,6 +20,7 @@ export interface ImageAnalysisResult {
   tokenCount?: number;
   creditUsed?: number;
   remainingCredits?: number;
+  sessionId?: string;
 }
 
 export interface AnalysisOptions {
@@ -28,13 +29,22 @@ export interface AnalysisOptions {
   useProxy?: boolean;
 }
 
+export type AnalysisMethod = 'direct' | 'credit';
+
+export interface AnalysisCapability {
+  hasApiKey: boolean;
+  hasCredits: boolean;
+  methods: AnalysisMethod[];
+}
+
 const analysisCache = new Map<string, ImageAnalysisResult>();
 
 function getCacheKey(imageUrls: string[]): string {
   return imageUrls.sort().join('|');
 }
 
-function getBaseInstruction(imageCount: number): string {
+function getPrompt(imageCount: number, language?: string): string {
+  const langName = language || getLanguageForAI();
   return `Extract UNIQUE products from ${imageCount} booth price list image(s).
 
 [CRITICAL - NO DUPLICATES]
@@ -49,26 +59,29 @@ function getBaseInstruction(imageCount: number): string {
 - Use ONLY text directly next to product
 - NEVER add distant prefixes (event/booth/artist name)
 
-WRONG: "ORV 엽서" (ORV is distant booth name)
-RIGHT: "엽서 세트" (actual product name)
-
 [OPTIONS vs SEPARATE]
-- OPTIONS: "키링 3000원 (A,B,C)" → {name:"키링", options:["A","B","C"]}
-- SEPARATE: Different names → separate items
+- OPTIONS: Same product with variants (A,B,C) → single item with options array
+- SEPARATE: Different product names → separate items
 
 [FORMAT]
 - name: Direct product text only
-- price: Number (free=0, unknown=null)  
+- price: Number (free=0, unknown=null)
 - category: acrylic|keyring|stand|poster|postcard|sticker|photocard|memo|tape|badge|book|calendar|pouch|plush|apparel|other
+- options: Array of variant names if applicable
+
+[LANGUAGE]
+- Return item names in ${langName}.
+- If the text in the image is in a DIFFERENT language from ${langName}, format the name as: "Translated Name (Original Name)"
+  Example: If image has "키링" and user language is English → "Keyring (키링)"
+  Example: If image has "Keyring" and user language is Korean → "키링 (Keyring)"
+- If the text is ALREADY in ${langName}, use the original text as-is.
+- Category values must ALWAYS be in English (acrylic|keyring|...).
+- Options should preserve the original text from the image.
 
 [EXCLUDE]
 Booth#, SNS, URL, shipping
 
 JSON: {"items":[{"name":"string","price":number|null,"category":"string","options"?:["string"]}]}`;
-}
-
-function getPrompt(imageCount: number): string {
-  return getBaseInstruction(imageCount);
 }
 
 async function fetchImageAsBase64(
@@ -176,15 +189,16 @@ async function analyzeWithDirectApi(
   });
 
   if (imageParts.length === 0) {
-    throw new Error('이미지를 불러올 수 없습니다');
+    throw new Error(t('errors', 'imageLoadFailed'));
   }
 
   options?.onProgress?.('40');
 
+  const langName = getLanguageForAI();
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: GEMINI_MODEL,
-    contents: [...imageParts, { text: getPrompt(imageParts.length) }],
+    contents: [...imageParts, { text: getPrompt(imageParts.length, langName) }],
     config: {
       temperature: 0.1,
       maxOutputTokens: 4096,
@@ -211,7 +225,8 @@ async function analyzeWithProxy(
   options?.onProgress?.('10');
 
   try {
-    const response = await apiClient.analyzeImages(imageUrls);
+    const langCode = getLanguageCode();
+    const response = await apiClient.analyzeImages(imageUrls, langCode);
     options?.onProgress?.('100');
 
     return {
@@ -219,6 +234,7 @@ async function analyzeWithProxy(
       overallConfidence: 95,
       creditUsed: response.creditUsed,
       remainingCredits: response.remainingCredits,
+      sessionId: response.sessionId,
     };
   } catch (error) {
     if (error instanceof ApiError) {
@@ -229,7 +245,7 @@ async function analyzeWithProxy(
         );
       }
       if (error.status === 401) {
-        throw new Error('로그인이 필요합니다');
+        throw new Error(t('errors', 'loginRequired'));
       }
     }
     throw error;
@@ -281,13 +297,77 @@ export async function analyzeImages(
       message.includes('401') ||
       message.includes('403')
     ) {
-      throw new Error('API 키가 유효하지 않습니다');
+      throw new ApiKeyFailedError();
     }
     if (message.includes('429')) {
-      throw new Error('API 요청 한도 초과. 잠시 후 다시 시도해주세요');
+      throw new Error(t('errors', 'rateLimitExceeded'));
     }
     if (message.includes('fetch') || message.includes('network')) {
-      throw new Error('네트워크 오류. 인터넷 연결을 확인해주세요');
+      throw new Error(t('errors', 'networkError'));
+    }
+
+    throw new Error(message);
+  }
+}
+
+export async function analyzeImagesWithMethod(
+  imageUrls: string[],
+  method: AnalysisMethod,
+  options?: AnalysisOptions
+): Promise<ImageAnalysisResult | null> {
+  if (!imageUrls?.length) return null;
+
+  const cacheKey = `${method}:${getCacheKey(imageUrls)}`;
+  const cached = analysisCache.get(cacheKey);
+  if (cached) {
+    options?.onProgress?.('100');
+    return cached;
+  }
+
+  try {
+    let result: ImageAnalysisResult;
+
+    if (method === 'direct') {
+      const settings = await appStorage.getSettings();
+      if (!settings.aiEnabled || !settings.geminiApiKey) {
+        throw new NoAnalysisMethodError();
+      }
+      result = await analyzeWithDirectApi(
+        imageUrls,
+        settings.geminiApiKey,
+        options
+      );
+    } else {
+      result = await analyzeWithProxy(imageUrls, options);
+    }
+
+    analysisCache.set(cacheKey, result);
+    return result;
+  } catch (error) {
+    console.error('[AI] Analysis error:', error);
+
+    if (
+      error instanceof InsufficientCreditsError ||
+      error instanceof NoAnalysisMethodError ||
+      error instanceof ApiKeyFailedError
+    ) {
+      throw error;
+    }
+
+    const message = error instanceof Error ? error.message : 'Unknown error';
+
+    if (
+      message.includes('API_KEY') ||
+      message.includes('401') ||
+      message.includes('403')
+    ) {
+      throw new ApiKeyFailedError();
+    }
+    if (message.includes('429')) {
+      throw new Error(t('errors', 'rateLimitExceeded'));
+    }
+    if (message.includes('fetch') || message.includes('network')) {
+      throw new Error(t('errors', 'networkError'));
     }
 
     throw new Error(message);
@@ -314,6 +394,20 @@ export async function canUseAI(): Promise<{
   }
 
   return { enabled: true, method: 'proxy' };
+}
+
+export async function getAnalysisCapability(
+  credits: number
+): Promise<AnalysisCapability> {
+  const settings = await appStorage.getSettings();
+  const hasApiKey = settings.aiEnabled && !!settings.geminiApiKey;
+  const hasCredits = credits > 0;
+
+  const methods: AnalysisMethod[] = [];
+  if (hasApiKey) methods.push('direct');
+  if (hasCredits) methods.push('credit');
+
+  return { hasApiKey, hasCredits, methods };
 }
 
 export async function testGeminiApiKey(
@@ -351,7 +445,21 @@ export class InsufficientCreditsError extends Error {
     public currentBalance: number,
     public required: number
   ) {
-    super(`크레딧이 부족합니다. 현재: ${currentBalance}, 필요: ${required}`);
+    super(t('errors', 'insufficientCredits'));
     this.name = 'InsufficientCreditsError';
+  }
+}
+
+export class NoAnalysisMethodError extends Error {
+  constructor() {
+    super(t('errors', 'noAnalysisMethod'));
+    this.name = 'NoAnalysisMethodError';
+  }
+}
+
+export class ApiKeyFailedError extends Error {
+  constructor() {
+    super(t('errors', 'apiKeyInvalid'));
+    this.name = 'ApiKeyFailedError';
   }
 }

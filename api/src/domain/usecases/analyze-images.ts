@@ -1,18 +1,20 @@
 import type { CreditRepository } from '../repositories/credit-repository';
+import type { AnalysisRepository } from '../repositories/analysis-repository';
 import type { AnalysisResult, AnalysisItem } from '../entities/analysis';
-import { getCreditCost } from '../../config/types';
+import { getCreditCost, GEMINI_MODEL } from '../../config/types';
 
 export interface ImageAnalyzer {
-  analyze(imageUrls: string[]): Promise<AnalysisItem[]>;
+  analyze(imageUrls: string[], language?: string): Promise<AnalysisItem[]>;
 }
 
 export class AnalyzeImagesUseCase {
   constructor(
     private creditRepository: CreditRepository,
-    private imageAnalyzer: ImageAnalyzer
+    private imageAnalyzer: ImageAnalyzer,
+    private analysisRepository?: AnalysisRepository
   ) {}
 
-  async execute(userId: string, imageUrls: string[]): Promise<AnalysisResult> {
+  async execute(userId: string, imageUrls: string[], language?: string): Promise<AnalysisResult> {
     const imageCount = Math.min(imageUrls.length, 4);
     const creditCost = getCreditCost(imageCount);
 
@@ -21,19 +23,46 @@ export class AnalyzeImagesUseCase {
       throw new InsufficientCreditsError(balance?.balance ?? 0, creditCost);
     }
 
-    const items = await this.imageAnalyzer.analyze(imageUrls.slice(0, 4));
+    const items = await this.imageAnalyzer.analyze(imageUrls.slice(0, 4), language);
 
-    await this.creditRepository.deductCredits(userId, creditCost);
-    await this.creditRepository.createTransaction({
+    await this.creditRepository.deductCreditsWithTransaction(
       userId,
-      amount: -creditCost,
-      type: 'usage',
-      description: `Image analysis (${imageCount} images)`,
-    });
+      creditCost,
+      {
+        userId,
+        amount: -creditCost,
+        type: 'usage',
+        description: `Image analysis (${imageCount} images)`,
+      }
+    );
+
+    // Save analysis session to DB
+    const sessionId = crypto.randomUUID();
+    if (this.analysisRepository) {
+      try {
+        await this.analysisRepository.saveSession(
+          {
+            id: sessionId,
+            userId,
+            method: 'credit',
+            model: GEMINI_MODEL,
+            creditCost,
+            imageCount,
+            itemCount: items.length,
+            status: 'completed',
+          },
+          items,
+          imageUrls.slice(0, 4)
+        );
+      } catch (err) {
+        console.error('Failed to save analysis session:', err);
+      }
+    }
 
     return {
       items,
       creditUsed: creditCost,
+      sessionId,
     };
   }
 }

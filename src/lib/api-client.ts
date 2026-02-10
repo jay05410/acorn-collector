@@ -31,6 +31,7 @@ export interface AnalysisResponse {
   items: AnalysisItem[];
   creditUsed: number;
   remainingCredits: number;
+  sessionId?: string;
 }
 
 export interface CreditPackage {
@@ -115,10 +116,10 @@ class ApiClient {
     return this.request(`/credits/transactions?limit=${limit}`);
   }
 
-  async analyzeImages(imageUrls: string[]): Promise<AnalysisResponse> {
+  async analyzeImages(imageUrls: string[], language?: string): Promise<AnalysisResponse> {
     return this.request('/analysis', {
       method: 'POST',
-      body: JSON.stringify({ imageUrls }),
+      body: JSON.stringify({ imageUrls, language }),
     });
   }
 
