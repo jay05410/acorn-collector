@@ -11,4 +11,15 @@ export interface CreditRepository {
   deductCredits(userId: string, amount: number): Promise<CreditBalance>;
   createTransaction(input: CreateTransactionInput): Promise<CreditTransaction>;
   getTransactions(userId: string, limit?: number): Promise<CreditTransaction[]>;
+  addCreditsWithTransaction(
+    userId: string,
+    amount: number,
+    input: CreateTransactionInput
+  ): Promise<CreditBalance>;
+  deductCreditsWithTransaction(
+    userId: string,
+    amount: number,
+    input: CreateTransactionInput
+  ): Promise<CreditBalance>;
+  findTransactionByReference(referenceId: string): Promise<CreditTransaction | null>;
 }

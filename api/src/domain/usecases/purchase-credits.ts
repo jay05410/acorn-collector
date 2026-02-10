@@ -20,26 +20,31 @@ export class PurchaseCreditsUseCase {
   ) {}
 
   async execute(userId: string, paymentId: string): Promise<CreditBalance> {
+    const existing =
+      await this.creditRepository.findTransactionByReference(paymentId);
+    if (existing) {
+      const balance = await this.creditRepository.getBalance(userId);
+      if (!balance) throw new Error('Balance not found');
+      return balance;
+    }
+
     const verification = await this.paymentGateway.verifyPayment(paymentId);
 
     if (!verification.valid) {
       throw new InvalidPaymentError(paymentId);
     }
 
-    const balance = await this.creditRepository.addCredits(
+    return this.creditRepository.addCreditsWithTransaction(
       userId,
-      verification.credits
+      verification.credits,
+      {
+        userId,
+        amount: verification.credits,
+        type: 'purchase',
+        description: `Purchased ${verification.credits} credits`,
+        referenceId: paymentId,
+      }
     );
-
-    await this.creditRepository.createTransaction({
-      userId,
-      amount: verification.credits,
-      type: 'purchase',
-      description: `Purchased ${verification.credits} credits`,
-      referenceId: paymentId,
-    });
-
-    return balance;
   }
 }
 

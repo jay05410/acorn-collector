@@ -69,3 +69,5 @@ export function getCreditsPerAnalysis(imageCount: number): number {
 }
 
 export const CREDIT_PACKAGES = DEFAULT_CONFIG.packages;
+
+export const SIGNUP_BONUS_CREDITS = 50;

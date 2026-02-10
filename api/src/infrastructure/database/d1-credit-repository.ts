@@ -110,6 +110,92 @@ export class D1CreditRepository implements CreditRepository {
     return rows.results.map(this.mapToTransaction);
   }
 
+  async addCreditsWithTransaction(
+    userId: string,
+    amount: number,
+    input: CreateTransactionInput
+  ): Promise<CreditBalance> {
+    const txId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const updateBalance = this.db
+      .prepare(
+        'UPDATE credit_balances SET balance = balance + ?, updated_at = ? WHERE user_id = ?'
+      )
+      .bind(amount, now, userId);
+
+    const insertTx = this.db
+      .prepare(
+        'INSERT INTO credit_transactions (id, user_id, amount, type, description, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      .bind(
+        txId,
+        input.userId,
+        input.amount,
+        input.type,
+        input.description ?? null,
+        input.referenceId ?? null,
+        now
+      );
+
+    await this.db.batch([updateBalance, insertTx]);
+
+    const balance = await this.getBalance(userId);
+    if (!balance) throw new Error('Balance not found after update');
+    return balance;
+  }
+
+  async deductCreditsWithTransaction(
+    userId: string,
+    amount: number,
+    input: CreateTransactionInput
+  ): Promise<CreditBalance> {
+    const txId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const updateBalance = this.db
+      .prepare(
+        'UPDATE credit_balances SET balance = balance - ?, updated_at = ? WHERE user_id = ? AND balance >= ?'
+      )
+      .bind(amount, now, userId, amount);
+
+    const insertTx = this.db
+      .prepare(
+        'INSERT INTO credit_transactions (id, user_id, amount, type, description, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      .bind(
+        txId,
+        input.userId,
+        input.amount,
+        input.type,
+        input.description ?? null,
+        input.referenceId ?? null,
+        now
+      );
+
+    const results = await this.db.batch([updateBalance, insertTx]);
+
+    if (!results[0].meta.changes) {
+      throw new Error('Insufficient credits or user not found');
+    }
+
+    const balance = await this.getBalance(userId);
+    if (!balance) throw new Error('Balance not found after update');
+    return balance;
+  }
+
+  async findTransactionByReference(
+    referenceId: string
+  ): Promise<CreditTransaction | null> {
+    const row = await this.db
+      .prepare(
+        'SELECT * FROM credit_transactions WHERE reference_id = ? LIMIT 1'
+      )
+      .bind(referenceId)
+      .first<TransactionRow>();
+    return row ? this.mapToTransaction(row) : null;
+  }
+
   private mapToBalance(row: BalanceRow): CreditBalance {
     return {
       userId: row.user_id,
