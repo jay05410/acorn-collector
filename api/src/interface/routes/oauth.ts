@@ -7,6 +7,7 @@ import {
   type ProviderType,
   type OAuthUserInfo,
 } from '../../infrastructure/auth/oauth-provider';
+import { SIGNUP_BONUS_CREDITS } from '../../config/pricing';
 
 const oauth = new Hono<{ Bindings: Env }>();
 
@@ -30,6 +31,14 @@ function generateState(): string {
   return crypto.randomUUID();
 }
 
+function generateCodeVerifier(): string {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, (b) => b.toString(36).padStart(2, '0'))
+    .join('')
+    .slice(0, 64);
+}
+
 oauth.get('/:provider', async (c) => {
   const provider = c.req.param('provider') as ProviderType;
   const redirect = c.req.query('redirect') || '';
@@ -46,12 +55,13 @@ oauth.get('/:provider', async (c) => {
   );
 
   const state = generateState();
+  const codeVerifier = generateCodeVerifier();
   const redirectUri = `${new URL(c.req.url).origin}/oauth/${provider}/callback`;
 
-  const stateData = JSON.stringify({ state, redirect });
+  const stateData = JSON.stringify({ state, redirect, codeVerifier });
   const encodedState = btoa(stateData);
 
-  const authUrl = oauthProvider.getAuthUrl(redirectUri, encodedState);
+  const authUrl = oauthProvider.getAuthUrl(redirectUri, encodedState, codeVerifier);
   return c.redirect(authUrl);
 });
 
@@ -61,20 +71,18 @@ oauth.get('/:provider/callback', async (c) => {
   const stateParam = c.req.query('state');
   const error = c.req.query('error');
 
-  if (error) {
-    return c.html(createErrorPage(error));
-  }
-
-  if (!code || !stateParam) {
-    return c.html(createErrorPage('Missing code or state'));
+  if (error || !code || !stateParam) {
+    return c.json({ error: error || 'Missing code or state' }, 400);
   }
 
   let redirect = '';
+  let codeVerifier = '';
   try {
     const stateData = JSON.parse(atob(stateParam));
     redirect = stateData.redirect || '';
+    codeVerifier = stateData.codeVerifier || '';
   } catch {
-    return c.html(createErrorPage('Invalid state'));
+    return c.json({ error: 'Invalid state' }, 400);
   }
 
   const config = getProviderConfig(c.env, provider);
@@ -86,17 +94,30 @@ oauth.get('/:provider/callback', async (c) => {
   const redirectUri = `${new URL(c.req.url).origin}/oauth/${provider}/callback`;
 
   try {
-    const tokens = await oauthProvider.exchangeCode(code, redirectUri);
+    const tokens = await oauthProvider.exchangeCode(
+      code,
+      redirectUri,
+      codeVerifier
+    );
     const userInfo = await oauthProvider.getUserInfo(tokens.accessToken);
 
     const { user, credits } = await findOrCreateUser(c.env.DB, userInfo);
 
-    return c.html(
-      createSuccessPage(redirect, tokens.accessToken, user, credits)
+    const callbackData = encodeURIComponent(
+      JSON.stringify({
+        type: 'AUTH_SUCCESS',
+        token: tokens.accessToken,
+        user,
+        credits,
+      })
     );
+    return c.redirect(`${redirect}#${callbackData}`);
   } catch (err) {
     console.error('OAuth callback error:', err);
-    return c.html(createErrorPage('Authentication failed'));
+    const errorData = encodeURIComponent(
+      JSON.stringify({ type: 'AUTH_ERROR', error: 'Authentication failed' })
+    );
+    return c.redirect(`${redirect}#${errorData}`);
   }
 });
 
@@ -149,7 +170,29 @@ async function findOrCreateUser(db: D1Database, userInfo: OAuthUserInfo) {
       email: userInfo.email,
       name: userInfo.name,
     });
-    await creditRepo.initializeBalance(user.id);
+
+    const now = new Date().toISOString();
+    const txId = crypto.randomUUID();
+    await db.batch([
+      db
+        .prepare(
+          'INSERT INTO credit_balances (user_id, balance, updated_at) VALUES (?, ?, ?)'
+        )
+        .bind(user.id, SIGNUP_BONUS_CREDITS, now),
+      db
+        .prepare(
+          'INSERT INTO credit_transactions (id, user_id, amount, type, description, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )
+        .bind(
+          txId,
+          user.id,
+          SIGNUP_BONUS_CREDITS,
+          'bonus',
+          'Signup bonus credits',
+          null,
+          now
+        ),
+    ]);
     isNewUser = true;
   }
 
@@ -160,53 +203,6 @@ async function findOrCreateUser(db: D1Database, userInfo: OAuthUserInfo) {
     credits: balance?.balance ?? 0,
     isNewUser,
   };
-}
-
-function createSuccessPage(
-  redirect: string,
-  token: string,
-  user: { id: string; email: string; name: string | null },
-  credits: number
-): string {
-  return `<!DOCTYPE html>
-<html>
-<head><title>로그인 성공</title></head>
-<body>
-<script>
-  if (window.opener) {
-    window.opener.postMessage({
-      type: 'AUTH_SUCCESS',
-      token: '${token}',
-      user: ${JSON.stringify(user)},
-      credits: ${credits}
-    }, '${redirect || '*'}');
-    window.close();
-  } else {
-    document.body.innerHTML = '<p>로그인 성공! 이 창을 닫아주세요.</p>';
-  }
-</script>
-</body>
-</html>`;
-}
-
-function createErrorPage(error: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head><title>로그인 실패</title></head>
-<body>
-<script>
-  if (window.opener) {
-    window.opener.postMessage({
-      type: 'AUTH_ERROR',
-      error: '${error}'
-    }, '*');
-    window.close();
-  } else {
-    document.body.innerHTML = '<p>로그인 실패: ${error}</p>';
-  }
-</script>
-</body>
-</html>`;
 }
 
 export { oauth };

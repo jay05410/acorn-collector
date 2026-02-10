@@ -7,8 +7,12 @@ export interface OAuthUserInfo {
 }
 
 export interface OAuthProvider {
-  getAuthUrl(redirectUri: string, state: string): string;
-  exchangeCode(code: string, redirectUri: string): Promise<OAuthTokens>;
+  getAuthUrl(redirectUri: string, state: string, codeVerifier?: string): string;
+  exchangeCode(
+    code: string,
+    redirectUri: string,
+    codeVerifier?: string
+  ): Promise<OAuthTokens>;
   getUserInfo(accessToken: string): Promise<OAuthUserInfo>;
   verifyIdToken?(idToken: string): Promise<OAuthUserInfo>;
 }
@@ -136,21 +140,24 @@ export class TwitterOAuthProvider implements OAuthProvider {
     private clientSecret: string
   ) {}
 
-  getAuthUrl(redirectUri: string, state: string): string {
-    const codeChallenge = state;
+  getAuthUrl(redirectUri: string, state: string, codeVerifier?: string): string {
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: this.clientId,
       redirect_uri: redirectUri,
       scope: 'tweet.read users.read offline.access',
       state,
-      code_challenge: codeChallenge,
+      code_challenge: codeVerifier || state,
       code_challenge_method: 'plain',
     });
     return `https://twitter.com/i/oauth2/authorize?${params}`;
   }
 
-  async exchangeCode(code: string, redirectUri: string): Promise<OAuthTokens> {
+  async exchangeCode(
+    code: string,
+    redirectUri: string,
+    codeVerifier?: string
+  ): Promise<OAuthTokens> {
     const credentials = btoa(`${this.clientId}:${this.clientSecret}`);
 
     const response = await fetch('https://api.twitter.com/2/oauth2/token', {
@@ -163,7 +170,7 @@ export class TwitterOAuthProvider implements OAuthProvider {
         code,
         grant_type: 'authorization_code',
         redirect_uri: redirectUri,
-        code_verifier: code,
+        code_verifier: codeVerifier || code,
       }),
     });
 

@@ -95,35 +95,49 @@ export async function initAuth(): Promise<AuthState> {
   };
 }
 
-async function signInWithExtension(): Promise<AuthState> {
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: true }, async (result) => {
-      const token = typeof result === 'string' ? result : result?.token;
+function parseOAuthResult(
+  data: Record<string, unknown>
+): AuthState {
+  if (data.type === 'AUTH_SUCCESS') {
+    return {
+      user: data.user as ApiUser,
+      credits: data.credits as number,
+      isAuthenticated: true,
+      isLoading: false,
+    };
+  }
+  throw new Error((data.error as string) || '로그인 실패');
+}
 
-      if (chrome.runtime.lastError || !token) {
-        reject(
-          new Error(
-            chrome.runtime.lastError?.message || 'Failed to get auth token'
-          )
-        );
-        return;
-      }
+async function signInWithExtensionOAuth(
+  provider: AuthProvider
+): Promise<AuthState> {
+  const redirectUrl = chrome.identity.getRedirectURL();
+  const authUrl = `${API_BASE_URL}/oauth/${provider}?redirect=${encodeURIComponent(redirectUrl)}`;
 
-      try {
-        const loginResult = await apiClient.login(token);
-        await storeAuth(loginResult.user, loginResult.credits, token);
-        resolve({
-          user: loginResult.user,
-          credits: loginResult.credits,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      } catch (error) {
-        chrome.identity.removeCachedAuthToken({ token });
-        reject(error);
+  const responseUrl = await new Promise<string>((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(
+      { url: authUrl, interactive: true },
+      (url) => {
+        if (chrome.runtime.lastError || !url) {
+          reject(
+            new Error(chrome.runtime.lastError?.message || '로그인 실패')
+          );
+          return;
+        }
+        resolve(url);
       }
-    });
+    );
   });
+
+  const hashIndex = responseUrl.indexOf('#');
+  if (hashIndex === -1) throw new Error('인증 데이터 없음');
+
+  const hash = responseUrl.substring(hashIndex + 1);
+  const data = JSON.parse(decodeURIComponent(hash));
+  const state = parseOAuthResult(data);
+  await storeAuth(state.user!, state.credits, data.token);
+  return state;
 }
 
 async function signInWithWebOAuth(provider: AuthProvider): Promise<AuthState> {
@@ -132,10 +146,10 @@ async function signInWithWebOAuth(provider: AuthProvider): Promise<AuthState> {
   const left = window.screenX + (window.outerWidth - width) / 2;
   const top = window.screenY + (window.outerHeight - height) / 2;
 
-  const authUrl =
-    provider === 'google'
-      ? `${API_BASE_URL}/auth/google?redirect=${encodeURIComponent(window.location.origin)}`
-      : `${API_BASE_URL}/auth/twitter?redirect=${encodeURIComponent(window.location.origin)}`;
+  const redirectTarget = `${window.location.origin}/oauth-callback.html`;
+  const authUrl = `${API_BASE_URL}/oauth/${provider}?redirect=${encodeURIComponent(redirectTarget)}`;
+
+  localStorage.removeItem('__oauth_result');
 
   return new Promise((resolve, reject) => {
     const popup = window.open(
@@ -149,50 +163,55 @@ async function signInWithWebOAuth(provider: AuthProvider): Promise<AuthState> {
       return;
     }
 
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
+    const cleanup = () => {
+      window.removeEventListener('storage', handleStorage);
+      clearInterval(pollTimer);
+      clearTimeout(timeout);
+    };
 
-      if (event.data?.type === 'AUTH_SUCCESS') {
-        window.removeEventListener('message', handleMessage);
-        popup.close();
-
-        const { token, user, credits } = event.data;
-        await storeAuth(user, credits, token);
-        resolve({
-          user,
-          credits,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      } else if (event.data?.type === 'AUTH_ERROR') {
-        window.removeEventListener('message', handleMessage);
-        popup.close();
-        reject(new Error(event.data.error || '로그인 실패'));
+    const processResult = async (raw: string) => {
+      cleanup();
+      localStorage.removeItem('__oauth_result');
+      try {
+        const data = JSON.parse(raw);
+        const state = parseOAuthResult(data);
+        await storeAuth(state.user!, state.credits, data.token);
+        resolve(state);
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error('로그인 처리 실패'));
       }
     };
 
-    window.addEventListener('message', handleMessage);
-
-    const checkClosed = setInterval(() => {
-      if (popup.closed) {
-        clearInterval(checkClosed);
-        window.removeEventListener('message', handleMessage);
-        reject(new Error('로그인이 취소되었습니다.'));
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === '__oauth_result' && event.newValue) {
+        processResult(event.newValue);
       }
+    };
+
+    window.addEventListener('storage', handleStorage);
+
+    const pollTimer = setInterval(() => {
+      const result = localStorage.getItem('__oauth_result');
+      if (result) processResult(result);
     }, 500);
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('로그인 시간이 초과되었습니다.'));
+    }, 60000);
   });
 }
 
 export async function signInWithGoogle(): Promise<AuthState> {
   if (isExtensionEnvironment()) {
-    return signInWithExtension();
+    return signInWithExtensionOAuth('google');
   }
   return signInWithWebOAuth('google');
 }
 
 export async function signInWithTwitter(): Promise<AuthState> {
   if (isExtensionEnvironment()) {
-    return signInWithWebOAuth('twitter');
+    return signInWithExtensionOAuth('twitter');
   }
   return signInWithWebOAuth('twitter');
 }

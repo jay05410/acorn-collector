@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>로그인 처리 중...</title></head>
+<body>
+<p>로그인 처리 중...</p>
+<script>
+  try {
+    const hash = window.location.hash.substring(1);
+    const data = JSON.parse(decodeURIComponent(hash));
+    localStorage.setItem('__oauth_result', JSON.stringify(data));
+  } catch (e) {
+    localStorage.setItem('__oauth_result', JSON.stringify({ error: '로그인 처리 실패' }));
+  }
+  window.close();
+</script>
+</body>
+</html>
