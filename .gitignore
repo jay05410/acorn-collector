@@ -30,6 +30,13 @@ coverage/
 .env
 .env.local
 .env.*.local
+.dev.vars
+
+# OMC (oh-my-claudecode) state
+.omc/
+
+# Wrangler local data
+.wrangler/
 
 # Cache
 .npm-cache/
