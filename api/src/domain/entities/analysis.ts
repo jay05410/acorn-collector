@@ -15,4 +15,5 @@ export interface AnalysisResult {
   items: AnalysisItem[];
   tokenCount?: number;
   creditUsed: number;
+  sessionId?: string;
 }

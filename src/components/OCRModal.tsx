@@ -10,14 +10,24 @@ import {
   Minus,
   ChevronDown,
   RefreshCw,
+  ShoppingCart,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import {
-  analyzeImages,
+  analyzeImagesWithMethod,
   cancelAnalysis,
+  getAnalysisCapability,
   type ImageAnalysisItem,
+  type AnalysisMethod,
+  InsufficientCreditsError,
+  ApiKeyFailedError,
+  NoAnalysisMethodError,
 } from '@/lib/ai';
 import { t, tWithParams, getCategoryLabel } from '@/lib/i18n';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { AnalysisMethodModal } from './AnalysisMethodModal';
+import { CreditPurchaseModal } from './CreditPurchaseModal';
 
 interface Props {
   isOpen: boolean;
@@ -42,7 +52,7 @@ interface ItemState {
   editedName?: string;
 }
 
-type Status = 'idle' | 'loading' | 'success' | 'error';
+type Status = 'idle' | 'choosing' | 'loading' | 'success' | 'error';
 
 export function OCRModal({
   isOpen,
@@ -58,10 +68,19 @@ export function OCRModal({
   const [itemStates, setItemStates] = useState<Map<number, ItemState>>(
     new Map()
   );
+  const [showMethodModal, setShowMethodModal] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState<AnalysisMethod | null>(
+    null
+  );
+  const [apiKeyFailed, setApiKeyFailed] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
+
+  const { credits, isAuthenticated, deductCredits } = useAuthStore();
 
   useEffect(() => {
     if (isOpen && imageUrls.length > 0 && status === 'idle') {
-      runAnalysis();
+      checkCapabilityAndStart();
     }
   }, [isOpen, imageUrls]);
 
@@ -72,19 +91,49 @@ export function OCRModal({
       setError('');
       setItems([]);
       setItemStates(new Map());
+      setShowMethodModal(false);
+      setShowPurchaseModal(false);
+      setSelectedMethod(null);
+      setApiKeyFailed(false);
     }
   }, [isOpen]);
 
-  const runAnalysis = async () => {
+  const checkCapabilityAndStart = async () => {
+    const capability = await getAnalysisCapability(credits);
+    setHasApiKey(capability.hasApiKey);
+
+    if (capability.methods.length === 0) {
+      setShowMethodModal(true);
+      setStatus('choosing');
+      return;
+    }
+
+    if (capability.methods.length === 1) {
+      startAnalysis(capability.methods[0]);
+      return;
+    }
+
+    // Both methods available — show chooser
+    setShowMethodModal(true);
+    setStatus('choosing');
+  };
+
+  const startAnalysis = async (method: AnalysisMethod) => {
+    setSelectedMethod(method);
+    setShowMethodModal(false);
     setStatus('loading');
     setError('');
+    setApiKeyFailed(false);
 
     try {
-      const result = await analyzeImages(imageUrls, {
+      const result = await analyzeImagesWithMethod(imageUrls, method, {
         onProgress: setProgress,
       });
 
       if (result && result.items.length > 0) {
+        if (result.creditUsed && result.remainingCredits !== undefined) {
+          deductCredits(result.creditUsed);
+        }
         setItems(result.items);
         const states = new Map<number, ItemState>();
         result.items.forEach((item, i) => {
@@ -101,16 +150,30 @@ export function OCRModal({
         setStatus('error');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (err instanceof ApiKeyFailedError) {
+        setApiKeyFailed(true);
+        setError(t('analysis', 'apiKeyFailed'));
+      } else if (err instanceof InsufficientCreditsError) {
+        setError(t('analysis', 'insufficientCredits'));
+      } else if (err instanceof NoAnalysisMethodError) {
+        setError(t('analysis', 'noMethod'));
+      } else {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
       setStatus('error');
     }
+  };
+
+  const handleMethodSelect = (method: AnalysisMethod) => {
+    setShowMethodModal(false);
+    startAnalysis(method);
   };
 
   const handleReanalyze = () => {
     cancelAnalysis();
     setItems([]);
     setItemStates(new Map());
-    runAnalysis();
+    checkCapabilityAndStart();
   };
 
   const handleCancel = () => {
@@ -201,147 +264,226 @@ export function OCRModal({
     (s) => s.selected
   ).length;
 
+  const creditCost =
+    imageUrls.length <= 1
+      ? 10
+      : imageUrls.length === 2
+        ? 15
+        : imageUrls.length === 3
+          ? 20
+          : 25;
+
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
-      onClick={(e) =>
-        e.target === e.currentTarget && status !== 'loading' && onClose()
-      }
-    >
-      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col animate-slideUp">
-        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-          <div className="flex items-center gap-2">
-            <Camera className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              {t('analysis', 'title')}
-            </h2>
-          </div>
-          {status !== 'loading' && (
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="w-5 h-5" />
-            </Button>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          {status === 'loading' && (
-            <LoadingState
-              progress={progress}
-              imageCount={imageUrls.length}
-              onCancel={handleCancel}
-            />
-          )}
-
-          {status === 'error' && (
-            <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              <AlertCircle className="w-12 h-12 text-red-500" />
-              <div className="text-center space-y-2">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  {t('analysis', 'failed')}
-                </p>
-                <p className="text-xs text-red-500 dark:text-red-400">
-                  {error}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={onClose}>
-                  {t('common', 'close')}
-                </Button>
-                {error.includes('API') && onOpenSettings ? (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      onClose();
-                      onOpenSettings();
-                    }}
-                  >
-                    {t('analysis', 'goToSettings')}
-                  </Button>
-                ) : (
-                  <Button size="sm" onClick={runAnalysis}>
-                    {t('common', 'retry')}
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {status === 'success' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedCount === items.length && items.length > 0}
-                    onChange={toggleAll}
-                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">
-                    {t('analysis', 'selectAll')} ({items.length})
-                  </span>
-                </label>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {selectedCount}
-                  {t('analysis', 'selected')}
+    <>
+      <div
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
+        onClick={(e) =>
+          e.target === e.currentTarget &&
+          status !== 'loading' &&
+          status !== 'choosing' &&
+          onClose()
+        }
+      >
+        <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col animate-slideUp">
+          <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+            <div className="flex items-center gap-2">
+              <Camera className="w-5 h-5 text-primary" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {t('analysis', 'title')}
+              </h2>
+              {selectedMethod && status === 'success' && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                  {selectedMethod === 'credit' ? (
+                    <span className="flex items-center gap-0.5">
+                      <Sparkles className="w-3 h-3" />
+                      {t('analysis', 'premium')}
+                    </span>
+                  ) : (
+                    t('analysis', 'basic')
+                  )}
                 </span>
-              </div>
+              )}
+            </div>
+            {status !== 'loading' && status !== 'choosing' && (
+              <Button variant="ghost" size="icon" onClick={onClose}>
+                <X className="w-5 h-5" />
+              </Button>
+            )}
+          </div>
 
-              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                <div className="max-h-80 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
-                  {items.map((item, index) => (
-                    <ProductItem
-                      key={index}
-                      item={item}
-                      state={itemStates.get(index)!}
-                      onToggle={() => toggleItem(index)}
-                      onQuantityChange={(delta) => updateQuantity(index, delta)}
-                      onOptionChange={(option) => updateOption(index, option)}
-                      onNameChange={(name) => updateName(index, name)}
-                    />
-                  ))}
-                </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            {(status === 'idle' || status === 'choosing') && (
+              <div className="flex flex-col items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
               </div>
+            )}
 
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-                <div className="flex gap-2">
-                  <HelpCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    {t('analysis', 'warning')}
+            {status === 'loading' && (
+              <LoadingState
+                progress={progress}
+                imageCount={imageUrls.length}
+                onCancel={handleCancel}
+                method={selectedMethod}
+              />
+            )}
+
+            {status === 'error' && (
+              <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                <AlertCircle className="w-12 h-12 text-red-500" />
+                <div className="text-center space-y-2">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {t('analysis', 'failed')}
+                  </p>
+                  <p className="text-xs text-red-500 dark:text-red-400">
+                    {error}
                   </p>
                 </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={onClose}>
+                    {t('common', 'close')}
+                  </Button>
+                  {apiKeyFailed && credits > 0 ? (
+                    <Button
+                      size="sm"
+                      onClick={() => startAnalysis('credit')}
+                    >
+                      <Sparkles className="w-4 h-4 mr-1" />
+                      {t('analysis', 'useCreditsInstead')}
+                    </Button>
+                  ) : apiKeyFailed && onOpenSettings ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        onClose();
+                        onOpenSettings();
+                      }}
+                    >
+                      {t('analysis', 'goToSettings')}
+                    </Button>
+                  ) : error.includes('크레딧') ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setShowPurchaseModal(true);
+                      }}
+                    >
+                      <ShoppingCart className="w-4 h-4 mr-1" />
+                      {t('analysis', 'buyCredits')}
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={handleReanalyze}>
+                      {t('common', 'retry')}
+                    </Button>
+                  )}
+                </div>
               </div>
+            )}
+
+            {status === 'success' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedCount === items.length && items.length > 0
+                      }
+                      onChange={toggleAll}
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {t('analysis', 'selectAll')} ({items.length})
+                    </span>
+                  </label>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {selectedCount}
+                    {t('analysis', 'selected')}
+                  </span>
+                </div>
+
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                  <div className="max-h-80 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
+                    {items.map((item, index) => (
+                      <ProductItem
+                        key={index}
+                        item={item}
+                        state={itemStates.get(index)!}
+                        onToggle={() => toggleItem(index)}
+                        onQuantityChange={(delta) =>
+                          updateQuantity(index, delta)
+                        }
+                        onOptionChange={(option) =>
+                          updateOption(index, option)
+                        }
+                        onNameChange={(name) => updateName(index, name)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                  <div className="flex gap-2">
+                    <HelpCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      {t('analysis', 'warning')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {status === 'success' && (
+            <div className="p-4 border-t dark:border-gray-700 flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleReanalyze}
+                size="icon"
+                title={t('analysis', 'reanalyze')}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" onClick={onClose} className="flex-1">
+                {t('common', 'cancel')}
+              </Button>
+              <Button
+                onClick={handleConfirm}
+                className="flex-1"
+                disabled={selectedCount === 0}
+              >
+                <Check className="w-4 h-4 mr-1" />
+                {selectedCount}
+                {t('analysis', 'addItems')}
+              </Button>
             </div>
           )}
         </div>
-
-        {status === 'success' && (
-          <div className="p-4 border-t dark:border-gray-700 flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleReanalyze}
-              size="icon"
-              title={t('analysis', 'reanalyze')}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" onClick={onClose} className="flex-1">
-              {t('common', 'cancel')}
-            </Button>
-            <Button
-              onClick={handleConfirm}
-              className="flex-1"
-              disabled={selectedCount === 0}
-            >
-              <Check className="w-4 h-4 mr-1" />
-              {selectedCount}
-              {t('analysis', 'addItems')}
-            </Button>
-          </div>
-        )}
       </div>
-    </div>
+
+      <AnalysisMethodModal
+        isOpen={showMethodModal}
+        onClose={() => {
+          setShowMethodModal(false);
+          if (status === 'choosing') {
+            onClose();
+          }
+        }}
+        onSelect={handleMethodSelect}
+        creditCost={creditCost}
+        credits={credits}
+        hasApiKey={hasApiKey}
+        hasCredits={credits > 0}
+        onOpenSettings={onOpenSettings}
+        onOpenPurchase={() => setShowPurchaseModal(true)}
+      />
+
+      <CreditPurchaseModal
+        isOpen={showPurchaseModal}
+        onClose={() => setShowPurchaseModal(false)}
+      />
+    </>
   );
 }
 
@@ -495,10 +637,12 @@ function LoadingState({
   progress,
   imageCount,
   onCancel,
+  method,
 }: {
   progress: string;
   imageCount: number;
   onCancel: () => void;
+  method: AnalysisMethod | null;
 }) {
   const [displayPercent, setDisplayPercent] = useState(0);
   const targetPercent = parseInt(progress) || 0;
@@ -534,6 +678,12 @@ function LoadingState({
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {tWithParams('analysis', 'analyzingImages', { count: imageCount })}
         </p>
+        {method === 'credit' && (
+          <p className="text-xs text-primary">
+            <Sparkles className="w-3 h-3 inline mr-1" />
+            {t('analysis', 'premiumAnalysis')}
+          </p>
+        )}
       </div>
       <div className="w-full max-w-xs">
         <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
