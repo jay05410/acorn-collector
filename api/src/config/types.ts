@@ -31,3 +31,5 @@ export function getCreditCost(imageCount: number): number {
     `images${Math.min(Math.max(imageCount, 1), 4)}` as keyof CreditCost;
   return CREDIT_COSTS[key];
 }
+
+export const GEMINI_MODEL = 'gemini-2.5-flash';
