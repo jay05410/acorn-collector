@@ -7,6 +7,7 @@ import {
   User,
   Coins,
   Loader2,
+  LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { t } from '@/lib/i18n';
@@ -30,15 +31,17 @@ export function Header({
   onSettingsClick,
   onCreditClick,
 }: HeaderProps) {
-  const { isAuthenticated, credits, user, signIn } = useAuthStore();
+  const { isAuthenticated, credits, user, signIn, signOut } = useAuthStore();
   const [loginLoading, setLoginLoading] = useState(false);
   const [showLoginMenu, setShowLoginMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowLoginMenu(false);
+        setShowUserMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -91,16 +94,57 @@ export function Header({
       </div>
       <div className="flex items-center gap-1">
         {isAuthenticated && (
-          <button
-            onClick={onCreditClick}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100 transition-colors"
-            title={user?.email}
-          >
-            <Coins className="w-4 h-4 text-amber-600" />
-            <span className="text-sm font-medium text-amber-700">
-              {credits.toLocaleString()}
-            </span>
-          </button>
+          <>
+            <button
+              onClick={onCreditClick}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100 transition-colors"
+            >
+              <Coins className="w-4 h-4 text-amber-600" />
+              <span className="text-sm font-medium text-amber-700">
+                {credits.toLocaleString()}
+              </span>
+            </button>
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
+                title={user?.email}
+              >
+                <div className="w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-white">
+                    {(user?.name || user?.email || '?').charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 max-w-[80px] truncate">
+                  {user?.name || user?.email}
+                </span>
+              </button>
+              {showUserMenu && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {user?.name}
+                    </p>
+                    {user?.email && !user.email.endsWith('@twitter.placeholder') && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {user.email}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      signOut();
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    로그아웃
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
         )}
         {!isAuthenticated && (
           <div className="relative" ref={menuRef}>
