@@ -2,6 +2,15 @@ import type { Language } from './storage';
 
 const translations = {
   ko: {
+    errors: {
+      imageLoadFailed: '이미지를 불러올 수 없습니다',
+      rateLimitExceeded: 'API 요청 한도 초과. 잠시 후 다시 시도해주세요',
+      networkError: '네트워크 오류. 인터넷 연결을 확인해주세요',
+      loginRequired: '로그인이 필요합니다',
+      insufficientCredits: '크레딧이 부족합니다',
+      noAnalysisMethod: '분석 방법이 없습니다. API 키를 등록하거나 크레딧을 충전해주세요.',
+      apiKeyInvalid: 'API 키가 유효하지 않습니다',
+    },
     common: {
       save: '저장',
       cancel: '취소',
@@ -103,6 +112,22 @@ const translations = {
       clickToEdit: '클릭하여 수정',
       goToSettings: 'API 키 등록하기',
       reanalyze: '다시 분석',
+      chooseMethod: '분석 방식 선택',
+      methodDirect: '내 API 키로 분석',
+      methodDirectDesc: '무료, 기본 품질 (1-pass)',
+      methodCredit: '크레딧으로 분석',
+      methodCreditDesc: '프리미엄 품질 (2-pass 검증)',
+      creditsUnit: '크레딧',
+      currentCredits: '보유 크레딧',
+      noMethod: 'API 키를 등록하거나 크레딧을 충전해주세요',
+      noCredits: '크레딧이 부족합니다',
+      buyCredits: '크레딧 충전',
+      apiKeyFailed: 'API 키가 유효하지 않습니다',
+      insufficientCredits: '크레딧이 부족합니다',
+      useCreditsInstead: '크레딧으로 분석',
+      premium: '프리미엄',
+      basic: '기본',
+      premiumAnalysis: '프리미엄 2-pass 분석 진행 중',
     },
     export: {
       title: '체크리스트 내보내기',
@@ -132,6 +157,15 @@ const translations = {
     },
   },
   en: {
+    errors: {
+      imageLoadFailed: 'Failed to load images',
+      rateLimitExceeded: 'API rate limit exceeded. Please try again later',
+      networkError: 'Network error. Please check your internet connection',
+      loginRequired: 'Login required',
+      insufficientCredits: 'Insufficient credits',
+      noAnalysisMethod: 'No analysis method available. Please set up an API key or purchase credits.',
+      apiKeyInvalid: 'API key is invalid',
+    },
     common: {
       save: 'Save',
       cancel: 'Cancel',
@@ -234,6 +268,22 @@ const translations = {
       clickToEdit: 'Click to edit',
       goToSettings: 'Set up API key',
       reanalyze: 'Reanalyze',
+      chooseMethod: 'Choose Analysis Method',
+      methodDirect: 'Use My API Key',
+      methodDirectDesc: 'Free, basic quality (1-pass)',
+      methodCredit: 'Use Credits',
+      methodCreditDesc: 'Premium quality (2-pass verification)',
+      creditsUnit: 'credits',
+      currentCredits: 'Current credits',
+      noMethod: 'Please set up an API key or purchase credits',
+      noCredits: 'Insufficient credits',
+      buyCredits: 'Buy Credits',
+      apiKeyFailed: 'API key is invalid',
+      insufficientCredits: 'Insufficient credits',
+      useCreditsInstead: 'Use credits instead',
+      premium: 'Premium',
+      basic: 'Basic',
+      premiumAnalysis: 'Premium 2-pass analysis in progress',
     },
     export: {
       title: 'Export Checklist',
@@ -263,6 +313,15 @@ const translations = {
     },
   },
   ja: {
+    errors: {
+      imageLoadFailed: '画像を読み込めません',
+      rateLimitExceeded: 'APIリクエスト制限を超えました。しばらくしてから再試行してください',
+      networkError: 'ネットワークエラー。インターネット接続を確認してください',
+      loginRequired: 'ログインが必要です',
+      insufficientCredits: 'クレジットが不足しています',
+      noAnalysisMethod: '分析方法がありません。APIキーを設定するかクレジットを購入してください。',
+      apiKeyInvalid: 'APIキーが無効です',
+    },
     common: {
       save: '保存',
       cancel: 'キャンセル',
@@ -363,6 +422,22 @@ const translations = {
       clickToEdit: 'クリックして編集',
       goToSettings: 'APIキーを設定',
       reanalyze: '再分析',
+      chooseMethod: '分析方法を選択',
+      methodDirect: '自分のAPIキーで分析',
+      methodDirectDesc: '無料、基本品質（1パス）',
+      methodCredit: 'クレジットで分析',
+      methodCreditDesc: 'プレミアム品質（2パス検証）',
+      creditsUnit: 'クレジット',
+      currentCredits: '保有クレジット',
+      noMethod: 'APIキーを設定するかクレジットを購入してください',
+      noCredits: 'クレジットが不足しています',
+      buyCredits: 'クレジット購入',
+      apiKeyFailed: 'APIキーが無効です',
+      insufficientCredits: 'クレジットが不足しています',
+      useCreditsInstead: 'クレジットで分析',
+      premium: 'プレミアム',
+      basic: '基本',
+      premiumAnalysis: 'プレミアム2パス分析中',
     },
     export: {
       title: 'チェックリスト出力',
@@ -392,6 +467,15 @@ const translations = {
     },
   },
   zh: {
+    errors: {
+      imageLoadFailed: '无法加载图片',
+      rateLimitExceeded: 'API请求超出限制。请稍后重试',
+      networkError: '网络错误。请检查网络连接',
+      loginRequired: '需要登录',
+      insufficientCredits: '积分不足',
+      noAnalysisMethod: '没有可用的分析方式。请设置API密钥或购买积分。',
+      apiKeyInvalid: 'API密钥无效',
+    },
     common: {
       save: '保存',
       cancel: '取消',
@@ -491,6 +575,22 @@ const translations = {
       clickToEdit: '点击编辑',
       goToSettings: '设置API密钥',
       reanalyze: '重新分析',
+      chooseMethod: '选择分析方式',
+      methodDirect: '使用我的API密钥',
+      methodDirectDesc: '免费，基础质量（单次）',
+      methodCredit: '使用积分分析',
+      methodCreditDesc: '高级质量（双重验证）',
+      creditsUnit: '积分',
+      currentCredits: '当前积分',
+      noMethod: '请设置API密钥或购买积分',
+      noCredits: '积分不足',
+      buyCredits: '购买积分',
+      apiKeyFailed: 'API密钥无效',
+      insufficientCredits: '积分不足',
+      useCreditsInstead: '使用积分分析',
+      premium: '高级',
+      basic: '基础',
+      premiumAnalysis: '高级双重验证分析中',
     },
     export: {
       title: '导出清单',
@@ -562,7 +662,12 @@ export function getCategoryLabel(category: string): string {
 }
 
 export function getLanguageForAI(): string {
-  return 'English';
+  const map: Record<string, string> = { ko: 'Korean', en: 'English', ja: 'Japanese', zh: 'Chinese' };
+  return map[currentLanguage] || 'Korean';
+}
+
+export function getLanguageCode(): string {
+  return currentLanguage;
 }
 
 export const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
