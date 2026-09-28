@@ -1,5 +1,6 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
+import path from 'path';
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
@@ -10,6 +11,11 @@ export default defineConfig({
     },
   },
   vite: () => ({
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src'),
+      },
+    },
     plugins: [tailwindcss()],
     define: {
       'import.meta.env.VITE_KAKAO_API_KEY': JSON.stringify(
