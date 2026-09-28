@@ -36,7 +36,7 @@ export default defineConfig({
         : undefined,
     name: '__MSG_appName__',
     description: '__MSG_appDescription__',
-    default_locale: 'ko',
+    default_locale: 'en',
     version: '1.0.0',
     permissions: ['storage', 'contextMenus', 'activeTab', 'sidePanel'],
     host_permissions: ['<all_urls>'],

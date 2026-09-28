@@ -1,37 +1,61 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { DayPicker } from 'react-day-picker';
-import dayjs from 'dayjs';
-import 'dayjs/locale/ko';
+import { DayPicker, type DayPickerLocale } from 'react-day-picker';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatDate, parseIsoDate, t, toIsoDate, useLanguage } from '@/i18n';
+import type { AppLanguage } from '@/i18n/languages';
 
-dayjs.locale('ko');
+type LocaleLanguage = Exclude<AppLanguage, 'en'>;
 
-const koLocale = {
-  localize: {
-    month: (n: number) =>
-      [
-        '1월',
-        '2월',
-        '3월',
-        '4월',
-        '5월',
-        '6월',
-        '7월',
-        '8월',
-        '9월',
-        '10월',
-        '11월',
-        '12월',
-      ][n],
-    day: (n: number) => ['일', '월', '화', '수', '목', '금', '토'][n],
-  },
-  formatLong: {
-    date: () => 'yyyy년 M월 d일',
-  },
+/**
+ * Calendar locales load on demand, one small chunk per language. English uses
+ * DayPicker's built-in en-US locale.
+ */
+const LOCALE_LOADERS: Record<LocaleLanguage, () => Promise<DayPickerLocale>> = {
+  ko: () => import('react-day-picker/locale/ko').then((m) => m.ko),
+  ja: () => import('react-day-picker/locale/ja').then((m) => m.ja),
+  'zh-CN': () => import('react-day-picker/locale/zh-CN').then((m) => m.zhCN),
+  'zh-TW': () => import('react-day-picker/locale/zh-TW').then((m) => m.zhTW),
+  th: () => import('react-day-picker/locale/th').then((m) => m.th),
+  id: () => import('react-day-picker/locale/id').then((m) => m.id),
+  vi: () => import('react-day-picker/locale/vi').then((m) => m.vi),
+  es: () => import('react-day-picker/locale/es').then((m) => m.es),
+  fr: () => import('react-day-picker/locale/fr').then((m) => m.fr),
+  de: () => import('react-day-picker/locale/de').then((m) => m.de),
+  'pt-BR': () => import('react-day-picker/locale/pt-BR').then((m) => m.ptBR),
 };
 
+const loadedLocales = new Map<AppLanguage, DayPickerLocale>();
+
+function useDayPickerLocale(
+  language: AppLanguage
+): DayPickerLocale | undefined {
+  const [, setVersion] = useState(0);
+
+  useEffect(() => {
+    if (language === 'en' || loadedLocales.has(language)) return;
+    let active = true;
+    LOCALE_LOADERS[language]()
+      .then((locale) => {
+        loadedLocales.set(language, locale);
+        if (active) setVersion((v) => v + 1);
+      })
+      .catch((error: unknown) => {
+        console.error(
+          `[DatePicker] could not load the ${language} locale`,
+          error
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [language]);
+
+  return loadedLocales.get(language);
+}
+
 interface DatePickerProps {
+  /** "YYYY-MM-DD" or empty. */
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -41,14 +65,16 @@ interface DatePickerProps {
 export function DatePicker({
   value,
   onChange,
-  placeholder = '날짜 선택',
+  placeholder,
   className,
 }: DatePickerProps) {
+  const language = useLanguage();
+  const locale = useDayPickerLocale(language);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const openedByFocus = useRef(false);
 
-  const selectedDate = value ? dayjs(value).toDate() : undefined;
+  const selectedDate = value ? parseIsoDate(value) : undefined;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -66,11 +92,7 @@ export function DatePicker({
 
   const handleSelect = useCallback(
     (date: Date | undefined) => {
-      if (date) {
-        onChange(dayjs(date).format('YYYY-MM-DD'));
-      } else {
-        onChange('');
-      }
+      onChange(date ? toIsoDate(date) : '');
       setIsOpen(false);
     },
     [onChange]
@@ -107,7 +129,9 @@ export function DatePicker({
       >
         <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400" />
         <span className="flex-1">
-          {value ? dayjs(value).format('YYYY년 M월 D일') : placeholder}
+          {value
+            ? formatDate(value)
+            : (placeholder ?? t('events', 'selectDate'))}
         </span>
       </button>
 
@@ -121,7 +145,7 @@ export function DatePicker({
             selected={selectedDate}
             onSelect={handleSelect}
             defaultMonth={selectedDate}
-            locale={koLocale as never}
+            locale={locale}
             showOutsideDays
             autoFocus
             components={{
@@ -165,7 +189,7 @@ export function DatePicker({
               onClick={() => handleSelect(undefined)}
               className="w-full mt-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
             >
-              날짜 지우기
+              {t('events', 'clearDate')}
             </button>
           )}
         </div>

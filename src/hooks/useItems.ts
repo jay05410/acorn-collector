@@ -11,14 +11,38 @@ export function useItems(boothId: string) {
   );
 
   const createItem = async (
-    data: Omit<Item, 'id' | 'createdAt' | 'checked' | 'quantity'> &
-      Partial<Pick<Item, 'checked' | 'quantity'>>
+    data: Omit<
+      Item,
+      | 'id'
+      | 'createdAt'
+      | 'checked'
+      | 'quantity'
+      | 'originalName'
+      | 'currency'
+      | 'category'
+      | 'option'
+    > &
+      Partial<
+        Pick<
+          Item,
+          | 'checked'
+          | 'quantity'
+          | 'originalName'
+          | 'currency'
+          | 'category'
+          | 'option'
+        >
+      >
   ): Promise<string> => {
     const id = generateId();
     const { badgeId, ...rest } = data;
     await db.items.add({
       checked: false,
       quantity: 1,
+      originalName: null,
+      currency: null,
+      category: null,
+      option: null,
       badgeId: badgeId ?? DEFAULT_BADGE_ID,
       ...rest,
       id,
@@ -85,4 +109,17 @@ export function useItems(boothId: string) {
     deleteItem,
     toggleItemCheck,
   };
+}
+
+/** Live items of several booths (e.g. a whole event), in one query. */
+export function useItemsForBooths(boothIds: readonly string[]): Item[] {
+  const key = boothIds.join('\n');
+  const items = useLiveQuery(
+    () =>
+      boothIds.length > 0
+        ? db.items.where('boothId').anyOf([...boothIds]).toArray()
+        : [],
+    [key]
+  );
+  return items ?? [];
 }

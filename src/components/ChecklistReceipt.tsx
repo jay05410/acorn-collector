@@ -1,13 +1,24 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { X, Download, Share2, Receipt, Check } from 'lucide-react';
-import { useEvents } from '@/hooks/useEvents';
+import { useEvent } from '@/hooks/useEvents';
 import { useBooths } from '@/hooks/useBooths';
-import { useItems } from '@/hooks/useItems';
+import { useItemsForBooths } from '@/hooks/useItems';
 import { useBadges } from '@/hooks/useBadges';
 import { Button } from '@/components/ui/Button';
 import { exportChecklistAsImage } from '@/lib/export';
-import { formatPrice } from '@/lib/utils';
-import { t } from '@/lib/i18n';
+import {
+  resolveEventCurrency,
+  resolveItemCurrency,
+  totalsByCurrency,
+} from '@/lib/utils';
+import {
+  formatDate,
+  formatPrice,
+  getBadgeLabel,
+  t,
+  tp,
+  useLanguage,
+} from '@/i18n';
 import type { Booth, Item } from '@/types';
 
 type ExportMode = 'receipt' | 'checklist';
@@ -17,40 +28,32 @@ interface ChecklistReceiptProps {
   onClose: () => void;
 }
 
+function groupByBooth(items: readonly Item[]): Map<string, Item[]> {
+  const groups = new Map<string, Item[]>();
+  for (const item of items) {
+    const group = groups.get(item.boothId);
+    if (group) group.push(item);
+    else groups.set(item.boothId, [item]);
+  }
+  return groups;
+}
+
 export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
-  const { getEvent } = useEvents();
+  useLanguage();
+  const event = useEvent(eventId);
   const { booths } = useBooths(eventId);
-  const [eventName, setEventName] = useState('');
-  const [eventDate, setEventDate] = useState<string | null>(null);
-  const [eventLocation, setEventLocation] = useState<string | null>(null);
+  const boothIds = useMemo(() => booths.map((b) => b.id), [booths]);
+  const items = useItemsForBooths(boothIds);
+  const itemsByBooth = useMemo(() => groupByBooth(items), [items]);
   const [isExporting, setIsExporting] = useState(false);
-  const [allItems, setAllItems] = useState<Record<string, Item[]>>({});
   const [mode, setMode] = useState<ExportMode>('checklist');
 
-  useEffect(() => {
-    getEvent(eventId).then((event) => {
-      if (event) {
-        setEventName(event.name);
-        setEventDate(event.date);
-        setEventLocation(event.location);
-      }
-    });
-  }, [eventId, getEvent]);
-
-  const handleItemsLoaded = (boothId: string, items: Item[]) => {
-    setAllItems((prev) => ({ ...prev, [boothId]: items }));
-  };
-
-  const totals = useMemo(() => {
-    const items = Object.values(allItems).flat();
-    const totalEstimated = items.reduce((sum, i) => sum + (i.price ?? 0), 0);
-    const totalSpent = items
-      .filter((i) => i.checked)
-      .reduce((sum, i) => sum + (i.price ?? 0), 0);
-    const totalItems = items.length;
-    const checkedItems = items.filter((i) => i.checked).length;
-    return { totalEstimated, totalSpent, totalItems, checkedItems };
-  }, [allItems]);
+  const eventName = event?.name ?? '';
+  const eventCurrency = resolveEventCurrency(event?.currency);
+  const totals = useMemo(
+    () => totalsByCurrency(items, eventCurrency).filter((row) => row.total > 0),
+    [items, eventCurrency]
+  );
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -80,7 +83,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
       if (navigator.share && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: `${eventName} 체크리스트`,
+          title: tp('export', 'shareTitle', { event: eventName }),
         });
       } else {
         handleExport();
@@ -90,8 +93,6 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
       handleExport();
     }
   };
-
-  const totalBooths = booths.length;
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
@@ -109,7 +110,12 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             {t('export', 'title')}
           </h2>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            aria-label={t('common', 'close')}
+          >
             <X className="w-5 h-5" />
           </Button>
         </div>
@@ -151,11 +157,13 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
               <h1 className="text-lg font-bold text-gray-800">
                 {eventName || t('export', 'title')}
               </h1>
-              {eventDate && (
-                <p className="text-sm text-gray-500">{eventDate}</p>
+              {event?.date && (
+                <p className="text-sm text-gray-500">
+                  {formatDate(event.date)}
+                </p>
               )}
-              {eventLocation && (
-                <p className="text-sm text-gray-500">{eventLocation}</p>
+              {event?.location && (
+                <p className="text-sm text-gray-500">{event.location}</p>
               )}
             </div>
 
@@ -171,7 +179,8 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
                   <BoothSection
                     key={booth.id}
                     booth={booth}
-                    onItemsLoaded={handleItemsLoaded}
+                    items={itemsByBooth.get(booth.id) ?? []}
+                    currency={eventCurrency}
                     showPrices={mode === 'receipt'}
                   />
                 ))}
@@ -183,29 +192,35 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
             <div className="text-sm text-gray-600">
               <div className="flex justify-between mb-1">
                 <span>{t('booths', 'title')}</span>
-                <span className="font-medium">{totalBooths}</span>
+                <span className="font-medium">{booths.length}</span>
               </div>
               <div className="flex justify-between mb-1">
                 <span>{t('items', 'title')}</span>
-                <span className="font-medium">{totals.totalItems}</span>
+                <span className="font-medium">{items.length}</span>
               </div>
-              {mode === 'receipt' && totals.totalEstimated > 0 && (
+              {mode === 'receipt' && totals.length > 0 && (
                 <>
                   <div className="border-t border-dashed border-gray-200 my-2" />
-                  <div className="flex justify-between mb-1">
-                    <span>{formatPrice(totals.totalEstimated)}</span>
-                  </div>
-                  <div className="flex justify-between text-green-600 font-semibold">
-                    <span>{formatPrice(totals.totalSpent)}</span>
-                  </div>
+                  {totals.map((row) => (
+                    <div key={row.currency} className="mb-1">
+                      <div className="flex justify-between">
+                        <span>{t('export', 'total')}</span>
+                        <span className="font-medium">
+                          {formatPrice(row.total, row.currency)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-green-600 font-semibold">
+                        <span>{t('export', 'purchased')}</span>
+                        <span>{formatPrice(row.spent, row.currency)}</span>
+                      </div>
+                    </div>
+                  ))}
                 </>
               )}
             </div>
 
             <div className="text-center mt-3 pt-2 border-t border-dashed border-gray-300">
-              <p className="text-xs text-gray-400">
-                {t('settings', 'version')}
-              </p>
+              <p className="text-xs text-gray-400">{t('common', 'appName')}</p>
             </div>
           </div>
         </div>
@@ -213,6 +228,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
         <div className="flex gap-2 p-4 border-t dark:border-gray-700">
           <Button variant="outline" onClick={handleShare} className="flex-1">
             <Share2 className="w-4 h-4 mr-2" />
+            {t('export', 'share')}
           </Button>
           <Button
             onClick={handleExport}
@@ -230,17 +246,19 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
 
 interface BoothSectionProps {
   booth: Booth;
-  onItemsLoaded: (boothId: string, items: Item[]) => void;
+  items: Item[];
+  /** Event currency, used for items without their own. */
+  currency: string;
   showPrices: boolean;
 }
 
-function BoothSection({ booth, onItemsLoaded, showPrices }: BoothSectionProps) {
-  const { items } = useItems(booth.id);
+function BoothSection({
+  booth,
+  items,
+  currency,
+  showPrices,
+}: BoothSectionProps) {
   const { getBadgeById } = useBadges();
-
-  useEffect(() => {
-    onItemsLoaded(booth.id, items);
-  }, [booth.id, items, onItemsLoaded]);
 
   const sortedItems = [...items].sort((a, b) => {
     if (a.checked !== b.checked) return a.checked ? 1 : -1;
@@ -248,10 +266,9 @@ function BoothSection({ booth, onItemsLoaded, showPrices }: BoothSectionProps) {
   });
 
   const checkedCount = items.filter((i) => i.checked).length;
-  const boothTotal = items.reduce((sum, i) => sum + (i.price ?? 0), 0);
-  const boothSpent = items
-    .filter((i) => i.checked)
-    .reduce((sum, i) => sum + (i.price ?? 0), 0);
+  const totals = totalsByCurrency(items, currency).filter(
+    (row) => row.total > 0
+  );
 
   return (
     <div className="bg-gray-50 rounded-lg p-3">
@@ -293,7 +310,10 @@ function BoothSection({ booth, onItemsLoaded, showPrices }: BoothSectionProps) {
                 </span>
                 {showPrices && item.price !== null && (
                   <span className="text-xs text-gray-500">
-                    {formatPrice(item.price)}
+                    {formatPrice(
+                      item.price,
+                      resolveItemCurrency(item, currency)
+                    )}
                   </span>
                 )}
                 {badge && (
@@ -306,7 +326,7 @@ function BoothSection({ booth, onItemsLoaded, showPrices }: BoothSectionProps) {
                       color: badge.color ?? '#374151',
                     }}
                   >
-                    {badge.label}
+                    {getBadgeLabel(badge)}
                   </span>
                 )}
               </li>
@@ -317,14 +337,20 @@ function BoothSection({ booth, onItemsLoaded, showPrices }: BoothSectionProps) {
         <p className="text-xs text-gray-400 italic">{t('items', 'noItems')}</p>
       )}
 
-      {showPrices && boothTotal > 0 && (
-        <div className="mt-2 pt-2 border-t border-dashed border-gray-200 text-xs text-gray-500 text-right">
-          {boothSpent > 0 && (
-            <span className="text-green-600 mr-2">
-              {formatPrice(boothSpent)} 완료
-            </span>
-          )}
-          <span>/ {formatPrice(boothTotal)}</span>
+      {showPrices && totals.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-dashed border-gray-200 text-xs text-gray-500 text-right space-y-0.5">
+          {totals.map((row) => (
+            <div key={row.currency}>
+              {row.spent > 0 && (
+                <span className="text-green-600 mr-2">
+                  {tp('export', 'spentAmount', {
+                    amount: formatPrice(row.spent, row.currency),
+                  })}
+                </span>
+              )}
+              <span>/ {formatPrice(row.total, row.currency)}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

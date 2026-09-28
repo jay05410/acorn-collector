@@ -1,0 +1,20 @@
+/** Currencies offered for events, grouped by the regions the app targets. */
+export const EVENT_CURRENCIES = [
+  'KRW',
+  'JPY',
+  'CNY',
+  'TWD',
+  'HKD',
+  'USD',
+  'EUR',
+  'GBP',
+  'THB',
+  'IDR',
+  'VND',
+  'PHP',
+  'SGD',
+  'MYR',
+  'BRL',
+  'CAD',
+  'AUD',
+] as const;

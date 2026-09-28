@@ -18,11 +18,19 @@ import { useItems } from '@/hooks/useItems';
 import { useBadges } from '@/hooks/useBadges';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { CurrencySelect } from '@/components/ui/CurrencySelect';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { PlaceAutocomplete } from '@/components/ui/PlaceAutocomplete';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatDate } from '@/lib/utils';
-import { t } from '@/lib/i18n';
+import {
+  formatDate,
+  getBadgeLabel,
+  getLanguageInfo,
+  t,
+  tn,
+  useLanguage,
+} from '@/i18n';
+import { resolveEventCurrency, shouldPersistEventCurrency } from '@/lib/utils';
 import type { Event, Booth } from '@/types';
 
 interface EventListProps {
@@ -36,13 +44,23 @@ export function EventList({
   onExportEvent,
   onAddBooth,
 }: EventListProps) {
+  useLanguage();
   const { events, isLoading, createEvent, updateEvent, deleteEvent } =
     useEvents();
   const [isAdding, setIsAdding] = useState(false);
   const [newEventName, setNewEventName] = useState('');
   const [newEventDate, setNewEventDate] = useState('');
   const [newEventLocation, setNewEventLocation] = useState('');
+  const [newEventCurrency, setNewEventCurrency] = useState('');
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+
+  const openAddForm = () => {
+    setNewEventName('');
+    setNewEventDate('');
+    setNewEventLocation('');
+    setNewEventCurrency(getLanguageInfo().defaultCurrency);
+    setIsAdding(true);
+  };
 
   const handleAddEvent = async () => {
     if (!newEventName.trim()) return;
@@ -52,11 +70,9 @@ export function EventList({
       date: newEventDate || null,
       location: newEventLocation || null,
       mapImageUrl: null,
+      currency: newEventCurrency,
     });
 
-    setNewEventName('');
-    setNewEventDate('');
-    setNewEventLocation('');
     setIsAdding(false);
   };
 
@@ -109,11 +125,20 @@ export function EventList({
               onChange={(e) => setNewEventName(e.target.value)}
               autoFocus
             />
-            <DatePicker
-              value={newEventDate}
-              onChange={setNewEventDate}
-              placeholder={t('events', 'eventDate')}
-            />
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                <DatePicker
+                  value={newEventDate}
+                  onChange={setNewEventDate}
+                  placeholder={t('events', 'eventDate')}
+                />
+              </div>
+              <CurrencySelect
+                value={newEventCurrency}
+                onChange={setNewEventCurrency}
+                className="w-24"
+              />
+            </div>
             <PlaceAutocomplete
               value={newEventLocation}
               onChange={setNewEventLocation}
@@ -142,7 +167,7 @@ export function EventList({
           title={t('events', 'noEvents')}
           description={t('events', 'noEventsDesc')}
           action={
-            <Button onClick={() => setIsAdding(true)}>
+            <Button onClick={openAddForm}>
               <Plus className="w-4 h-4 mr-2" />
               {t('events', 'addEvent')}
             </Button>
@@ -152,7 +177,7 @@ export function EventList({
         <>
           {!isAdding && (
             <button
-              onClick={() => setIsAdding(true)}
+              onClick={openAddForm}
               className="flex items-center gap-2 p-4 text-primary-dark dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
             >
               <Plus className="w-5 h-5" />
@@ -207,23 +232,36 @@ function EventItem({
   const [editName, setEditName] = useState(event.name);
   const [editDate, setEditDate] = useState(event.date || '');
   const [editLocation, setEditLocation] = useState(event.location || '');
+  const [editCurrency, setEditCurrency] = useState('');
+  // What the picker showed when editing began. For an event without a
+  // currency this is only a display fallback and must not be saved as is.
+  const [seededCurrency, setSeededCurrency] = useState('');
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
+    const seeded = resolveEventCurrency(event.currency);
     setEditName(event.name);
     setEditDate(event.date || '');
     setEditLocation(event.location || '');
+    setEditCurrency(seeded);
+    setSeededCurrency(seeded);
     setIsEditing(true);
   };
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!editName.trim()) return;
-    await onUpdate({
+    const update: Partial<Event> = {
       name: editName.trim(),
       date: editDate || null,
       location: editLocation.trim() || null,
-    });
+    };
+    if (
+      shouldPersistEventCurrency(event.currency, seededCurrency, editCurrency)
+    ) {
+      update.currency = editCurrency;
+    }
+    await onUpdate(update);
     setIsEditing(false);
   };
 
@@ -245,11 +283,20 @@ function EventItem({
             onChange={(e) => setEditName(e.target.value)}
             autoFocus
           />
-          <DatePicker
-            value={editDate}
-            onChange={setEditDate}
-            placeholder={t('events', 'eventDate')}
-          />
+          <div className="flex gap-2">
+            <div className="flex-1 min-w-0">
+              <DatePicker
+                value={editDate}
+                onChange={setEditDate}
+                placeholder={t('events', 'eventDate')}
+              />
+            </div>
+            <CurrencySelect
+              value={editCurrency}
+              onChange={setEditCurrency}
+              className="w-24"
+            />
+          </div>
           <PlaceAutocomplete
             value={editLocation}
             onChange={setEditLocation}
@@ -308,15 +355,14 @@ function EventItem({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-primary dark:text-primary bg-primary-light dark:bg-primary-light px-2 py-0.5 rounded-full">
-            {boothCount}
-            {t('events', 'boothCount')}
+            {tn('events', 'boothCount', boothCount)}
           </span>
           <Button
             variant="ghost"
             size="icon"
             onClick={handleEdit}
             className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
-            aria-label="수정"
+            aria-label={t('common', 'edit')}
           >
             <Pencil className="w-4 h-4" />
           </Button>
@@ -325,7 +371,7 @@ function EventItem({
             size="icon"
             onClick={onExportImage}
             className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
-            aria-label="이미지로 저장"
+            aria-label={t('export', 'saveImage')}
           >
             <Image className="w-4 h-4" />
           </Button>
@@ -334,7 +380,7 @@ function EventItem({
             size="icon"
             onClick={onDelete}
             className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30"
-            aria-label="삭제"
+            aria-label={t('common', 'delete')}
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -480,7 +526,7 @@ function BoothPreviewItem({
                       color: badge.color ?? '#374151',
                     }}
                   >
-                    {badge.label} {stat.checked}/{stat.total}
+                    {getBadgeLabel(badge)} {stat.checked}/{stat.total}
                   </span>
                 );
               })}
