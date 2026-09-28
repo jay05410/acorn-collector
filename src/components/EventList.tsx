@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useId, useMemo, useState, type FormEvent } from 'react';
 import {
   ArrowDownAZ,
   ArrowDownWideNarrow,
   Calendar,
+  CalendarDays,
   Check,
-  ChevronDown,
   ChevronRight,
-  Image,
+  ImageDown,
   MapPin,
   Pencil,
   Plus,
@@ -14,14 +14,27 @@ import {
 } from 'lucide-react';
 import { useEvents } from '@/hooks/useEvents';
 import { useBooths } from '@/hooks/useBooths';
-import { useItems } from '@/hooks/useItems';
+import { useItemsForBooths } from '@/hooks/useItems';
 import { useBadges } from '@/hooks/useBadges';
+import { Badge } from '@/components/ui/Badge';
+import { BoothNumber } from '@/components/ui/BoothNumber';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import { Card } from '@/components/ui/Card';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { CurrencySelect } from '@/components/ui/CurrencySelect';
 import { DatePicker } from '@/components/ui/DatePicker';
-import { PlaceAutocomplete } from '@/components/ui/PlaceAutocomplete';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Field } from '@/components/ui/Field';
+import { IconButton } from '@/components/ui/IconButton';
+import { Input } from '@/components/ui/Input';
+import { PlaceAutocomplete } from '@/components/ui/PlaceAutocomplete';
+import { Progress } from '@/components/ui/Progress';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { Skeleton } from '@/components/ui/Skeleton';
+import {
+  groupItemsByBooth,
+  summarizeChecklist,
+} from '@/lib/checklist-progress';
 import {
   formatDate,
   getBadgeLabel,
@@ -30,13 +43,33 @@ import {
   tn,
   useLanguage,
 } from '@/i18n';
-import { resolveEventCurrency, shouldPersistEventCurrency } from '@/lib/utils';
-import type { Event, Booth } from '@/types';
+import {
+  cn,
+  resolveEventCurrency,
+  shouldPersistEventCurrency,
+} from '@/lib/utils';
+import type { Badge as BadgeRecord, Booth, Event, Item } from '@/types';
 
 interface EventListProps {
   onSelectBooth: (boothId: string, eventId: string) => void;
   onExportEvent: (eventId: string) => void;
   onAddBooth: (eventId: string) => void;
+}
+
+interface EventDraft {
+  name: string;
+  date: string;
+  location: string;
+  currency: string;
+}
+
+function toEventFields(draft: EventDraft) {
+  return {
+    name: draft.name.trim(),
+    date: draft.date || null,
+    location: draft.location.trim() || null,
+    currency: draft.currency,
+  };
 }
 
 export function EventList({
@@ -48,39 +81,19 @@ export function EventList({
   const { events, isLoading, createEvent, updateEvent, deleteEvent } =
     useEvents();
   const [isAdding, setIsAdding] = useState(false);
-  const [newEventName, setNewEventName] = useState('');
-  const [newEventDate, setNewEventDate] = useState('');
-  const [newEventLocation, setNewEventLocation] = useState('');
-  const [newEventCurrency, setNewEventCurrency] = useState('');
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<Event | null>(null);
+  const addHeadingId = useId();
 
-  const openAddForm = () => {
-    setNewEventName('');
-    setNewEventDate('');
-    setNewEventLocation('');
-    setNewEventCurrency(getLanguageInfo().defaultCurrency);
-    setIsAdding(true);
-  };
-
-  const handleAddEvent = async () => {
-    if (!newEventName.trim()) return;
-
-    await createEvent({
-      name: newEventName.trim(),
-      date: newEventDate || null,
-      location: newEventLocation || null,
-      mapImageUrl: null,
-      currency: newEventCurrency,
-    });
-
+  const handleAddEvent = async (draft: EventDraft) => {
+    await createEvent({ ...toEventFields(draft), mapImageUrl: null });
     setIsAdding(false);
   };
 
-  const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm(t('events', 'deleteConfirm'))) {
-      await deleteEvent(id);
-    }
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+    await deleteEvent(pendingDelete.id);
+    setPendingDelete(null);
   };
 
   const toggleExpand = (eventId: string) => {
@@ -95,98 +108,79 @@ export function EventList({
     });
   };
 
-  const handleExportImage = (e: React.MouseEvent, eventId: string) => {
-    e.stopPropagation();
-    onExportEvent(eventId);
-  };
-
   if (isLoading) {
     return (
-      <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        {t('common', 'loading')}
+      <div aria-busy="true" className="space-y-2 p-3">
+        <span className="sr-only">{t('common', 'loading')}</span>
+        {[0, 1].map((key) => (
+          <Card key={key} className="space-y-2.5 p-4 pl-11">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-6 w-20" />
+          </Card>
+        ))}
       </div>
     );
   }
 
-  return (
-    <div className="flex flex-col">
-      {isAdding && (
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleAddEvent();
-            }}
-            className="space-y-3"
-          >
-            <Input
-              placeholder={t('events', 'eventNamePlaceholder')}
-              value={newEventName}
-              onChange={(e) => setNewEventName(e.target.value)}
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                <DatePicker
-                  value={newEventDate}
-                  onChange={setNewEventDate}
-                  placeholder={t('events', 'eventDate')}
-                />
-              </div>
-              <CurrencySelect
-                value={newEventCurrency}
-                onChange={setNewEventCurrency}
-                className="w-24"
-              />
-            </div>
-            <PlaceAutocomplete
-              value={newEventLocation}
-              onChange={setNewEventLocation}
-              placeholder={t('events', 'eventLocationPlaceholder')}
-            />
-            <div className="flex gap-2">
-              <Button type="submit" className="flex-1">
-                {t('common', 'add')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsAdding(false)}
-                className="flex-1"
-              >
-                {t('common', 'cancel')}
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
+  const addForm = isAdding && (
+    <Card
+      as="section"
+      aria-labelledby={addHeadingId}
+      className="mx-3 mb-3 animate-reveal p-4"
+    >
+      <h2 id={addHeadingId} className="mb-3 text-sm font-semibold text-fg">
+        {t('events', 'addEvent')}
+      </h2>
+      <EventForm
+        initial={{
+          name: '',
+          date: '',
+          location: '',
+          currency: getLanguageInfo().defaultCurrency,
+        }}
+        submitLabel={t('common', 'add')}
+        onSubmit={handleAddEvent}
+        onCancel={() => setIsAdding(false)}
+      />
+    </Card>
+  );
 
+  return (
+    <div className="flex flex-col pb-4">
       {events.length === 0 && !isAdding ? (
         <EmptyState
-          icon={<Calendar className="w-12 h-12" />}
+          icon={<CalendarDays />}
           title={t('events', 'noEvents')}
           description={t('events', 'noEventsDesc')}
+          className="py-16"
           action={
-            <Button onClick={openAddForm}>
-              <Plus className="w-4 h-4 mr-2" />
+            <Button onClick={() => setIsAdding(true)}>
+              <Plus />
               {t('events', 'addEvent')}
             </Button>
           }
         />
       ) : (
         <>
-          {!isAdding && (
-            <button
-              onClick={openAddForm}
-              className="flex items-center gap-2 p-4 text-primary-dark dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
-            >
-              <Plus className="w-5 h-5" />
-              <span className="font-medium">{t('events', 'addEvent')}</span>
-            </button>
-          )}
-          <div className="space-y-1 pb-3">
+          <div className="flex min-h-14 items-center justify-between gap-2 px-4 pt-2">
+            <h2 className="text-sm font-semibold text-fg-muted">
+              {t('events', 'title')}
+              <span className="ms-1.5 text-fg-subtle tabular-nums">
+                {events.length}
+              </span>
+            </h2>
+            {!isAdding && (
+              <Button size="sm" variant="soft" onClick={() => setIsAdding(true)}>
+                <Plus />
+                {t('events', 'addEvent')}
+              </Button>
+            )}
+          </div>
+          {addForm}
+          <ul className="space-y-2 px-3">
             {events.map((event) => (
-              <EventItem
+              <EventCard
                 key={event.id}
                 event={event}
                 isExpanded={expandedEvents.has(event.id)}
@@ -194,29 +188,99 @@ export function EventList({
                 onSelectBooth={(boothId) => onSelectBooth(boothId, event.id)}
                 onAddBooth={() => onAddBooth(event.id)}
                 onUpdate={(data) => updateEvent(event.id, data)}
-                onDelete={(e) => handleDeleteEvent(e, event.id)}
-                onExportImage={(e) => handleExportImage(e, event.id)}
+                onDelete={() => setPendingDelete(event)}
+                onExportImage={() => onExportEvent(event.id)}
               />
             ))}
-          </div>
+          </ul>
         </>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={pendingDelete?.name}
+        description={t('events', 'deleteConfirm')}
+        confirmLabel={t('common', 'delete')}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
 
-interface EventItemProps {
+interface EventFormProps {
+  initial: EventDraft;
+  submitLabel: string;
+  onSubmit: (draft: EventDraft) => Promise<void>;
+  onCancel: () => void;
+}
+
+function EventForm({ initial, submitLabel, onSubmit, onCancel }: EventFormProps) {
+  const [draft, setDraft] = useState(initial);
+  const canSubmit = draft.name.trim().length > 0;
+  const update = (patch: Partial<EventDraft>) =>
+    setDraft((prev) => ({ ...prev, ...patch }));
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (canSubmit) void onSubmit(draft);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <Field label={t('events', 'eventName')} required>
+        <Input
+          value={draft.name}
+          onChange={(e) => update({ name: e.target.value })}
+          placeholder={t('events', 'eventNamePlaceholder')}
+          autoFocus
+        />
+      </Field>
+      <div className="flex gap-2">
+        <Field label={t('events', 'eventDate')} className="flex-1">
+          <DatePicker
+            value={draft.date}
+            onChange={(date) => update({ date })}
+          />
+        </Field>
+        <Field label={t('currency', 'label')} className="w-28 shrink-0">
+          <CurrencySelect
+            value={draft.currency}
+            onChange={(currency) => update({ currency })}
+          />
+        </Field>
+      </div>
+      <Field label={t('events', 'eventLocation')}>
+        <PlaceAutocomplete
+          value={draft.location}
+          onChange={(location) => update({ location })}
+          placeholder={t('events', 'eventLocationPlaceholder')}
+        />
+      </Field>
+      <div className="flex gap-2 pt-1">
+        <Button variant="secondary" className="flex-1" onClick={onCancel}>
+          {t('common', 'cancel')}
+        </Button>
+        <Button type="submit" className="flex-1" disabled={!canSubmit}>
+          {submitLabel}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+interface EventCardProps {
   event: Event;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onSelectBooth: (boothId: string) => void;
   onAddBooth: () => void;
   onUpdate: (data: Partial<Event>) => Promise<void>;
-  onDelete: (e: React.MouseEvent) => void;
-  onExportImage: (e: React.MouseEvent) => void;
+  onDelete: () => void;
+  onExportImage: () => void;
 }
 
-function EventItem({
+function EventCard({
   event,
   isExpanded,
   onToggleExpand,
@@ -225,193 +289,171 @@ function EventItem({
   onUpdate,
   onDelete,
   onExportImage,
-}: EventItemProps) {
+}: EventCardProps) {
   const { booths } = useBooths(event.id);
-  const boothCount = booths.length;
+  const boothIds = useMemo(() => booths.map((booth) => booth.id), [booths]);
+  const items = useItemsForBooths(boothIds);
+  const progress = useMemo(() => summarizeChecklist(items), [items]);
   const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(event.name);
-  const [editDate, setEditDate] = useState(event.date || '');
-  const [editLocation, setEditLocation] = useState(event.location || '');
-  const [editCurrency, setEditCurrency] = useState('');
   // What the picker showed when editing began. For an event without a
   // currency this is only a display fallback and must not be saved as is.
   const [seededCurrency, setSeededCurrency] = useState('');
+  const panelId = useId();
 
-  const handleEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const seeded = resolveEventCurrency(event.currency);
-    setEditName(event.name);
-    setEditDate(event.date || '');
-    setEditLocation(event.location || '');
-    setEditCurrency(seeded);
-    setSeededCurrency(seeded);
+  const startEditing = () => {
+    setSeededCurrency(resolveEventCurrency(event.currency));
     setIsEditing(true);
   };
 
-  const handleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!editName.trim()) return;
-    const update: Partial<Event> = {
-      name: editName.trim(),
-      date: editDate || null,
-      location: editLocation.trim() || null,
-    };
-    if (
-      shouldPersistEventCurrency(event.currency, seededCurrency, editCurrency)
-    ) {
-      update.currency = editCurrency;
+  const handleSave = async (draft: EventDraft) => {
+    const { currency, ...fields } = toEventFields(draft);
+    const update: Partial<Event> = fields;
+    if (shouldPersistEventCurrency(event.currency, seededCurrency, currency)) {
+      update.currency = currency;
     }
     await onUpdate(update);
     setIsEditing(false);
   };
 
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsEditing(false);
-  };
-
   if (isEditing) {
     return (
-      <div
-        id={`event-${event.id}`}
-        className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
-      >
-        <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
-          <Input
-            placeholder={t('events', 'eventName')}
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            autoFocus
+      <li id={`event-${event.id}`}>
+        <Card className="animate-reveal p-4">
+          <EventForm
+            initial={{
+              name: event.name,
+              date: event.date ?? '',
+              location: event.location ?? '',
+              currency: seededCurrency,
+            }}
+            submitLabel={t('common', 'save')}
+            onSubmit={handleSave}
+            onCancel={() => setIsEditing(false)}
           />
-          <div className="flex gap-2">
-            <div className="flex-1 min-w-0">
-              <DatePicker
-                value={editDate}
-                onChange={setEditDate}
-                placeholder={t('events', 'eventDate')}
-              />
-            </div>
-            <CurrencySelect
-              value={editCurrency}
-              onChange={setEditCurrency}
-              className="w-24"
-            />
-          </div>
-          <PlaceAutocomplete
-            value={editLocation}
-            onChange={setEditLocation}
-            placeholder={t('events', 'eventLocation')}
-          />
-          <div className="flex gap-2">
-            <Button onClick={handleSave} className="flex-1">
-              {t('common', 'save')}
-            </Button>
-            <Button variant="outline" onClick={handleCancel} className="flex-1">
-              {t('common', 'cancel')}
-            </Button>
-          </div>
-        </div>
-      </div>
+        </Card>
+      </li>
     );
   }
 
   return (
-    <div id={`event-${event.id}`} className="mx-3 my-2">
-      <div
-        onClick={onToggleExpand}
-        className="relative flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md cursor-pointer transition-all group overflow-hidden"
+    <li id={`event-${event.id}`}>
+      <Card
+        as="article"
+        className="group relative transition-shadow duration-150 ease-out hover:shadow-sm"
       >
-        <div className="absolute left-0 top-2 bottom-2 w-1 bg-primary rounded-r-full" />
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <h3>
           <button
-            className="text-primary dark:text-primary"
+            type="button"
+            aria-expanded={isExpanded}
+            aria-controls={isExpanded ? panelId : undefined}
             onClick={onToggleExpand}
+            className="flex w-full cursor-pointer items-start gap-2 p-3 pb-1.5 text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-focus"
           >
-            {isExpanded ? (
-              <ChevronDown className="w-5 h-5" />
-            ) : (
-              <ChevronRight className="w-5 h-5" />
-            )}
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                'mt-px size-5 shrink-0 text-fg-subtle transition-transform duration-200 ease-out',
+                isExpanded && 'rotate-90'
+              )}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="line-clamp-2 text-[15px] leading-snug font-semibold break-words text-fg">
+                {event.name}
+              </span>
+              {(event.date || event.location) && (
+                <span className="mt-1 flex min-w-0 items-center gap-x-3 text-xs text-fg-muted">
+                  {event.date && (
+                    <span className="inline-flex shrink-0 items-center gap-1">
+                      <Calendar
+                        aria-hidden="true"
+                        className="size-3.5 shrink-0 text-fg-subtle"
+                      />
+                      <span className="whitespace-nowrap tabular-nums">
+                        {formatDate(event.date)}
+                      </span>
+                    </span>
+                  )}
+                  {event.location && (
+                    <span className="inline-flex min-w-0 items-center gap-1">
+                      <MapPin
+                        aria-hidden="true"
+                        className="size-3.5 shrink-0 text-fg-subtle"
+                      />
+                      <span className="truncate">{event.location}</span>
+                    </span>
+                  )}
+                </span>
+              )}
+            </span>
           </button>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate">
-              {event.name}
-            </h3>
-            <div className="flex items-center gap-3 mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {event.date && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {formatDate(event.date)}
-                </span>
-              )}
-              {event.location && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5" />
-                  {event.location}
-                </span>
-              )}
-            </div>
+        </h3>
+        <div className="flex min-h-10 items-center gap-2.5 pr-2 pb-2 pl-10">
+          <Badge tone="primary" size="md">
+            {tn('events', 'boothCount', booths.length)}
+          </Badge>
+          <Progress value={progress.checked} max={progress.total} />
+          {/* gap-3: the 44px hit areas of the 32px buttons must not overlap. */}
+          <div className="relative z-10 ml-auto flex items-center gap-3 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
+            <IconButton
+              size="sm"
+              label={t('common', 'edit')}
+              onClick={startEditing}
+            >
+              <Pencil />
+            </IconButton>
+            <IconButton
+              size="sm"
+              label={t('export', 'saveImage')}
+              onClick={onExportImage}
+            >
+              <ImageDown />
+            </IconButton>
+            <IconButton
+              size="sm"
+              variant="danger"
+              label={t('common', 'delete')}
+              onClick={onDelete}
+            >
+              <Trash2 />
+            </IconButton>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-primary dark:text-primary bg-primary-light dark:bg-primary-light px-2 py-0.5 rounded-full">
-            {tn('events', 'boothCount', boothCount)}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleEdit}
-            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
-            aria-label={t('common', 'edit')}
+        {isExpanded && (
+          <div
+            id={panelId}
+            className="relative z-10 animate-reveal border-t border-line p-2"
           >
-            <Pencil className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onExportImage}
-            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
-            aria-label={t('export', 'saveImage')}
-          >
-            <Image className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onDelete}
-            className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30"
-            aria-label={t('common', 'delete')}
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-      {isExpanded && (
-        <div className="ml-6 mt-2 pl-6 border-l-2 border-gray-200 dark:border-gray-700 animate-expandDown">
-          <BoothPreviewList
-            eventId={event.id}
-            onSelectBooth={onSelectBooth}
-            onAddBooth={onAddBooth}
-          />
-        </div>
-      )}
-    </div>
+            <BoothPreviewList
+              booths={booths}
+              items={items}
+              onSelectBooth={onSelectBooth}
+              onAddBooth={onAddBooth}
+            />
+          </div>
+        )}
+      </Card>
+    </li>
   );
 }
 
-type SortBy = 'order' | 'boothNumber';
+type BoothSort = 'order' | 'boothNumber';
 
-function BoothPreviewList({
-  eventId,
-  onSelectBooth,
-  onAddBooth,
-}: {
-  eventId: string;
+interface BoothPreviewListProps {
+  booths: Booth[];
+  items: Item[];
   onSelectBooth: (boothId: string) => void;
   onAddBooth: () => void;
-}) {
-  const { booths } = useBooths(eventId);
-  const [sortBy, setSortBy] = useState<SortBy>('order');
+}
+
+function BoothPreviewList({
+  booths,
+  items,
+  onSelectBooth,
+  onAddBooth,
+}: BoothPreviewListProps) {
+  const [sortBy, setSortBy] = useState<BoothSort>('order');
+  const itemsByBooth = useMemo(() => groupItemsByBooth(items), [items]);
+  const { getBadgeById } = useBadges();
 
   const sortedBooths = [...booths].sort((a, b) => {
     if (sortBy === 'boothNumber') {
@@ -423,117 +465,131 @@ function BoothPreviewList({
   });
 
   return (
-    <div className="space-y-2 py-2">
+    <div>
       {booths.length > 0 && (
-        <div className="flex items-center justify-end gap-1 pb-1">
-          <button
-            onClick={() => setSortBy('order')}
-            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
-              sortBy === 'order'
-                ? 'bg-primary-light text-accent dark:text-primary font-medium'
-                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-            }`}
-          >
-            <ArrowDownWideNarrow className="w-3.5 h-3.5" />
-            {t('booths', 'sortByOrder')}
-          </button>
-          <button
-            onClick={() => setSortBy('boothNumber')}
-            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
-              sortBy === 'boothNumber'
-                ? 'bg-primary-light text-accent dark:text-primary font-medium'
-                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-            }`}
-          >
-            <ArrowDownAZ className="w-3.5 h-3.5" />
-            {t('booths', 'sortByNumber')}
-          </button>
+        <div className="flex justify-end px-1 pt-0.5 pb-2">
+          <SegmentedControl
+            size="sm"
+            aria-label={t('ui', 'sortBy')}
+            value={sortBy}
+            onChange={setSortBy}
+            options={[
+              {
+                value: 'order',
+                label: t('booths', 'sortByOrder'),
+                icon: <ArrowDownWideNarrow aria-hidden="true" />,
+              },
+              {
+                value: 'boothNumber',
+                label: t('booths', 'sortByNumber'),
+                icon: <ArrowDownAZ aria-hidden="true" />,
+              },
+            ]}
+          />
         </div>
       )}
       {booths.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400 py-2">
+        <p className="px-2 py-3 text-sm text-fg-muted">
           {t('booths', 'noBooths')}
         </p>
       ) : (
-        <div className="space-y-1.5">
+        <ul className="space-y-0.5">
           {sortedBooths.map((booth) => (
-            <BoothPreviewItem
+            <BoothPreviewRow
               key={booth.id}
               booth={booth}
+              items={itemsByBooth.get(booth.id) ?? []}
+              getBadgeById={getBadgeById}
               onClick={() => onSelectBooth(booth.id)}
             />
           ))}
-        </div>
+        </ul>
       )}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={onAddBooth}
-        className="flex items-center gap-1 text-sm text-primary-dark dark:text-primary hover:underline py-2 cursor-pointer"
+        className="mt-1 w-full justify-start text-primary-strong hover:text-primary-strong"
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Plus />
         {t('booths', 'addBooth')}
-      </button>
+      </Button>
     </div>
   );
 }
 
-function BoothPreviewItem({
+/** Badge chips shown per booth row; the rest collapse into "+N". */
+const MAX_BADGE_CHIPS = 3;
+
+function BoothPreviewRow({
   booth,
+  items,
+  getBadgeById,
   onClick,
 }: {
   booth: Booth;
+  items: Item[];
+  getBadgeById: (id: string) => BadgeRecord | undefined;
   onClick: () => void;
 }) {
-  const { checkedCount, totalCount, badgeStats } = useItems(booth.id);
-  const { getBadgeById } = useBadges();
-  const isComplete = totalCount > 0 && checkedCount === totalCount;
-
-  const badgeEntries = Object.entries(badgeStats).filter(
-    ([, stat]) => stat.total > 0
-  );
+  const progress = summarizeChecklist(items);
+  const isComplete = progress.total > 0 && progress.checked === progress.total;
+  const badgeStats = progress.byBadge.flatMap((stat) => {
+    const badge = getBadgeById(stat.badgeId);
+    return badge ? [{ ...stat, badge }] : [];
+  });
+  const hiddenBadges = badgeStats.length - MAX_BADGE_CHIPS;
 
   return (
-    <div
-      onClick={onClick}
-      className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700 cursor-pointer text-sm transition-colors"
-    >
-      <span className="font-mono text-xs font-bold text-white bg-primary px-2 py-1 rounded-md shadow-sm">
-        {booth.boothNumber}
-      </span>
-      <span className="text-gray-800 dark:text-gray-200 font-medium truncate flex-1">
-        {booth.circleName}
-      </span>
-      {totalCount > 0 && (
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {isComplete ? (
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-green-500 px-2 py-0.5 rounded-full">
-              <Check className="w-3 h-3" />
-              {t('common', 'complete')}
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors duration-150 hover:bg-hover active:bg-pressed focus-visible:outline-offset-0"
+      >
+        <BoothNumber>{booth.boothNumber}</BoothNumber>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-fg">
+            {booth.circleName}
+          </span>
+          {progress.total > 0 && (
+            <span className="mt-1 flex flex-wrap gap-1">
+              {isComplete ? (
+                <Badge tone="success" icon={<Check aria-hidden="true" />}>
+                  {t('common', 'complete')}
+                </Badge>
+              ) : (
+                <>
+                  {badgeStats.slice(0, MAX_BADGE_CHIPS).map((stat) => {
+                    const done = stat.checked === stat.total;
+                    return (
+                      <Badge
+                        key={stat.badgeId}
+                        color={stat.badge.color}
+                        icon={done ? <Check aria-hidden="true" /> : undefined}
+                      >
+                        {getBadgeLabel(stat.badge)}{' '}
+                        <span className="tabular-nums">
+                          {stat.checked}/{stat.total}
+                        </span>
+                      </Badge>
+                    );
+                  })}
+                  {hiddenBadges > 0 && (
+                    <Badge tone="neutral">
+                      <span className="tabular-nums">+{hiddenBadges}</span>
+                    </Badge>
+                  )}
+                </>
+              )}
             </span>
-          ) : (
-            <>
-              {badgeEntries.slice(0, 3).map(([badgeId, stat]) => {
-                const badge = getBadgeById(badgeId);
-                if (!badge) return null;
-                const isDone = stat.checked === stat.total;
-                return (
-                  <span
-                    key={badgeId}
-                    className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${isDone ? 'opacity-60' : ''}`}
-                    style={{
-                      backgroundColor: badge.color
-                        ? `${badge.color}25`
-                        : '#e5e7eb',
-                      color: badge.color ?? '#374151',
-                    }}
-                  >
-                    {getBadgeLabel(badge)} {stat.checked}/{stat.total}
-                  </span>
-                );
-              })}
-            </>
           )}
-        </div>
-      )}
-    </div>
+        </span>
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 text-fg-subtle"
+        />
+      </button>
+    </li>
   );
 }

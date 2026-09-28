@@ -20,6 +20,7 @@ export default defineMessages({
     totalItems_other: '{count} items total',
     customQuantity: 'Enter a quantity',
     addCustomBadge: 'Add custom badge',
+    itemDeleted: 'Deleted "{name}"',
   },
   ko: {
     title: '상품 목록',
@@ -40,6 +41,7 @@ export default defineMessages({
     totalItems_other: '총 {count}개 상품',
     customQuantity: '직접 입력',
     addCustomBadge: '커스텀 뱃지 추가',
+    itemDeleted: '"{name}" 삭제됨',
   },
   ja: {
     title: '商品リスト',
@@ -59,6 +61,7 @@ export default defineMessages({
     totalItems_other: '合計{count}個の商品',
     customQuantity: '数量を入力',
     addCustomBadge: 'カスタムバッジを追加',
+    itemDeleted: '「{name}」を削除しました',
   },
   'zh-CN': {
     title: '商品列表',
@@ -78,6 +81,7 @@ export default defineMessages({
     totalItems_other: '共{count}件商品',
     customQuantity: '自定义数量',
     addCustomBadge: '添加自定义徽章',
+    itemDeleted: '已删除“{name}”',
   },
   'zh-TW': {
     title: '商品清單',
@@ -97,5 +101,6 @@ export default defineMessages({
     totalItems_other: '共 {count} 件商品',
     customQuantity: '自訂數量',
     addCustomBadge: '新增自訂標籤',
+    itemDeleted: '已刪除「{name}」',
   },
 });

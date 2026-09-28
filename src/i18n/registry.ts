@@ -14,6 +14,7 @@ import exportMessages from './messages/export';
 import items from './messages/items';
 import settings from './messages/settings';
 import themes from './messages/themes';
+import ui from './messages/ui';
 
 export const namespaces = {
   analysis,
@@ -28,4 +29,5 @@ export const namespaces = {
   items,
   settings,
   themes,
+  ui,
 };

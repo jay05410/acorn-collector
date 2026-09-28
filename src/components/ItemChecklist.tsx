@@ -1,19 +1,45 @@
-import { useState, useRef, useEffect } from 'react';
-import { Check, Pencil, Plus, Trash2, X, Camera, Sparkles } from 'lucide-react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import {
+  ChevronRight,
+  Pencil,
+  Plus,
+  ShoppingBag,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useItems } from '@/hooks/useItems';
 import { useBadges } from '@/hooks/useBadges';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Checkbox } from '@/components/ui/Checkbox';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Field } from '@/components/ui/Field';
+import { IconButton } from '@/components/ui/IconButton';
+import { Input } from '@/components/ui/Input';
+import { Progress } from '@/components/ui/Progress';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { Stepper } from '@/components/ui/Stepper';
+import { showToast } from '@/components/ui/toast-store';
 import { OCRModal, type SelectedItem } from '@/components/OCRModal';
 import {
+  cn,
   parsePriceInput,
   resolveEventCurrency,
   resolveItemCurrency,
 } from '@/lib/utils';
-import { formatPrice, getBadgeLabel, t, useLanguage } from '@/i18n';
+import { formatPrice, getBadgeLabel, t, tp, useLanguage } from '@/i18n';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import type { Badge as BadgeRecord, Item } from '@/types';
 
@@ -25,6 +51,16 @@ interface ItemChecklistProps {
   onOpenSettings?: () => void;
 }
 
+interface ItemDraft {
+  name: string;
+  price: string;
+  quantity: number;
+  badgeId: string;
+}
+
+/** For new input only: a larger stored quantity is still shown and kept. */
+const MAX_QUANTITY = 999;
+
 export function ItemChecklist({
   boothId,
   imageUrls,
@@ -35,25 +71,29 @@ export function ItemChecklist({
   const {
     items,
     isLoading,
+    progress,
     createItem,
     updateItem,
     deleteItem,
+    restoreItem,
     toggleItemCheck,
   } = useItems(boothId);
   const { badges, getBadgeById, createBadge } = useBadges();
   const [isAdding, setIsAdding] = useState(false);
-  const [itemName, setItemName] = useState('');
-  const [itemPrice, setItemPrice] = useState('');
-  const [itemQuantity, setItemQuantity] = useState(1);
-  const [isCustomQuantity, setIsCustomQuantity] = useState(false);
-  const [selectedBadgeId, setSelectedBadgeId] =
-    useState<string>(DEFAULT_BADGE_ID);
+  const [draft, setDraft] = useState<ItemDraft>({
+    name: '',
+    price: '',
+    quantity: 1,
+    badgeId: DEFAULT_BADGE_ID,
+  });
   const [isCreatingBadge, setIsCreatingBadge] = useState(false);
   const [newBadgeLabel, setNewBadgeLabel] = useState('');
   const [isOCRModalOpen, setIsOCRModalOpen] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const headingId = useId();
+  const formHeadingId = useId();
 
-  const hasImages = imageUrls && imageUrls.length > 0;
+  const hasImages = Boolean(imageUrls && imageUrls.length > 0);
   // Same resolution as ChecklistReceipt, so both show the same currency.
   const eventCurrency = resolveEventCurrency(currency);
 
@@ -63,44 +103,66 @@ export function ItemChecklist({
     }
   }, [isAdding, items.length]);
 
-  const handleAddItem = async () => {
-    if (!itemName.trim()) return;
+  const handleAddItem = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft.name.trim()) return;
 
     await createItem({
       boothId,
-      name: itemName.trim(),
-      price: parsePriceInput(itemPrice),
-      badgeId: selectedBadgeId,
-      quantity: Math.max(1, itemQuantity),
+      name: draft.name.trim(),
+      price: parsePriceInput(draft.price),
+      badgeId: draft.badgeId,
+      quantity: Math.max(1, draft.quantity),
     });
 
-    setItemName('');
-    setItemPrice('');
-    setItemQuantity(1);
-    setIsCustomQuantity(false);
+    setDraft((prev) => ({ ...prev, name: '', price: '', quantity: 1 }));
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleAddItem();
-    }
-  };
-
-  const handleDeleteItem = async (id: string) => {
-    await deleteItem(id);
+  const closeForm = () => {
+    setIsAdding(false);
+    setIsCreatingBadge(false);
+    setNewBadgeLabel('');
+    setDraft((prev) => ({ ...prev, name: '', price: '' }));
   };
 
   const handleCreateBadge = async () => {
     if (!newBadgeLabel.trim()) return;
     const newId = await createBadge(newBadgeLabel.trim());
-    setSelectedBadgeId(newId);
+    setDraft((prev) => ({ ...prev, badgeId: newId }));
     setNewBadgeLabel('');
     setIsCreatingBadge(false);
   };
 
-  const handleOCRItemsSelected = async (items: SelectedItem[]) => {
-    for (const item of items) {
+  const handleBadgeKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      // Creates the badge instead of submitting the item form.
+      event.preventDefault();
+      void handleCreateBadge();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setIsCreatingBadge(false);
+      setNewBadgeLabel('');
+    }
+  };
+
+  // Deleting has no confirmation, so it can be undone from a toast.
+  const handleDelete = async (item: Item) => {
+    await deleteItem(item.id);
+    showToast({
+      message: tp('items', 'itemDeleted', { name: item.name }),
+      action: {
+        label: t('ui', 'undo'),
+        onClick: () => {
+          restoreItem(item).catch((error: unknown) => {
+            console.error('Failed to restore item:', error);
+          });
+        },
+      },
+    });
+  };
+
+  const handleOCRItemsSelected = async (selected: SelectedItem[]) => {
+    for (const item of selected) {
       await createItem({
         boothId,
         name: item.name,
@@ -113,271 +175,179 @@ export function ItemChecklist({
 
   if (isLoading) {
     return (
-      <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        {t('common', 'loading')}
+      <div aria-busy="true" className="space-y-2">
+        <span className="sr-only">{t('common', 'loading')}</span>
+        <Skeleton className="h-5 w-1/3" />
+        <Card className="space-y-3 p-4">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </Card>
       </div>
     );
   }
 
+  const badgeAccessory = isCreatingBadge ? (
+    <div className="flex items-center gap-2 pt-1">
+      <Input
+        placeholder={t('items', 'newBadge')}
+        aria-label={t('items', 'newBadge')}
+        value={newBadgeLabel}
+        onChange={(e) => setNewBadgeLabel(e.target.value)}
+        onKeyDown={handleBadgeKeyDown}
+        autoFocus
+        className="h-9"
+      />
+      <IconButton
+        variant="primary"
+        label={t('common', 'add')}
+        onClick={() => void handleCreateBadge()}
+        disabled={!newBadgeLabel.trim()}
+      >
+        <Plus />
+      </IconButton>
+      <IconButton
+        label={t('common', 'cancel')}
+        onClick={() => {
+          setIsCreatingBadge(false);
+          setNewBadgeLabel('');
+        }}
+      >
+        <X />
+      </IconButton>
+    </div>
+  ) : null;
+
   return (
-    <div className="flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <h3 className="font-medium text-gray-900 dark:text-white">
+    <section aria-labelledby={headingId} className="space-y-2.5">
+      <div className="flex min-h-9 items-center gap-2.5 px-1">
+        <h3 id={headingId} className="text-sm font-semibold text-fg">
           {t('items', 'title')}
+          <span className="ms-1.5 text-fg-subtle tabular-nums">
+            {progress.total}
+          </span>
         </h3>
+        <Progress value={progress.checked} max={progress.total} />
+        {!isAdding && (
+          <Button
+            size="sm"
+            variant="soft"
+            className="ml-auto"
+            onClick={() => setIsAdding(true)}
+          >
+            <Plus />
+            {t('items', 'addItem')}
+          </Button>
+        )}
       </div>
 
-      {isAdding && (
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-          <div className="space-y-3">
-            <Input
-              ref={nameInputRef}
-              placeholder={t('items', 'itemNamePlaceholder')}
-              value={itemName}
-              onChange={(e) => setItemName(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-            <Input
-              type="number"
-              min="0"
-              step="any"
-              inputMode="decimal"
-              placeholder={t('items', 'pricePlaceholder')}
-              value={itemPrice}
-              onChange={(e) => setItemPrice(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('items', 'quantity')}
-              </label>
-              <div className="flex items-center gap-2">
-                {[1, 2, 3, 4].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => {
-                      setItemQuantity(num);
-                      setIsCustomQuantity(false);
-                    }}
-                    className={`w-9 h-9 rounded-lg text-sm font-medium cursor-pointer transition-all ${
-                      itemQuantity === num && !isCustomQuantity
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    {num}
-                  </button>
-                ))}
-                {isCustomQuantity ? (
-                  <input
-                    type="number"
-                    min="1"
-                    value={itemQuantity}
-                    onChange={(e) =>
-                      setItemQuantity(
-                        Math.max(1, parseInt(e.target.value) || 1)
-                      )
-                    }
-                    className="w-16 h-9 px-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-center text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                    autoFocus
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCustomQuantity(true);
-                      setItemQuantity(5);
-                    }}
-                    className="w-9 h-9 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 flex items-center justify-center cursor-pointer transition-colors"
-                    title={t('items', 'customQuantity')}
-                    aria-label={t('items', 'customQuantity')}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('items', 'badge')}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {badges.map((badge) => (
-                  <button
-                    key={badge.id}
-                    type="button"
-                    onClick={() => setSelectedBadgeId(badge.id)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium cursor-pointer transition-all ${
-                      selectedBadgeId === badge.id
-                        ? 'scale-110 shadow-md'
-                        : 'hover:scale-105'
-                    }`}
-                    style={{
-                      backgroundColor: badge.color
-                        ? `${badge.color}${selectedBadgeId === badge.id ? '40' : '20'}`
-                        : selectedBadgeId === badge.id
-                          ? '#d1d5db'
-                          : '#e5e7eb',
-                      color: badge.color ?? '#374151',
-                      border:
-                        selectedBadgeId === badge.id
-                          ? `2px solid ${badge.color ?? '#6b7280'}`
-                          : '2px solid transparent',
-                    }}
-                  >
-                    {selectedBadgeId === badge.id && (
-                      <Check className="w-3 h-3 inline mr-1" />
-                    )}
-                    {getBadgeLabel(badge)}
-                  </button>
-                ))}
-                {!isCreatingBadge && (
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatingBadge(true)}
-                    className="w-8 h-8 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 flex items-center justify-center cursor-pointer transition-colors"
-                    title={t('items', 'addCustomBadge')}
-                    aria-label={t('items', 'addCustomBadge')}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {isCreatingBadge && (
-              <div className="flex gap-2 items-center">
-                <Input
-                  placeholder={t('items', 'newBadge')}
-                  value={newBadgeLabel}
-                  onChange={(e) => setNewBadgeLabel(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCreateBadge()}
-                  className="flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateBadge}
-                  className="w-8 h-8 rounded-full bg-primary text-white hover:bg-primary-dark flex items-center justify-center cursor-pointer transition-colors"
-                  title={t('common', 'add')}
-                  aria-label={t('common', 'add')}
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCreatingBadge(false);
-                    setNewBadgeLabel('');
-                  }}
-                  className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 flex items-center justify-center cursor-pointer transition-colors"
-                  title={t('common', 'cancel')}
-                  aria-label={t('common', 'cancel')}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-
-            {hasImages && (
-              <div className="flex items-center gap-2 text-xs text-primary-dark dark:text-primary bg-primary-light dark:bg-primary-light px-3 py-2 rounded-lg">
-                <Sparkles className="w-3 h-3 flex-shrink-0" />
-                <span>{t('items', 'imageHint')}</span>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <Button onClick={handleAddItem} className="flex-1">
-                {t('common', 'add')}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsAdding(false);
-                  setItemName('');
-                  setItemPrice('');
-                }}
-                className="flex-1"
-              >
-                {t('common', 'close')}
-              </Button>
-            </div>
-          </div>
-        </div>
+      {hasImages && (
+        <button
+          type="button"
+          onClick={() => setIsOCRModalOpen(true)}
+          className="flex w-full cursor-pointer items-center gap-3 rounded-xl border border-primary/25 bg-primary-soft p-3 text-left transition-colors duration-150 hover:bg-primary-soft-hover"
+        >
+          <span
+            aria-hidden="true"
+            className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-surface-raised text-primary-strong shadow-xs"
+          >
+            <Sparkles className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-primary-strong">
+              {t('items', 'extractFromImage')}
+            </span>
+            <span className="block truncate text-xs text-fg-muted">
+              {tp('ui', 'imagesAttached', { count: imageUrls?.length ?? 0 })}
+            </span>
+          </span>
+          <ChevronRight
+            aria-hidden="true"
+            className="size-4 shrink-0 text-primary-strong"
+          />
+        </button>
       )}
 
-      {items.length === 0 && !isAdding ? (
-        <EmptyState
-          title={t('items', 'noItems')}
-          description={t('items', 'noItemsDesc')}
-          action={
-            <div className="flex flex-col gap-2">
-              {hasImages && (
-                <Button
-                  onClick={() => setIsOCRModalOpen(true)}
-                  size="sm"
-                  variant="outline"
-                  className="border-primary text-primary hover:bg-primary-light dark:border-primary dark:text-primary dark:hover:bg-primary-light"
+      {isAdding && (
+        <Card
+          as="form"
+          aria-labelledby={formHeadingId}
+          onSubmit={handleAddItem}
+          className="animate-reveal space-y-3 p-4"
+        >
+          <h4 id={formHeadingId} className="text-sm font-semibold text-fg">
+            {t('items', 'addItem')}
+          </h4>
+          <ItemFields
+            draft={draft}
+            onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
+            badges={badges}
+            currencyCode={eventCurrency}
+            nameRef={nameInputRef}
+            namePlaceholder={t('items', 'itemNamePlaceholder')}
+            badgeTrailing={
+              !isCreatingBadge && (
+                <IconButton
+                  variant="secondary"
+                  label={t('items', 'addCustomBadge')}
+                  onClick={() => setIsCreatingBadge(true)}
+                  className="rounded-full"
                 >
-                  <Sparkles className="w-4 h-4 mr-1" />
-                  {t('items', 'extractFromImage')}
-                </Button>
-              )}
-              <Button onClick={() => setIsAdding(true)} size="sm">
-                <Plus className="w-4 h-4 mr-1" />
+                  <Plus />
+                </IconButton>
+              )
+            }
+            badgeAccessory={badgeAccessory}
+          />
+          <div className="flex gap-2 pt-1">
+            <Button variant="secondary" className="flex-1" onClick={closeForm}>
+              {t('common', 'close')}
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={!draft.name.trim()}
+            >
+              {t('common', 'add')}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {items.length === 0 && !isAdding && (
+        <Card>
+          <EmptyState
+            icon={<ShoppingBag />}
+            title={t('items', 'noItems')}
+            description={t('items', 'noItemsDesc')}
+            className="py-8"
+            action={
+              <Button onClick={() => setIsAdding(true)}>
+                <Plus />
                 {t('items', 'addItem')}
               </Button>
-            </div>
-          }
-          className="py-8"
-        />
-      ) : (
-        <>
-          {!isAdding && (
-            <div className="flex flex-col border-b border-gray-200 dark:border-gray-700">
-              {hasImages && (
-                <button
-                  onClick={() => setIsOCRModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-3 text-primary dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span className="text-sm font-medium">
-                    {t('items', 'extractFromImage')}
-                  </span>
-                  <Camera className="w-3 h-3 ml-1 opacity-60" />
-                </button>
-              )}
-              <button
-                onClick={() => setIsAdding(true)}
-                className="flex items-center gap-2 px-4 py-3 text-primary-dark dark:text-primary hover:bg-primary-light dark:hover:bg-primary-light transition-colors cursor-pointer w-full"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="text-sm font-medium">
-                  {t('items', 'addItem')}
-                </span>
-              </button>
-            </div>
-          )}
-          <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-            {items.map((item) => (
-              <ItemRow
-                key={item.id}
-                item={item}
-                eventCurrency={eventCurrency}
-                badge={getBadgeById(item.badgeId)}
-                badges={badges}
-                onToggle={() => toggleItemCheck(item.id)}
-                onUpdate={(data) => updateItem(item.id, data)}
-                onDelete={() => handleDeleteItem(item.id)}
-              />
-            ))}
-          </ul>
-        </>
+            }
+          />
+        </Card>
       )}
 
-      {hasImages && (
+      {items.length > 0 && (
+        <Card as="ul" className="divide-y divide-line overflow-hidden">
+          {items.map((item) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              eventCurrency={eventCurrency}
+              badge={getBadgeById(item.badgeId)}
+              badges={badges}
+              onToggle={() => toggleItemCheck(item.id)}
+              onUpdate={(data) => updateItem(item.id, data)}
+              onDelete={() => void handleDelete(item)}
+            />
+          ))}
+        </Card>
+      )}
+
+      {hasImages && imageUrls && (
         <OCRModal
           isOpen={isOCRModalOpen}
           onClose={() => setIsOCRModalOpen(false)}
@@ -387,7 +357,85 @@ export function ItemChecklist({
           onOpenSettings={onOpenSettings}
         />
       )}
-    </div>
+    </section>
+  );
+}
+
+interface ItemFieldsProps {
+  draft: ItemDraft;
+  onChange: (patch: Partial<ItemDraft>) => void;
+  badges: BadgeRecord[];
+  currencyCode: string;
+  nameRef?: RefObject<HTMLInputElement | null>;
+  namePlaceholder?: string;
+  autoFocusName?: boolean;
+  /** Rendered after the badge chips (e.g. "add custom badge"). */
+  badgeTrailing?: ReactNode;
+  /** Rendered below the badge chips (e.g. the new-badge input). */
+  badgeAccessory?: ReactNode;
+}
+
+function ItemFields({
+  draft,
+  onChange,
+  badges,
+  currencyCode,
+  nameRef,
+  namePlaceholder,
+  autoFocusName,
+  badgeTrailing,
+  badgeAccessory,
+}: ItemFieldsProps) {
+  return (
+    <>
+      <Field label={t('items', 'itemName')} required>
+        <Input
+          ref={nameRef}
+          value={draft.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder={namePlaceholder}
+          autoFocus={autoFocusName}
+        />
+      </Field>
+      <div className="flex gap-2">
+        <Field label={t('items', 'price')} className="flex-1">
+          <Input
+            type="number"
+            min="0"
+            step="any"
+            inputMode="decimal"
+            value={draft.price}
+            onChange={(e) => onChange({ price: e.target.value })}
+            placeholder={t('items', 'pricePlaceholder')}
+            trailing={currencyCode}
+            className="tabular-nums"
+          />
+        </Field>
+        <Field label={t('items', 'quantity')} group className="w-36 shrink-0">
+          <Stepper
+            value={draft.quantity}
+            onChange={(quantity) => onChange({ quantity })}
+            max={MAX_QUANTITY}
+          />
+        </Field>
+      </div>
+      <Field label={t('items', 'badge')} group>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <SegmentedControl
+            variant="chips"
+            value={draft.badgeId}
+            onChange={(badgeId) => onChange({ badgeId })}
+            options={badges.map((badge) => ({
+              value: badge.id,
+              label: getBadgeLabel(badge),
+              color: badge.color,
+            }))}
+          />
+          {badgeTrailing}
+        </div>
+        {badgeAccessory}
+      </Field>
+    </>
   );
 }
 
@@ -411,161 +459,140 @@ function ItemRow({
   onUpdate,
   onDelete,
 }: ItemRowProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(item.name);
-  const [editPrice, setEditPrice] = useState(item.price?.toString() || '');
-  const [editBadgeId, setEditBadgeId] = useState(item.badgeId);
+  const [draft, setDraft] = useState<ItemDraft | null>(null);
+  const nameId = useId();
+  const detailsId = useId();
+  const itemCurrency = resolveItemCurrency(item, eventCurrency);
 
-  const handleRowClick = () => {
-    if (!isEditing) {
-      onToggle();
-    }
-  };
+  if (draft) {
+    const handleSave = async (event: FormEvent) => {
+      event.preventDefault();
+      if (!draft.name.trim()) return;
+      await onUpdate({
+        name: draft.name.trim(),
+        price: parsePriceInput(draft.price),
+        quantity: Math.max(1, draft.quantity),
+        badgeId: draft.badgeId,
+      });
+      setDraft(null);
+    };
 
-  const handleEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditName(item.name);
-    setEditPrice(item.price?.toString() || '');
-    setEditBadgeId(item.badgeId);
-    setIsEditing(true);
-  };
-
-  const handleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!editName.trim()) return;
-    await onUpdate({
-      name: editName.trim(),
-      price: parsePriceInput(editPrice),
-      badgeId: editBadgeId,
-    });
-    setIsEditing(false);
-  };
-
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsEditing(false);
-  };
-
-  if (isEditing) {
     return (
-      <li
-        className="px-4 py-3 bg-gray-50 dark:bg-gray-800"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="space-y-2">
-          <Input
-            placeholder={t('items', 'itemName')}
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            autoFocus
+      <li className="bg-surface-sunken/60 p-3">
+        <form onSubmit={handleSave} className="space-y-3">
+          <ItemFields
+            draft={draft}
+            onChange={(patch) =>
+              setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
+            }
+            badges={badges}
+            currencyCode={itemCurrency}
+            autoFocusName
           />
-          <Input
-            type="number"
-            min="0"
-            step="any"
-            inputMode="decimal"
-            placeholder={t('items', 'price')}
-            value={editPrice}
-            onChange={(e) => setEditPrice(e.target.value)}
-          />
-          <div className="flex flex-wrap gap-1">
-            {badges.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => setEditBadgeId(b.id)}
-                className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all ${
-                  editBadgeId === b.id ? 'scale-105' : 'hover:scale-105'
-                }`}
-                style={{
-                  backgroundColor: b.color
-                    ? `${b.color}${editBadgeId === b.id ? '40' : '20'}`
-                    : editBadgeId === b.id
-                      ? '#d1d5db'
-                      : '#e5e7eb',
-                  color: b.color ?? '#374151',
-                  border:
-                    editBadgeId === b.id
-                      ? `2px solid ${b.color ?? '#6b7280'}`
-                      : '2px solid transparent',
-                }}
-              >
-                {editBadgeId === b.id && (
-                  <Check className="w-3 h-3 inline mr-0.5" />
-                )}
-                {getBadgeLabel(b)}
-              </button>
-            ))}
-          </div>
           <div className="flex gap-2">
-            <Button onClick={handleSave} size="sm" className="flex-1">
-              {t('common', 'save')}
-            </Button>
             <Button
-              variant="outline"
-              onClick={handleCancel}
+              variant="secondary"
               size="sm"
               className="flex-1"
+              onClick={() => setDraft(null)}
             >
               {t('common', 'cancel')}
             </Button>
+            <Button
+              type="submit"
+              size="sm"
+              className="flex-1"
+              disabled={!draft.name.trim()}
+            >
+              {t('common', 'save')}
+            </Button>
           </div>
-        </div>
+        </form>
       </li>
     );
   }
 
+  const showOriginal =
+    item.originalName !== null && item.originalName !== item.name;
+
   return (
-    <li
-      onClick={handleRowClick}
-      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 group cursor-pointer"
-    >
-      <Checkbox checked={item.checked} onCheckedChange={onToggle} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          {badge && <Badge label={getBadgeLabel(badge)} color={badge.color} />}
+    <li className="group flex items-start gap-1 py-0.5 pr-2 pl-0.5">
+      <label className="flex min-w-0 flex-1 cursor-pointer items-start">
+        <Checkbox
+          checked={item.checked}
+          onCheckedChange={onToggle}
+          aria-labelledby={nameId}
+          aria-describedby={detailsId}
+        />
+        <span className="min-w-0 flex-1 py-3 pr-1">
           <span
-            className={`text-sm ${
-              item.checked
-                ? 'line-through text-gray-500 dark:text-gray-400'
-                : 'text-gray-900 dark:text-white'
-            }`}
+            id={nameId}
+            className={cn(
+              'block text-sm leading-5 break-words',
+              item.checked ? 'text-fg-subtle line-through' : 'text-fg'
+            )}
           >
             {item.name}
           </span>
-          {item.quantity > 1 && (
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              x{item.quantity}
-            </span>
-          )}
-        </div>
+          <span id={detailsId} className="block">
+            {showOriginal && (
+              <span className="mt-0.5 block truncate text-xs text-fg-subtle">
+                {item.originalName}
+              </span>
+            )}
+            {(badge || item.option) && (
+              <span className="mt-1.5 flex flex-wrap items-center gap-1">
+                {badge && (
+                  <Badge color={badge.color}>{getBadgeLabel(badge)}</Badge>
+                )}
+                {item.option && <Badge tone="neutral">{item.option}</Badge>}
+              </span>
+            )}
+          </span>
+        </span>
+      </label>
+      <div className="flex shrink-0 flex-col items-end gap-0.5 pt-3">
         {item.price !== null && (
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {formatPrice(item.price, resolveItemCurrency(item, eventCurrency))}
+          <span
+            className={cn(
+              'text-sm leading-5 font-semibold tabular-nums',
+              item.checked ? 'text-fg-subtle' : 'text-fg'
+            )}
+          >
+            {formatPrice(item.price, itemCurrency)}
           </span>
         )}
+        {item.quantity > 1 && (
+          <span className="text-xs text-fg-muted tabular-nums">
+            ×{item.quantity}
+          </span>
+        )}
+        {/* gap-3: the 44px hit areas of the 32px buttons must not overlap. */}
+        <div className="flex gap-3 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
+          <IconButton
+            size="sm"
+            label={t('common', 'edit')}
+            onClick={() =>
+              setDraft({
+                name: item.name,
+                price: item.price?.toString() ?? '',
+                quantity: item.quantity,
+                badgeId: item.badgeId,
+              })
+            }
+          >
+            <Pencil />
+          </IconButton>
+          <IconButton
+            size="sm"
+            variant="danger"
+            label={t('common', 'delete')}
+            onClick={onDelete}
+          >
+            <Trash2 />
+          </IconButton>
+        </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={handleEdit}
-        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
-        aria-label={t('common', 'edit')}
-      >
-        <Pencil className="w-4 h-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30"
-        aria-label={t('common', 'delete')}
-      >
-        <Trash2 className="w-4 h-4" />
-      </Button>
     </li>
   );
 }
