@@ -4,6 +4,7 @@
  * price, option, quantity) survive later updates of the same row.
  */
 import { normalizeCurrencyCode } from '@/i18n/format';
+import { normalizeName } from '@/lib/ai/schema';
 import type { ExtractedItem } from '@/lib/ai/types';
 import {
   generateId,
@@ -17,16 +18,19 @@ import { ITEM_CATEGORIES, type Item, type ItemCategory } from '@/types';
 export interface IncomingRow {
   key: string;
   item: ExtractedItem;
-  /** Currency of the item's price, when known. */
-  currency: string | null;
+  /** Currency of the item's price; null when none, undefined while unknown. */
+  currency: string | null | undefined;
 }
 
 export interface ReviewRow {
   key: string;
   /** Latest data from the source. */
   source: ExtractedItem;
-  sourceCurrency: string | null;
+  /** Null when the source has none; undefined while it is still unknown. */
+  sourceCurrency: string | null | undefined;
   included: boolean;
+  /** The booth already has an item with this name and price. */
+  known?: boolean;
   /** Edited name; undefined follows the source. */
   name?: string;
   /** Edited price as typed; undefined follows the source. */
@@ -39,7 +43,12 @@ export interface ReviewRow {
 }
 
 export type ReviewAction =
-  | { type: 'sync'; rows: readonly IncomingRow[] }
+  | {
+      type: 'sync';
+      rows: readonly IncomingRow[];
+      /** knownItemKey()s of items the booth already has; they start excluded. */
+      known?: ReadonlySet<string>;
+    }
   | { type: 'toggle'; key: string }
   | { type: 'setAll'; included: boolean }
   | {
@@ -52,12 +61,27 @@ export type ReviewAction =
 
 export const MAX_REVIEW_QUANTITY = 999;
 
-function newRow(incoming: IncomingRow): ReviewRow {
+/** Identity used to spot items the booth already has. */
+export function knownItemKey(name: string, price: number | null): string {
+  return `${normalizeName(name)}|${price ?? ''}`;
+}
+
+function isKnown(item: ExtractedItem, known: ReadonlySet<string> | undefined): boolean {
+  if (!known || known.size === 0) return false;
+  return (
+    known.has(knownItemKey(item.name, item.price)) ||
+    (item.originalName !== null && known.has(knownItemKey(item.originalName, item.price)))
+  );
+}
+
+function newRow(incoming: IncomingRow, known: ReadonlySet<string> | undefined): ReviewRow {
+  const already = isKnown(incoming.item, known);
   return {
     key: incoming.key,
     source: incoming.item,
     sourceCurrency: incoming.currency,
-    included: true,
+    included: !already,
+    ...(already ? { known: true } : {}),
     quantity: 1,
     touched: false,
   };
@@ -68,27 +92,49 @@ function baseKey(key: string): string {
 }
 
 /**
- * Applies a new list from the source. Rows keep their place (a row being
- * edited never jumps): known rows get the new data with the user's edits
- * kept, rows the source no longer has are dropped unless the user touched
- * them, and new rows are appended in source order. Copies made with
- * 'duplicate' follow their original's data.
+ * Applies a new list from the source, in source order: rows it already had
+ * get the new data with the user's edits kept, new rows appear at their
+ * source position (streams only append, so existing rows never swap), and
+ * rows the source no longer has are dropped unless the user touched them,
+ * in which case they stay where they were. Copies made with 'duplicate'
+ * follow their original.
  */
-function sync(rows: readonly ReviewRow[], incoming: readonly IncomingRow[]): ReviewRow[] {
-  const byKey = new Map(incoming.map((row) => [row.key, row]));
-  const out: ReviewRow[] = [];
+function sync(
+  rows: readonly ReviewRow[],
+  incoming: readonly IncomingRow[],
+  known: ReadonlySet<string> | undefined
+): ReviewRow[] {
+  const previous = new Map(rows.map((row) => [row.key, row]));
+  const copies = new Map<string, ReviewRow[]>();
   for (const row of rows) {
-    const update = byKey.get(baseKey(row.key));
-    if (update) {
-      out.push({ ...row, source: update.item, sourceCurrency: update.currency });
-    } else if (row.touched) {
-      out.push(row);
+    const base = baseKey(row.key);
+    if (base !== row.key) copies.set(base, [...(copies.get(base) ?? []), row]);
+  }
+  const out: ReviewRow[] = [];
+  for (const update of incoming) {
+    const row = previous.get(update.key);
+    out.push(
+      row
+        ? { ...row, source: update.item, sourceCurrency: update.currency }
+        : newRow(update, known)
+    );
+    for (const copy of copies.get(update.key) ?? []) {
+      out.push({ ...copy, source: update.item, sourceCurrency: update.currency });
     }
   }
-  const present = new Set(out.map((row) => row.key));
-  for (const row of incoming) {
-    if (!present.has(row.key)) out.push(newRow(row));
-  }
+  const incomingKeys = new Set(incoming.map((row) => row.key));
+  rows.forEach((row, index) => {
+    if (!row.touched || incomingKeys.has(baseKey(row.key))) return;
+    let at = 0;
+    for (let i = index - 1; i >= 0; i--) {
+      const position = out.findIndex((kept) => kept.key === rows[i]?.key);
+      if (position >= 0) {
+        at = position + 1;
+        break;
+      }
+    }
+    out.splice(at, 0, row);
+  });
   return out;
 }
 
@@ -124,7 +170,7 @@ function duplicate(rows: readonly ReviewRow[], key: string): ReviewRow[] {
 export function reviewReducer(rows: ReviewRow[], action: ReviewAction): ReviewRow[] {
   switch (action.type) {
     case 'sync':
-      return sync(rows, action.rows);
+      return sync(rows, action.rows, action.known);
     case 'toggle':
       return rows.map((row) =>
         row.key === action.key ? { ...row, included: !row.included, touched: true } : row

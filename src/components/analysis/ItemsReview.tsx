@@ -112,7 +112,7 @@ export function ItemsReview({
             <span className="text-fg-muted">
               {tp('analysis', 'selectedCount', { count: included.length })}
             </span>
-            {totals.length > 0 && (
+            {totals.length > 0 && !loading && (
               <span className="flex flex-wrap justify-end gap-x-2 font-semibold text-fg tabular-nums">
                 <span className="sr-only">{t('review', 'total')}: </span>
                 {totals.map((total) => (
@@ -227,7 +227,7 @@ function ReviewRowView({ row, index, fallbackCurrency, dispatch }: ReviewRowView
               value={row.price ?? (row.source.price === null ? '' : String(row.source.price))}
               onChange={(event) => edit({ price: event.target.value })}
               placeholder={t('review', 'noPrice')}
-              trailing={currency}
+              trailing={row.sourceCurrency === undefined ? undefined : currency}
               aria-label={tp('review', 'priceOf', { name: label })}
               className="w-32 tabular-nums"
             />
@@ -269,6 +269,9 @@ function ReviewRowView({ row, index, fallbackCurrency, dispatch }: ReviewRowView
             {[price !== null ? formatPrice(price, currency) : null, option]
               .filter(Boolean)
               .join(' · ') || t('review', 'excluded')}
+            {row.known && (
+              <span className="ms-1.5 text-fg-muted">· {t('review', 'alreadyAdded')}</span>
+            )}
           </p>
         )}
       </div>

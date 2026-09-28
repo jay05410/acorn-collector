@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { showToast } from '@/components/ui/toast-store';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
+import { useEvents } from '@/hooks/useEvents';
+import { useItems } from '@/hooks/useItems';
 import { useExtraction } from '@/hooks/useExtraction';
 import { t, tn, useLanguage } from '@/i18n';
 import { isAIConfigured } from '@/lib/ai/runtime';
@@ -12,7 +14,7 @@ import type { AppSettings } from '@/lib/settings-types';
 import type { Booth } from '@/types';
 import { AnalysisStatus } from './AnalysisStatus';
 import { ItemsReview } from './ItemsReview';
-import { includedRows, reviewReducer } from './items-review-state';
+import { includedRows, knownItemKey, reviewReducer } from './items-review-state';
 import { addReviewedItems } from './save-items';
 
 interface AnalysisSheetProps {
@@ -50,6 +52,19 @@ function AnalysisSheetContent({
   const [adding, setAdding] = useState(false);
   const extraction = useExtraction({ settings });
   const { state } = extraction;
+  const { events, isLoading: eventsLoading } = useEvents();
+  const { items: existingItems, isLoading: itemsLoading } = useItems(booth.id);
+  // Items the booth already has start unchecked, so re-analysis adds no duplicates.
+  const known = useMemo(
+    () =>
+      new Set(
+        existingItems.flatMap((item) => [
+          knownItemKey(item.name, item.price),
+          ...(item.originalName ? [knownItemKey(item.originalName, item.price)] : []),
+        ])
+      ),
+    [existingItems]
+  );
   const configured = settings ? isAIConfigured(settings.ai) : false;
   const selectedImages = images.filter((_, index) => included[index]);
   const canStart = text.trim() !== '' || selectedImages.length > 0;
@@ -57,20 +72,19 @@ function AnalysisSheetContent({
 
   const start = (tier?: 'fast' | 'accurate') => {
     analyzedUrls.current = selectedImages;
-    extraction.start(
-      { text, images: selectedImages, hints: { defaultCurrency: eventCurrency } },
-      tier ? { tier } : undefined
-    );
+    // Same hints as the capture review, so an unchanged booth is a cache hit.
+    const hints = { eventNames: events.map((event) => event.name), defaultCurrency: eventCurrency };
+    extraction.start({ text, images: selectedImages, hints }, tier ? { tier } : undefined);
   };
 
   // The user asked for this analysis: start as soon as settings are known.
   const started = useRef(false);
   useEffect(() => {
-    if (started.current || !settings) return;
+    if (started.current || !settings || eventsLoading || itemsLoading) return;
     started.current = true;
     if (isAIConfigured(settings.ai) && canStart) start();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opening
-  }, [settings]);
+  }, [settings, eventsLoading, itemsLoading]);
 
   const syncedRun = useRef(0);
   useEffect(() => {
@@ -82,7 +96,10 @@ function AnalysisSheetContent({
     dispatchRows({
       type: 'sync',
       rows: state.rows.map((row) => ({ key: row.key, item: row.item, currency: row.currency })),
+      known,
     });
+    // `known` is read when rows first appear; later item changes do not re-sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.runId, state.status, state.rows]);
 
   const skipped = useMemo(() => {

@@ -42,8 +42,8 @@ export interface ExtractionRow {
   /** Index of the call (image) the item came from. */
   call: number;
   item: ExtractedItem;
-  /** Currency of the call's prices; null until known or when none. */
-  currency: string | null;
+  /** Currency of the call's prices: undefined until the call finishes, null when none. */
+  currency: string | null | undefined;
 }
 
 export interface ExtractionMetaSummary {
@@ -77,8 +77,8 @@ export interface ExtractionState {
   finishedAt: number | null;
   /** Items per call as they stream in; a finished call holds its final list. */
   partial: ExtractedItem[][];
-  /** Per-call currencies, filled as calls finish. */
-  currencies: (string | null)[];
+  /** Per-call currencies; undefined until the run finishes. */
+  currencies: (string | null | undefined)[];
   rows: ExtractionRow[];
   outcome: ExtractionOutcome | null;
   error: AIError | null;
@@ -134,7 +134,7 @@ export function assembleRows(
   const rows: ExtractionRow[] = [];
   const seen = new Set<string>();
   lists.forEach((items, call) => {
-    const currency = currencies[call] ?? null;
+    const currency = currencies[call];
     for (const item of items ?? []) {
       const identity = `${normalizeName(item.name)}|${item.price ?? ''}|${currency ?? ''}`;
       const key = rowKey(call, item);
@@ -200,7 +200,7 @@ export function extractionReducer(
       imageCount: action.imageCount,
       startedAt: action.at,
       partial: Array.from({ length: action.calls }, () => []),
-      currencies: new Array<string | null>(action.calls).fill(null),
+      currencies: new Array<string | null | undefined>(action.calls).fill(undefined),
     };
   }
   // Events of a superseded or finished run.
@@ -238,13 +238,18 @@ export function extractionReducer(
         model: outcome?.meta.model ?? state.model,
       };
     }
-    case 'fail':
+    case 'fail': {
+      // Rows kept from the stream fall back to the event currency.
+      const currencies = state.currencies.map((currency) => currency ?? null);
       return {
         ...state,
+        currencies,
+        rows: assembleRows(state.partial, currencies),
         status: action.error.code === 'cancelled' ? 'cancelled' : 'error',
         finishedAt: action.at,
         error: action.error.code === 'cancelled' ? null : action.error,
       };
+    }
   }
 }
 

@@ -141,6 +141,8 @@ function ReviewSheetContent({
   const [saveAttempt, setSaveAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  // Captures open on the post itself rather than on its first link.
+  const sourceRef = useRef<HTMLElement>(null);
 
   const extraction = useExtraction({ settings });
   const { state } = extraction;
@@ -271,6 +273,7 @@ function ReviewSheetContent({
         open
         onClose={requestClose}
         title={title}
+        initialFocusRef={snapshot ? sourceRef : undefined}
         bodyClassName="space-y-3 pt-1"
         footer={
           <>
@@ -286,6 +289,7 @@ function ReviewSheetContent({
       >
         {snapshot && (
           <SourceCard
+            ref={sourceRef}
             snapshot={snapshot}
             includedImages={includedImages}
             onToggleImage={(index) =>

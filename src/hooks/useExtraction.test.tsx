@@ -182,6 +182,24 @@ describe('extractionReducer', () => {
     ).toBe(failed);
   });
 
+  it('leaves currencies pending while calls run and settles them on failure', () => {
+    let state = extractionReducer(INITIAL_EXTRACTION_STATE, START);
+    state = extractionReducer(state, {
+      type: 'partial',
+      runId: 1,
+      call: 0,
+      items: [item('Keyring')],
+    });
+    expect(state.rows[0]?.currency).toBeUndefined();
+    state = extractionReducer(state, {
+      type: 'fail',
+      runId: 1,
+      at: 9,
+      error: new AIError('network', 'x', 'openai'),
+    });
+    expect(state.rows[0]?.currency).toBeNull();
+  });
+
   it('treats a cancellation as cancelled, not as an error', () => {
     const running = extractionReducer(INITIAL_EXTRACTION_STATE, START);
     const state = extractionReducer(running, {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExtractedItem } from '@/lib/ai/types';
 import {
   includedRows,
+  knownItemKey,
   prefilledRows,
   reviewReducer,
   reviewTotals,
@@ -43,10 +44,37 @@ describe('reviewReducer sync', () => {
     expect(rows[0]).toMatchObject({ quantity: 2, included: false });
   });
 
-  it('never moves existing rows and appends new ones', () => {
-    let rows = synced([incoming('1:b', item('B', 1))]);
-    rows = synced([incoming('0:a', item('A', 1)), incoming('1:b', item('B', 1))], rows);
-    expect(rows.map((r) => r.key)).toEqual(['1:b', '0:a']);
+  it('places new rows at their source position', () => {
+    let rows = synced([incoming('0:a', item('A', 1)), incoming('1:c', item('C', 1))]);
+    rows = synced(
+      [incoming('0:a', item('A', 1)), incoming('0:b', item('B', 1)), incoming('1:c', item('C', 1))],
+      rows
+    );
+    expect(rows.map((r) => r.key)).toEqual(['0:a', '0:b', '1:c']);
+  });
+
+  it('keeps a touched row the source dropped at its place', () => {
+    let rows = synced([incoming('a', item('A', 1)), incoming('b', item('B', 1)), incoming('c', item('C', 1))]);
+    rows = reviewReducer(rows, { type: 'edit', key: 'b', patch: { quantity: 2 } });
+    rows = synced([incoming('a', item('A', 1)), incoming('c', item('C', 1))], rows);
+    expect(rows.map((r) => r.key)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('starts items the booth already has excluded', () => {
+    const rows = reviewReducer([], {
+      type: 'sync',
+      rows: [
+        incoming('a', item('Keyring', 5000)),
+        incoming('b', item('Book', 800, { originalName: 'Hon' })),
+        incoming('c', item('New', 100)),
+      ],
+      known: new Set([knownItemKey('keyring', 5000), knownItemKey('Hon', 800)]),
+    });
+    expect(rows.map((r) => [r.key, r.included, r.known ?? false])).toEqual([
+      ['a', false, true],
+      ['b', false, true],
+      ['c', true, false],
+    ]);
   });
 
   it('drops rows the source no longer has unless the user touched them', () => {

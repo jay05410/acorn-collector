@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useState, type Ref } from 'react';
 import {
   AtSign,
   ExternalLink,
@@ -9,7 +9,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { t, useLanguage } from '@/i18n';
 import type { PageSnapshot, SiteId } from '@/lib/capture/types';
 import { cn } from '@/lib/utils';
@@ -22,6 +21,8 @@ interface SourceCardProps {
   onToggleImage: (index: number) => void;
   /** Snapshot image indices the AI could not read. */
   skippedImages: ReadonlySet<number>;
+  /** Receives the card element (the sheet's initial focus target). */
+  ref?: Ref<HTMLElement>;
 }
 
 const SITE_ICONS: Record<SiteId, LucideIcon> = {
@@ -53,6 +54,7 @@ export function SourceCard({
   includedImages,
   onToggleImage,
   skippedImages,
+  ref,
 }: SourceCardProps) {
   useLanguage();
   const textId = useId();
@@ -71,7 +73,13 @@ export function SourceCard({
     text.length > COLLAPSE_CHARS || text.split('\n').length > COLLAPSE_LINES;
 
   return (
-    <Card as="section" aria-label={t('capture', 'sourceHeading')} className="p-3">
+    // The Card look on a plain section, which can take a ref.
+    <section
+      ref={ref}
+      tabIndex={-1}
+      aria-label={t('capture', 'sourceHeading')}
+      className="rounded-xl border border-line bg-surface p-3 shadow-xs outline-none"
+    >
       <div className="flex items-center gap-2.5">
         <span
           aria-hidden="true"
@@ -156,6 +164,6 @@ export function SourceCard({
           className="mt-3"
         />
       )}
-    </Card>
+    </section>
   );
 }
