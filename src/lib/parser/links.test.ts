@@ -67,6 +67,13 @@ describe('extractLinks', () => {
     expect(urls('mail me moon@witchform.com')).toEqual([]);
   });
 
+  it('matches a bare known host only as a whole host, not as the start of a longer domain', () => {
+    expect(urls('pricing at tally.software/pricing')).toEqual([]);
+    expect(urls('see forms.glenwood.org or docs.google.com.example.org/forms')).toEqual([]);
+    expect(urls('order at tally.so/r/abc.')).toEqual(['https://tally.so/r/abc']);
+    expect(urls('witchform.com에서 주문')).toEqual(['https://witchform.com']);
+  });
+
   it('dedupes after cleaning, keeping first-seen order', () => {
     expect(
       urls('https://forms.gle/a?utm_source=x https://forms.gle/a http://forms.gle/a/ https://b.com')

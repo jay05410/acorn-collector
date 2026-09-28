@@ -34,9 +34,14 @@ export const URL_RE = new RegExp(`https?://${URL_CHAR}+`, 'giu');
 const BARE_HOSTS = [...new Set(LINK_RULES.filter((r) => r.kind !== 'other').map((r) => r.host))].sort(
   (a, b) => b.length - a.length
 );
-/** Known form/info hosts written without a scheme, as X displays links. */
+/**
+ * Known form/info hosts written without a scheme, as X displays links. The
+ * host must end there: "tally.software" is not "tally.so". Only ASCII
+ * continues a host, so "witchform.com에서" still matches.
+ */
 const BARE_RE = new RegExp(
-  `(?<![\\w.@/-])(?:www\\.)?(?:[a-z0-9-]+\\.)*(?:${BARE_HOSTS.map(escapeRegExp).join('|')})(?:/${URL_CHAR}*)?`,
+  `(?<![\\w.@/-])(?:www\\.)?(?:[a-z0-9-]+\\.)*(?:${BARE_HOSTS.map(escapeRegExp).join('|')})` +
+    `(?![A-Za-z0-9-]|\\.[A-Za-z0-9])(?:/${URL_CHAR}*)?`,
   'giu'
 );
 

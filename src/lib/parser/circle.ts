@@ -57,7 +57,6 @@ function trimEdges(value: string): string {
 }
 
 function isInfoToken(token: string): boolean {
-  if (/^\d+$/.test(token)) return true;
   if (NOTE_RE.test(token)) return true;
   if (detectDay(token).dayHint) return true;
   if (detectEvents(token).some((e) => !e.generic)) return true;
@@ -67,14 +66,45 @@ function isInfoToken(token: string): boolean {
   );
 }
 
-function isInfoSegment(segment: string): boolean {
-  return segment.split(/\s+/).filter(Boolean).some(isInfoToken);
+const BARE_NUMBER = /^\d+$/;
+
+/**
+ * Info flag per token. A bare number is info only after an info token
+ * ("서코 45", "Booth 12", "AX 2026") or on its own; in "Team 2" it is part of
+ * the name.
+ */
+function infoFlags(tokens: readonly string[]): boolean[] {
+  const flags: boolean[] = [];
+  tokens.forEach((token, i) => {
+    flags.push(BARE_NUMBER.test(token) ? tokens.length === 1 || flags[i - 1] === true : isInfoToken(token));
+  });
+  return flags;
 }
 
-/** Trailing "서코 B-12", "C108 1日目", "通販中" tokens after a name. */
+function namedEvent(text: string) {
+  return detectEvents(text).find((e) => !e.generic);
+}
+
+function isInfoSegment(segment: string): boolean {
+  if (infoFlags(segment.split(/\s+/).filter(Boolean)).some(Boolean)) return true;
+  // Multi-word event names: "Anime Expo 2026".
+  return namedEvent(segment) !== undefined;
+}
+
+/** Trailing "서코 B-12", "C108 1日目", "通販中", "Anime Expo 2026" after a name. */
 function dropTrailingInfo(name: string): string {
-  const tokens = name.split(/\s+/).filter(Boolean);
-  while (tokens.length > 1 && isInfoToken(tokens[tokens.length - 1] ?? '')) tokens.pop();
+  let tokens = name.split(/\s+/).filter(Boolean);
+  for (;;) {
+    const flags = infoFlags(tokens);
+    let n = tokens.length;
+    while (n > 1 && flags[n - 1]) n--;
+    tokens = tokens.slice(0, n);
+    // A multi-word event name at the end ("Luna Anime Expo 2026").
+    const joined = tokens.join(' ');
+    const ev = detectEvents(joined).find((e) => !e.generic && e.index > 0 && e.end === joined.length);
+    if (!ev) break;
+    tokens = joined.slice(0, ev.index).split(/\s+/).filter(Boolean);
+  }
   return tokens.join(' ');
 }
 
@@ -96,29 +126,41 @@ export function extractLabeledCircle(text: string): string | undefined {
 }
 
 export interface AuthorParts {
-  /** Display name part (before the first "@"). */
+  /** Display name part (before the first "@"), or the handle when there is no display name. */
   name: string;
   /** Text after "@" when it is event info rather than a handle. */
   tail: string;
+  /** `name` is the account handle: usable as a circle name, never as event or booth info. */
+  nameIsHandle?: boolean;
 }
+
+/** The account handle that ends "Display Name @handle" (see entrypoints/content.ts). */
+const TRAILING_HANDLE = /\s@[A-Za-z0-9_]{1,15}$/u;
+const HANDLE_SHAPED = /^[A-Za-z0-9_]{1,15}$/u;
 
 /**
  * "달빛서클 @moon" -> name "달빛서클"; "山田@C108 1日目東ホ-12a" -> name
  * "山田", tail "C108 1日目東ホ-12a" (Japanese authors put their space there).
+ * The account handle never counts as info: "Mina @AX_mina" has no event.
  */
 export function splitAuthor(author: string): AuthorParts {
-  const norm = normalizeText(author).trim();
+  const norm = normalizeText(author).trim().replace(TRAILING_HANDLE, '').trim();
   const at = norm.indexOf('@');
   if (at === -1) return { name: norm, tail: '' };
   if (at === 0) {
     const handle = norm.slice(1).split(/\s+/)[0] ?? '';
-    return { name: handle, tail: '' };
+    return { name: handle, tail: '', nameIsHandle: true };
   }
   const name = norm.slice(0, at);
   let tail = norm.slice(at + 1).trim();
-  const handleOnly = /^[A-Za-z0-9_]{1,15}$/.test(tail);
-  if (handleOnly && !detectEvents(tail).some((e) => !e.generic)) tail = '';
-  // "info @handle": drop the trailing handle from the info part.
+  // "山田@C108" is event info; "Mina@AX_mina" is a handle that merely starts with one.
+  if (
+    HANDLE_SHAPED.test(tail) &&
+    !detectEvents(tail).some((e) => !e.generic && e.index === 0 && e.end === tail.length)
+  ) {
+    tail = '';
+  }
+  // "info@handle": drop a trailing handle from the info part.
   tail = tail.replace(/\s*@[A-Za-z0-9_]{1,15}\s*$/, '').trim();
   return { name, tail };
 }

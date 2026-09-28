@@ -506,6 +506,142 @@ const SAMPLES: Sample[] = [
     text: '通販あります！BOOTHで https://moon.booth.pm/items/123',
     expected: { boothNumber: '通販', isMailOrder: true, formUrl: 'https://moon.booth.pm/items/123' },
   },
+
+  // ---------------- Review findings (PR #7) ----------------
+  {
+    name: 'circle: a number that is part of a labeled name is kept',
+    text: '서클명: Team 2',
+    expected: { circleName: 'Team 2' },
+  },
+  {
+    name: 'author: a number that is part of the display name is kept',
+    text: 'hello',
+    options: { author: 'Studio 7 @studio7' },
+    expected: { circleName: 'Studio 7' },
+  },
+  {
+    name: 'author: a numbered name before "|" info is kept',
+    text: 'hello',
+    options: { author: 'Team 2 | comms open @team2' },
+    expected: { circleName: 'Team 2' },
+  },
+  {
+    name: 'author: an edition or year after an event name is still info',
+    text: 'hello',
+    options: { author: 'Luna AX 2026 @luna' },
+    expected: { circleName: 'Luna', eventKey: 'anime-expo' },
+  },
+  {
+    name: 'author: a table number after a label word is still info',
+    text: 'hello',
+    options: { author: 'Luna Table 12 @luna' },
+    expected: { circleName: 'Luna' },
+  },
+  {
+    name: 'author: a multi-word event with a year is dropped from the name',
+    text: 'hello',
+    options: { author: 'Luna Anime Expo 2026 @luna' },
+    expected: { circleName: 'Luna', eventKey: 'anime-expo' },
+  },
+  {
+    name: 'author: an event acronym inside the handle is not an event (AX)',
+    text: 'hello',
+    options: { author: 'Mina @AX_mina' },
+    expected: { circleName: 'Mina' },
+    absent: ['eventHint', 'eventKey'],
+  },
+  {
+    name: 'author: an event acronym inside the handle is not an event (CJ)',
+    text: 'hello',
+    options: { author: 'Art @CJ_art' },
+    expected: { circleName: 'Art' },
+    absent: ['eventHint', 'eventKey'],
+  },
+  {
+    name: 'author: an event acronym inside the handle is not an event (AFA)',
+    text: 'hello',
+    options: { author: 'Kai @AFA_xx' },
+    expected: { circleName: 'Kai' },
+    absent: ['eventHint', 'eventKey'],
+  },
+  {
+    name: 'author: a handle that equals an event acronym is not an event',
+    text: 'hello',
+    options: { author: 'Luna @AX' },
+    expected: { circleName: 'Luna' },
+    absent: ['eventHint', 'eventKey'],
+  },
+  {
+    name: 'author: a handle-only author gives no event or booth',
+    text: 'hello',
+    options: { author: '@AX_mina' },
+    expected: { circleName: 'AX_mina' },
+    absent: ['eventHint', 'eventKey', 'boothNumber'],
+  },
+  {
+    name: 'author: a booth-shaped handle-only author gives no booth',
+    text: 'hello',
+    options: { author: '@A12' },
+    expected: {},
+    absent: ['boothNumber'],
+  },
+  {
+    name: 'ja: event glued after the name without a handle is still info',
+    text: '新刊サンプルです！',
+    options: { author: '山田@C108' },
+    expected: { circleName: '山田', eventHint: 'C108', eventKey: 'comiket' },
+  },
+  {
+    name: 'ja: event info glued after the name, then the handle',
+    text: '新刊サンプルです！',
+    options: { author: '山田@C108 1日目東ホ-12a @yamada_c' },
+    expected: { circleName: '山田', eventHint: 'C108', boothNumber: '東ホ-12a' },
+  },
+  {
+    name: 'author: a glued handle-shaped tail that only starts with an acronym is not an event',
+    text: 'hello',
+    options: { author: 'Mina@AX_mina' },
+    expected: { circleName: 'Mina' },
+    absent: ['eventHint', 'eventKey'],
+  },
+  {
+    name: 'en: a year after "Booth" is not a booth number',
+    text: 'Booth 2026 신청 완료',
+    expected: {},
+    absent: ['boothNumber'],
+  },
+  {
+    name: 'en: a year after "Table" is not a booth number',
+    text: 'Table 2025 applications are open!',
+    expected: {},
+    absent: ['boothNumber'],
+  },
+  {
+    name: 'en: "Booth #2026" is an explicit booth number',
+    text: 'Booth #2026 see you there',
+    expected: { boothNumber: '2026' },
+  },
+  {
+    name: 'en: "Booth No. 2026" is an explicit booth number',
+    text: 'Booth No. 2026',
+    expected: { boothNumber: '2026' },
+  },
+  {
+    name: 'ko: "부스 번호: 2026" is an explicit booth number',
+    text: '부스 번호: 2026',
+    expected: { boothNumber: '2026' },
+  },
+  {
+    name: 'ko: "부스 2026번" is an explicit booth number',
+    text: '부스 2026번으로 오세요',
+    expected: { boothNumber: '2026' },
+  },
+  {
+    name: 'zh-CN: "一周三次" is a frequency, not Wednesday',
+    text: '一周三次更新',
+    expected: {},
+    absent: ['weekday', 'dayHint'],
+  },
 ];
 
 describe('parseBoothText sample table', () => {

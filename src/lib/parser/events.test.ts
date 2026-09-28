@@ -99,6 +99,13 @@ describe('matchEvent', () => {
     expect(matchEvent('C108', [c108])?.score).toBe(1);
   });
 
+  it('compares raw scores, rounding only the returned score', () => {
+    // raw 0.7875 (rounds up to 0.79) vs raw 0.7893 (rounds to 0.79): the higher raw score wins
+    const m = matchEvent('moonlight', [ev('a', 'moonlighz'), ev('b', 'moonlightzqxjk')]);
+    expect(m?.event.id).toBe('b');
+    expect(m?.score).toBe(0.79);
+  });
+
   it('keeps the first event on a tie and returns the caller object', () => {
     const a = { id: 'a', name: '서울코믹월드 봄', extra: 1 };
     const b = { id: 'b', name: '서울코믹월드 가을', extra: 2 };

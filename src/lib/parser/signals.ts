@@ -171,11 +171,14 @@ const WEEKDAY_MAP: Record<string, Weekday> = {
   sunday: 'sun',
 };
 
-// zh: 周一..周六 are Monday..Saturday, 周日 / 周天 is Sunday.
+// zh: 周一..周六 are Monday..Saturday, 周日 / 周天 is Sunday. After a count
+// the word means "week(s)": "一周三次" (three times a week), "2周一次". A date
+// right before it is not a count: "10/3周六".
+const WEEK_COUNT = '(?<![一二三四五六七八九十两兩]|(?<![\\d/.\\-])\\d+)';
 const WEEKDAY_PATTERNS: readonly RegExp[] = [
   /([월화수목금토일])요일/u,
   /([月火水木金土日])曜日?/u,
-  /(?:星期|週|周|禮拜|礼拜)([一二三四五六日天])/u,
+  new RegExp(`${WEEK_COUNT}(?:星期|週|周|禮拜|礼拜)([一二三四五六日天])`, 'u'),
   /(?<![A-Za-z])(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?![A-Za-z])/iu,
 ];
 

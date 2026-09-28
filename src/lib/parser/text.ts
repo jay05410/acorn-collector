@@ -129,9 +129,9 @@ export function parseBoothText(text: string, options?: ParseOptions): StaticJudg
   const norm = normalizeText(text ?? '');
   const scan = maskLinksAndHandles(norm);
 
-  // Author: display name + any event info after "@".
+  // Author: display name + any event info after "@". A bare handle is no info.
   const author = options?.author ? splitAuthor(options.author) : undefined;
-  const authorInfo = author ? normalizeText(`${author.name} ${author.tail}`) : '';
+  const authorInfo = author && !author.nameIsHandle ? normalizeText(`${author.name} ${author.tail}`) : '';
 
   // Links first: they are masked out of everything below.
   const links = extractLinks(norm, options?.links ?? []);

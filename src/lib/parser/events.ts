@@ -3,7 +3,7 @@
  * the user's existing events.
  */
 import { EVENT_DEFS, type EventCode, type EventDef } from './dictionaries';
-import { escapeRegExp, foldKey, normalizeText } from './normalize';
+import { escapeRegExp, foldKey, normalizeText, round2 } from './normalize';
 
 export interface DetectedEvent {
   /** EventDef id, e.g. "comiket". */
@@ -366,10 +366,18 @@ export function matchEvent<T extends EventRef>(
   const threshold = options?.threshold ?? EVENT_MATCH_THRESHOLD;
   if (!hint.trim() || existingEvents.length === 0) return null;
   const hp = profile(hint);
-  let best: EventMatch<T> | null = null;
+  // Compare raw scores; round only the returned one, so a rounded-up earlier
+  // score cannot hide a higher later one.
+  let best: T | undefined;
+  let bestScore = 0;
   for (const event of existingEvents) {
     const s = score(hp, profile(event.name));
-    if (!best || s > best.score) best = { event, score: Math.round(s * 100) / 100 };
+    if (best === undefined || s > bestScore) {
+      best = event;
+      bestScore = s;
+    }
   }
-  return best && best.score >= threshold ? best : null;
+  if (best === undefined) return null;
+  const rounded = round2(bestScore);
+  return rounded >= threshold ? { event: best, score: rounded } : null;
 }

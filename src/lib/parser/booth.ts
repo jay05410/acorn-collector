@@ -82,6 +82,9 @@ const LABEL_WORDS = [
 
 /** Labels that are specific enough to accept a bare number ("Booth #1234"). */
 const DIGIT_LABEL = /^(?:부스|booth|table|ブース|摊|攤)/iu;
+/** "Booth 2026 신청" is a year; "Booth #2026", "Booth No. 2026", "부스 번호 2026", "2026번" are booths. */
+const YEAR_LIKE = /^(?:19|20)\d{2}$/;
+const NUMBER_MARK = /#|(?<![A-Za-z])(?:no\.?|number)(?![A-Za-z])|번/iu;
 
 const LABEL_RE = new RegExp(
   `(?<![A-Za-z])(${LABEL_WORDS})\\s?(?:[:=]|は|는|은|번호)?\\s?(?:(?:no\\.?|#)\\s?)?(?:(${DAY_PREFIX})\\s?)?(${CODE_LABELED})`,
@@ -222,6 +225,10 @@ function scanLabels(text: string): BoothCandidate[] {
     if (!code) continue;
     const digitsOnly = /^#?\d/.test(code);
     if (digitsOnly && !DIGIT_LABEL.test(label)) continue;
+    if (YEAR_LIKE.test(code)) {
+      const end = (m.index ?? 0) + m[0].length;
+      if (!NUMBER_MARK.test(m[0]) && !/^\s?번/u.test(text.slice(end, end + 2))) continue;
+    }
     const hangul = /^[가-힣]/.test(code);
     out.push({
       value: formatBoothCode(code),
