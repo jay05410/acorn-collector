@@ -28,11 +28,16 @@ export interface SettingsViewProps {
   cliDeps?: CliCheckDeps;
 }
 
-/** Escape goes back unless a dialog inside the view is handling it. */
-function isInsideDialog(target: EventTarget): boolean {
+/**
+ * Escape goes back, except inside a dialog (which handles it) or a text
+ * field (Escape there must not throw away a half-typed key).
+ */
+function keepsEscape(target: EventTarget): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest('dialog, [role="dialog"], [role="alertdialog"]')) return true;
   return (
-    target instanceof Element &&
-    target.closest('dialog, [role="dialog"], [role="alertdialog"]') !== null
+    target.matches('input, textarea, select') ||
+    (target instanceof HTMLElement && target.isContentEditable)
   );
 }
 
@@ -96,7 +101,7 @@ export function SettingsView({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
-    if (isInsideDialog(event.target)) return;
+    if (keepsEscape(event.target)) return;
     onBack();
   };
 

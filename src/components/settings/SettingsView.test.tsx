@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { byText, cleanup, click, render } from '@/components/ui/test-utils';
+import { byText, cleanup, click, press, render } from '@/components/ui/test-utils';
 import { clearToasts, getToasts } from '@/components/ui/toast-store';
 import { setLanguage } from '@/i18n';
 import { bridgeError } from '@/lib/bridge/errors';
@@ -150,6 +150,16 @@ describe('SettingsView', () => {
     expect(text()).toContain('No AI service is connected');
     expect(text()).toContain('1.2.3');
     click(document.querySelector('button[aria-label="Back"]'));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('goes back on Escape, but not while typing in a field', async () => {
+    const onBack = vi.fn();
+    await renderView(settings({ ai: { provider: 'openai' } }), { onBack });
+    const input = document.querySelector<HTMLInputElement>('input[type="password"]');
+    press(input, 'Escape');
+    expect(onBack).not.toHaveBeenCalled();
+    press(document.querySelector('h1'), 'Escape');
     expect(onBack).toHaveBeenCalledOnce();
   });
 
