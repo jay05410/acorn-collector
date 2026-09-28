@@ -12,7 +12,7 @@ import type { SettingsSectionId } from '@/components/settings/section-ids';
 import { FirstRunNotice } from '@/components/onboarding/FirstRunNotice';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
 import { SponsorSlot } from '@/components/support/SponsorSlot';
-import { CoveredLayer } from '@/components/ui/Layer';
+import { CoveredLayer, OverlayLayer } from '@/components/ui/Layer';
 import { ToastViewport } from '@/components/ui/ToastViewport';
 import { showToast } from '@/components/ui/toast-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -179,7 +179,16 @@ export default function App({ initialSettings }: AppProps) {
     }
   }, []);
 
-  const onOpenSettings = useCallback(() => setShowSettings(true), []);
+  const openSettings = useCallback((section?: SettingsSectionId) => {
+    setSettingsSection(section);
+    setShowSettings(true);
+  }, []);
+  // From an analysis (connect, or a key or provider error): the AI section.
+  const openAiSettings = useCallback(() => openSettings('ai'), [openSettings]);
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setSettingsSection(undefined);
+  }, []);
 
   const handleExportEvent = (eventId: string) => {
     setExportEventId(eventId);
@@ -214,7 +223,7 @@ export default function App({ initialSettings }: AppProps) {
           onBack={handleBack}
           showBack={currentView !== 'events'}
           onAddClick={() => openManualReview(null)}
-          onSettingsClick={onOpenSettings}
+          onSettingsClick={() => openSettings()}
           onCaptureClick={() => void handleCapture()}
           capturing={capturing}
         />
@@ -230,7 +239,7 @@ export default function App({ initialSettings }: AppProps) {
             <BoothDetail
               boothId={selectedBoothId}
               settings={settings}
-              onOpenSettings={onOpenSettings}
+              onOpenSettings={openAiSettings}
             />
           )}
         </main>
@@ -243,15 +252,10 @@ export default function App({ initialSettings }: AppProps) {
           fallbackEventId={selectedEventId}
           onDismiss={() => releaseReview(reviewSource)}
           onSaved={handleSaved}
-          onOpenSettings={onOpenSettings}
+          onOpenSettings={openAiSettings}
         />
 
-        <FirstRunNotice
-          onConnectAi={() => {
-            setSettingsSection('ai');
-            setShowSettings(true);
-          }}
-        />
+        <FirstRunNotice onConnectAi={openAiSettings} />
 
         {showExport && exportEventId && (
           <ChecklistReceipt
@@ -265,17 +269,11 @@ export default function App({ initialSettings }: AppProps) {
       </CoveredLayer>
 
       {/* Settings: a full view with its own top bar, in a layer above the
-          panel and its dialogs (--z-overlay). */}
+          panel and its dialogs. Back returns to the panel as it was. */}
       {showSettings && (
-        <div className="fixed inset-0 z-(--z-overlay) flex flex-col bg-canvas">
-          <SettingsView
-            initialSection={settingsSection}
-            onBack={() => {
-              setShowSettings(false);
-              setSettingsSection(undefined);
-            }}
-          />
-        </div>
+        <OverlayLayer>
+          <SettingsView initialSection={settingsSection} onBack={closeSettings} />
+        </OverlayLayer>
       )}
 
       <ToastViewport />

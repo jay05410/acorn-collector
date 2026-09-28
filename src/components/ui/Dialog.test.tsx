@@ -2,7 +2,7 @@
 import { act, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmDialog, Dialog } from './Dialog';
-import { CoveredLayer } from './Layer';
+import { CoveredLayer, OverlayLayer } from './Layer';
 import { byRole, byText, cleanup, click, press, render } from './test-utils';
 
 afterEach(cleanup);
@@ -177,6 +177,29 @@ describe('Dialog under a covering layer', () => {
     rerender(<Covered covered={false} />);
     expect(dialog?.closest('[inert]')).toBeNull();
     expect(document.activeElement).toBe(second);
+  });
+});
+
+describe('Dialog in an overlay layer', () => {
+  function stackOf(title: string): string | undefined {
+    const panel = byRole('dialog').find((el) => el.textContent?.includes(title));
+    return panel?.parentElement?.className;
+  }
+
+  it('stacks above the overlay, while panel dialogs stay beneath it', () => {
+    render(
+      <>
+        <CoveredLayer covered>
+          <Dialog open onClose={() => {}} title="Review" />
+        </CoveredLayer>
+        <OverlayLayer>
+          <Dialog open onClose={() => {}} title="Clear cache" />
+        </OverlayLayer>
+      </>
+    );
+    expect(stackOf('Review')).toContain('z-(--z-dialog)');
+    expect(stackOf('Clear cache')).toContain('z-(--z-overlay-dialog)');
+    expect(document.querySelector('.z-\\(--z-overlay\\)')).not.toBeNull();
   });
 });
 

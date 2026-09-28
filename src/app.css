@@ -153,6 +153,8 @@
   --z-dialog: 50;
   /* Full layers over the panel and its dialogs, e.g. Settings. */
   --z-overlay: 55;
+  /* Dialogs opened from a full layer (they must cover it). */
+  --z-overlay-dialog: 57;
   --z-toast: 60;
 }
 
