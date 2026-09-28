@@ -266,12 +266,13 @@ function ReviewRowView({ row, index, fallbackCurrency, dispatch }: ReviewRowView
           </div>
         ) : (
           <p className="px-2 pb-1.5 text-xs text-fg-subtle tabular-nums">
-            {[price !== null ? formatPrice(price, currency) : null, option]
+            {[
+              price !== null ? formatPrice(price, currency) : null,
+              option,
+              row.known ? t('review', 'alreadyAdded') : null,
+            ]
               .filter(Boolean)
               .join(' · ') || t('review', 'excluded')}
-            {row.known && (
-              <span className="ms-1.5 text-fg-muted">· {t('review', 'alreadyAdded')}</span>
-            )}
           </p>
         )}
       </div>

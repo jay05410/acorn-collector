@@ -108,9 +108,20 @@ describe('side panel capture review', () => {
     expect(dialog()).toBeNull();
   });
 
-  it('asks the user to connect AI when no provider is set up', async () => {
+  it('steps aside for Settings when asked to connect AI, then comes back', async () => {
     await emit(handoff(3));
     await vi.waitFor(() => expect(dialog()?.textContent).toContain('Connect AI'));
+    const connect = [...(dialog()?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === 'Connect AI'
+    );
+    await act(async () => connect?.click());
+    expect(dialog()).toBeNull();
+    // The capture is kept while Settings is open.
+    expect(sessionRemove).not.toHaveBeenCalled();
+
+    const closeSettings = document.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+    await act(async () => closeSettings?.click());
+    await vi.waitFor(() => expect(inputValues()).toContain('A-12'));
   });
 
   it("ignores another window's capture", async () => {
