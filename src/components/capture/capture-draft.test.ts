@@ -216,6 +216,22 @@ describe('validation and booth fields', () => {
     });
   });
 
+  it("saves the post's canonical URL as the source when the capture has one", () => {
+    const { draft } = start();
+    // Right-clicking a status link on the X home timeline.
+    const fromTimeline = {
+      ...SNAPSHOT,
+      url: 'https://x.com/home',
+      canonicalUrl: 'https://x.com/moonlight_circle/status/1',
+    };
+    const input = { draft, imageUrls: [], mailOrderLabel: 'MAIL' };
+    expect(boothFields({ ...input, snapshot: fromTimeline }).sourceUrl).toBe(
+      'https://x.com/moonlight_circle/status/1'
+    );
+    expect(boothFields({ ...input, snapshot: { ...SNAPSHOT, canonicalUrl: null } }).sourceUrl).toBe(SNAPSHOT.url);
+    expect(boothFields({ ...input, snapshot: null }).sourceUrl).toBeNull();
+  });
+
   it('resolves the event currency for new and existing events', () => {
     const { draft } = start();
     expect(draftEventCurrency(draft, EVENTS)).toBe('KRW');

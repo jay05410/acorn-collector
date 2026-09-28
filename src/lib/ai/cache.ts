@@ -18,10 +18,12 @@ export interface AnalysisCacheStore {
 }
 
 /**
- * SHA-256 over everything that changes the answer. `textHash` must cover the
- * full prompt (post text, target language, hints, tier) so a Korean run never
- * serves Japanese-translated names; image hashes keep call order because the
- * first call's booth fields win in the merge.
+ * SHA-256 over everything that changes the answer. The engine keys every
+ * call on its own: `textHash` covers exactly the prompt that call sends
+ * (system prompt with the target language, the user content with its post
+ * text and hints, tier), so a Korean run never serves Japanese-translated
+ * names. Image-only calls send no text or hints, so their entries stay valid
+ * when the event list or the event currency changes.
  */
 export function cacheKey(
   provider: ProviderId,

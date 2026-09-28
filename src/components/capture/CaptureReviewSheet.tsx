@@ -15,9 +15,11 @@ import { ConfirmDialog, Dialog } from '@/components/ui/Dialog';
 import { showToast } from '@/components/ui/toast-store';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import { useEvents } from '@/hooks/useEvents';
-import { useExtraction, type ExtractionInput } from '@/hooks/useExtraction';
+import type { ExtractionInput } from '@/hooks/useExtraction';
+import { useReviewRun } from '@/hooks/useReviewRun';
 import { getLanguageInfo, t, tn, useLanguage } from '@/i18n';
 import { isAIConfigured } from '@/lib/ai/runtime';
+import type { ModelTier } from '@/lib/ai/types';
 import type { CaptureHandoff, PageSnapshot } from '@/lib/capture/types';
 import type { AppSettings } from '@/lib/settings-types';
 import type { Event } from '@/types';
@@ -53,6 +55,7 @@ interface CaptureReviewSheetProps {
   /** Closed without saving (the capture is discarded). */
   onDismiss: () => void;
   onSaved: (booth: SavedBooth) => void;
+  /** Opens Settings on top of the sheet, which stays mounted underneath. */
   onOpenSettings: () => void;
 }
 
@@ -135,9 +138,8 @@ function ReviewSheetContent({
   // Captures open on the post itself rather than on its first link.
   const sourceRef = useRef<HTMLElement>(null);
 
-  const extraction = useExtraction({ settings });
-  const { state } = extraction;
-  const configured = settings ? isAIConfigured(settings.ai) : false;
+  const run = useReviewRun({ settings, dispatchRows });
+  const { state, running } = run;
   const text = snapshotText(snapshot);
   const imageUrls = useMemo(
     () => (snapshot?.images ?? []).filter((_, i) => includedImages[i]).map((image) => image.url),
@@ -146,50 +148,31 @@ function ReviewSheetContent({
   const canAnalyze = snapshot !== null && (text.trim() !== '' || imageUrls.length > 0);
   const eventCurrency = draftEventCurrency(draftState.draft, events);
 
-  // Image URLs of the run in flight, to map skipped images back to thumbnails.
-  const analyzedUrls = useRef<string[]>([]);
-  const startAnalysis = (tier?: 'fast' | 'accurate') => {
-    const input: ExtractionInput = {
-      text,
-      images: imageUrls,
-      hints: {
-        eventNames: events.map((event) => event.name),
-        defaultCurrency: eventCurrency,
-      },
-    };
-    analyzedUrls.current = imageUrls;
-    extraction.start(input, tier ? { tier } : undefined);
-  };
+  const input = (): ExtractionInput => ({
+    text,
+    images: imageUrls,
+    hints: {
+      eventNames: events.map((event) => event.name),
+      defaultCurrency: eventCurrency,
+    },
+  });
 
-  // Start automatically once settings are known, at most once per capture.
+  // Start automatically at most once per capture, once settings are known
+  // and an AI is connected (also when it gets connected from this sheet).
   const autoDecided = useRef(false);
   useEffect(() => {
-    if (autoDecided.current || !settings) return;
+    if (autoDecided.current || !settings || !isAIConfigured(settings.ai)) return;
     autoDecided.current = true;
     if (
       canAnalyze &&
       !(prefilled && prefilled.length > 0) &&
-      isAIConfigured(settings.ai) &&
-      settings.ai.autoAnalyze
+      settings.ai.autoAnalyze &&
+      state.status === 'idle'
     ) {
-      startAnalysis();
+      run.start(input());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one decision per sheet
   }, [settings]);
-
-  // Streamed rows into the review list; a new run replaces the old rows.
-  const syncedRun = useRef(0);
-  useEffect(() => {
-    if (state.runId === 0 || state.status === 'idle') return;
-    if (syncedRun.current !== state.runId) {
-      syncedRun.current = state.runId;
-      dispatchRows({ type: 'reset' });
-    }
-    dispatchRows({
-      type: 'sync',
-      rows: state.rows.map((row) => ({ key: row.key, item: row.item, currency: row.currency })),
-    });
-  }, [state.runId, state.status, state.rows]);
 
   // AI booth fields, once per finished run.
   const appliedRun = useRef(0);
@@ -201,14 +184,11 @@ function ReviewSheetContent({
 
   const skippedImages = useMemo(() => {
     const skipped = new Set<number>();
-    if (state.status !== 'done' || !snapshot) return skipped;
-    for (const index of state.outcome?.meta.skippedImages ?? []) {
-      const url = analyzedUrls.current[index];
-      const at = snapshot.images.findIndex((image) => image.url === url);
-      if (at >= 0) skipped.add(at);
-    }
+    snapshot?.images.forEach((image, index) => {
+      if (run.skippedUrls.has(image.url)) skipped.add(index);
+    });
     return skipped;
-  }, [state.status, state.outcome, snapshot]);
+  }, [run.skippedUrls, snapshot]);
 
   // After a blocked save, take the user to the first field to fix.
   useEffect(() => {
@@ -218,7 +198,6 @@ function ReviewSheetContent({
       ?.focus();
   }, [saveAttempt]);
 
-  const running = state.status === 'preparing' || state.status === 'streaming';
   const errors: DraftError[] = draftErrors(draftState.draft, events);
   const itemCount = includedRows(rows).length;
   const dirty =
@@ -247,7 +226,7 @@ function ReviewSheetContent({
         rows,
         badgeId,
       });
-      extraction.cancel();
+      run.cancel();
       onSaved({ ...result, circleName: draftState.draft.circleName.trim() });
     } catch (error) {
       console.error('[capture] could not save the booth', error);
@@ -299,12 +278,13 @@ function ReviewSheetContent({
         {snapshot && !(prefilled && prefilled.length > 0 && state.status === 'idle') && (
           <AnalysisStatus
             state={state}
-            configured={configured}
+            configured={run.configured}
             canStart={canAnalyze}
             itemCount={rows.length}
-            onStart={() => startAnalysis()}
-            onCancel={extraction.cancel}
-            onRetry={(tier) => startAnalysis(tier)}
+            onStart={() => run.start(input())}
+            onCancel={run.cancel}
+            onRetry={(tier?: ModelTier) => run.retry(input(), tier)}
+            onRunAgain={(tier?: ModelTier) => run.runAgain(input(), tier)}
             onOpenSettings={onOpenSettings}
           />
         )}
@@ -341,7 +321,7 @@ function ReviewSheetContent({
         confirmLabel={t('capture', 'discard')}
         onConfirm={() => {
           setConfirmingDiscard(false);
-          extraction.cancel();
+          run.cancel();
           onDismiss();
         }}
         onCancel={() => setConfirmingDiscard(false)}

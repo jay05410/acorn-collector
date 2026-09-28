@@ -3,12 +3,14 @@ import { CopyPlus } from 'lucide-react';
 import { useBadges } from '@/hooks/useBadges';
 import { Badge } from '@/components/ui/Badge';
 import { Checkbox } from '@/components/ui/Checkbox';
+import { CurrencySelect } from '@/components/ui/CurrencySelect';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Stepper } from '@/components/ui/Stepper';
+import { MAX_ITEM_QUANTITY } from '@/constants/items';
 import {
   formatPrice,
   getBadgeLabel,
@@ -19,8 +21,8 @@ import {
 } from '@/i18n';
 import { cn } from '@/lib/utils';
 import {
+  currencyUnknown,
   includedRows,
-  MAX_REVIEW_QUANTITY,
   reviewTotals,
   rowCurrency,
   rowName,
@@ -28,6 +30,7 @@ import {
   selectedOption,
   type ReviewAction,
   type ReviewRow,
+  type RowPatch,
 } from './items-review-state';
 
 interface ItemsReviewProps {
@@ -178,7 +181,11 @@ function ReviewRowView({ row, index, fallbackCurrency, dispatch }: ReviewRowView
   const original = row.source.originalName;
   const showOriginal = original !== null && original !== name;
   const price = rowPrice(row);
-  const edit = (patch: Parameters<typeof editAction>[1]) => dispatch(editAction(row.key, patch));
+  // The source never said which currency this price is in (its analysis
+  // stopped early): mark it, and let the user pick one.
+  const sourceUnknown = row.sourceCurrency === undefined;
+  const unknown = currencyUnknown(row);
+  const edit = (patch: RowPatch) => dispatch({ type: 'edit', key: row.key, patch });
 
   return (
     <li
@@ -227,14 +234,32 @@ function ReviewRowView({ row, index, fallbackCurrency, dispatch }: ReviewRowView
               value={row.price ?? (row.source.price === null ? '' : String(row.source.price))}
               onChange={(event) => edit({ price: event.target.value })}
               placeholder={t('review', 'noPrice')}
-              trailing={row.sourceCurrency === undefined ? undefined : currency}
+              trailing={
+                sourceUnknown ? (
+                  unknown ? (
+                    <span aria-hidden="true" className="font-semibold text-warning">
+                      ?
+                    </span>
+                  ) : undefined
+                ) : (
+                  currency
+                )
+              }
               aria-label={tp('review', 'priceOf', { name: label })}
               className="w-32 tabular-nums"
             />
+            {sourceUnknown && (
+              <CurrencySelect
+                value={currency}
+                onChange={(code) => edit({ currency: code })}
+                aria-label={tp('review', 'currencyOf', { name: label })}
+                className="w-24"
+              />
+            )}
             <Stepper
               value={row.quantity}
               onChange={(quantity) => edit({ quantity })}
-              max={MAX_REVIEW_QUANTITY}
+              max={MAX_ITEM_QUANTITY}
               aria-label={tp('review', 'quantityOf', { name: label })}
               className="w-32"
             />
@@ -263,6 +288,11 @@ function ReviewRowView({ row, index, fallbackCurrency, dispatch }: ReviewRowView
                 )}
               </div>
             )}
+            {unknown && (
+              <p className="basis-full px-1.5 text-xs text-warning">
+                {tp('review', 'currencyUnknown', { currency })}
+              </p>
+            )}
           </div>
         ) : (
           <p className="px-2 pb-1.5 text-xs text-fg-subtle tabular-nums">
@@ -278,11 +308,4 @@ function ReviewRowView({ row, index, fallbackCurrency, dispatch }: ReviewRowView
       </div>
     </li>
   );
-}
-
-function editAction(
-  key: string,
-  patch: Partial<Pick<ReviewRow, 'name' | 'price' | 'option' | 'quantity'>>
-): ReviewAction {
-  return { type: 'edit', key, patch };
 }

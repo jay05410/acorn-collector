@@ -40,6 +40,7 @@ import {
   resolveItemCurrency,
 } from '@/lib/utils';
 import { formatPrice, getBadgeLabel, t, tp, useLanguage } from '@/i18n';
+import { MAX_ITEM_QUANTITY } from '@/constants/items';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import type { AppSettings } from '@/lib/settings-types';
 import type { Badge as BadgeRecord, Item } from '@/types';
@@ -62,8 +63,6 @@ interface ItemDraft {
   badgeId: string;
 }
 
-/** For new input only: a larger stored quantity is still shown and kept. */
-const MAX_QUANTITY = 999;
 
 export function ItemChecklist({
   boothId,
@@ -410,7 +409,7 @@ function ItemFields({
           <Stepper
             value={draft.quantity}
             onChange={(quantity) => onChange({ quantity })}
-            max={MAX_QUANTITY}
+            max={MAX_ITEM_QUANTITY}
           />
         </Field>
       </div>

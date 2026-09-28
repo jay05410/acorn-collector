@@ -2,6 +2,7 @@
 import { act, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmDialog, Dialog } from './Dialog';
+import { CoveredLayer } from './Layer';
 import { byRole, byText, cleanup, click, press, render } from './test-utils';
 
 afterEach(cleanup);
@@ -140,6 +141,42 @@ describe('Dialog', () => {
     press(inner, 'Escape');
     expect(innerClose).toHaveBeenCalledOnce();
     expect(outerClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('Dialog under a covering layer', () => {
+  function Covered({ covered }: { covered: boolean }) {
+    return (
+      <>
+        <CoveredLayer covered={covered}>
+          <Dialog open onClose={() => {}} title="Review">
+            <button type="button">first</button>
+            <button type="button">second</button>
+          </Dialog>
+        </CoveredLayer>
+        {covered && (
+          <div>
+            <input aria-label="settings field" />
+          </div>
+        )}
+      </>
+    );
+  }
+
+  it('stays open but inert, leaves the focus to the layer on top, and takes it back after', () => {
+    const { rerender } = render(<Covered covered={false} />);
+    const second = byText('second');
+    second.focus();
+    rerender(<Covered covered />);
+    const dialog = byRole('dialog')[0];
+    expect(dialog?.closest('[inert]')).not.toBeNull();
+    const field = document.querySelector<HTMLInputElement>('input[aria-label="settings field"]');
+    act(() => field?.focus());
+    expect(document.activeElement).toBe(field);
+
+    rerender(<Covered covered={false} />);
+    expect(dialog?.closest('[inert]')).toBeNull();
+    expect(document.activeElement).toBe(second);
   });
 });
 

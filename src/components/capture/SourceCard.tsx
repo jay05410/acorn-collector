@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { t, useLanguage } from '@/i18n';
 import type { PageSnapshot, SiteId } from '@/lib/capture/types';
+import { hostOf } from '@/lib/capture/util';
 import { cn } from '@/lib/utils';
 import { ImageGrid } from './ImageGrid';
 
@@ -40,14 +41,6 @@ const SITE_ICONS: Record<SiteId, LucideIcon> = {
 const COLLAPSE_CHARS = 180;
 const COLLAPSE_LINES = 4;
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
-}
-
 /** The captured post: who wrote it, its text and its images. */
 export function SourceCard({
   snapshot,
@@ -61,7 +54,9 @@ export function SourceCard({
   const [expanded, setExpanded] = useState(false);
   const [showDisplayed, setShowDisplayed] = useState(false);
   const Icon = SITE_ICONS[snapshot.site] ?? Globe;
-  const host = hostOf(snapshot.url);
+  // The post itself, which is also what the booth saves as its source.
+  const postUrl = snapshot.canonicalUrl ?? snapshot.url;
+  const host = hostOf(postUrl)?.replace(/^www\./, '') ?? postUrl;
   const author = snapshot.author;
   const heading = author?.name || snapshot.title || host;
   const handle = author?.handle ? `@${author.handle.replace(/^@/, '')}` : null;
@@ -94,7 +89,7 @@ export function SourceCard({
           </p>
         </div>
         <a
-          href={snapshot.url}
+          href={postUrl}
           target="_blank"
           rel="noopener noreferrer"
           title={t('booths', 'openSource')}

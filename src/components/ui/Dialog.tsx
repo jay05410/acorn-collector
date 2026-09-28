@@ -15,6 +15,7 @@ import { t, useLanguage } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { Button } from './Button';
 import { IconButton } from './IconButton';
+import { useCovered } from './layer-context';
 
 export interface DialogProps {
   open: boolean;
@@ -85,7 +86,9 @@ function unlockScroll(): void {
 /**
  * Modal dialog rendered in a portal: a bottom sheet on narrow screens, a
  * centered card from 640px. Traps Tab focus, closes on Escape and backdrop
- * click, locks body scroll and restores focus to the opener on close.
+ * click, locks body scroll and restores focus to the opener on close. While
+ * its layer is covered (see CoveredLayer) it stays open but inert, and takes
+ * the focus back when uncovered.
  */
 export function Dialog(props: DialogProps) {
   if (!props.open) return null;
@@ -110,6 +113,11 @@ function DialogPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const tokenRef = useRef<symbol | null>(null);
+  const covered = useCovered();
+  const coveredRef = useRef(covered);
+  coveredRef.current = covered;
+  /** Last element focused inside the panel, to return to when uncovered. */
+  const lastFocusRef = useRef<HTMLElement | null>(null);
   // Read while rendering the first time, before commit: a child with
   // autoFocus takes focus during commit, ahead of any effect of this panel.
   const [opener] = useState(() =>
@@ -127,17 +135,21 @@ function DialogPanel({
     const panel = panelRef.current;
     // Keep the focus a child took with autoFocus; otherwise move it in.
     const focusIsInside = panel?.contains(document.activeElement) ?? false;
-    if (isTopDialog(token) && !focusIsInside) {
+    if (!coveredRef.current && isTopDialog(token) && !focusIsInside) {
       const target =
         initialFocusRef?.current ?? focusableIn(contentRef.current)[0] ?? panel;
       target?.focus();
     }
 
     const keepFocusInside = (event: FocusEvent) => {
-      if (!panel || !isTopDialog(token)) return;
-      if (!panel.contains(event.target as Node)) {
-        (focusableIn(panel)[0] ?? panel).focus();
+      if (!panel) return;
+      if (panel.contains(event.target as Node)) {
+        lastFocusRef.current = event.target as HTMLElement;
+        return;
       }
+      // The layer on top owns the focus while this one is covered.
+      if (coveredRef.current || !isTopDialog(token)) return;
+      (focusableIn(panel)[0] ?? panel).focus();
     };
     document.addEventListener('focusin', keepFocusInside);
 
@@ -151,6 +163,23 @@ function DialogPanel({
       if (opener?.isConnected) opener.focus();
     };
   }, [depth, initialFocusRef, opener]);
+
+  // Back from the covering layer: focus returns to where it was.
+  const wasCovered = useRef(covered);
+  useEffect(() => {
+    const uncovered = wasCovered.current && !covered;
+    wasCovered.current = covered;
+    const panel = panelRef.current;
+    const token = tokenRef.current;
+    if (!uncovered || !panel || !token || !isTopDialog(token)) return;
+    if (panel.contains(document.activeElement)) return;
+    const last = lastFocusRef.current;
+    const target =
+      last?.isConnected && panel.contains(last) && focusableIn(panel).includes(last)
+        ? last
+        : (focusableIn(contentRef.current)[0] ?? panel);
+    target.focus();
+  }, [covered]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const panel = panelRef.current;
@@ -186,7 +215,10 @@ function DialogPanel({
 
   return createPortal(
     <DialogDepth.Provider value={depth}>
-      <div className="fixed inset-0 z-(--z-dialog) flex items-end justify-center sm:items-center sm:p-6">
+      <div
+        inert={covered}
+        className="fixed inset-0 z-(--z-dialog) flex items-end justify-center sm:items-center sm:p-6"
+      >
         <div
           aria-hidden="true"
           className="absolute inset-0 animate-fade-in bg-scrim"

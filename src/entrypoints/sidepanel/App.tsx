@@ -10,6 +10,7 @@ import {
 import { SettingsModal } from '@/components/SettingsModal';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
 import { SponsorSlot } from '@/components/support/SponsorSlot';
+import { CoveredLayer } from '@/components/ui/Layer';
 import { ToastViewport } from '@/components/ui/ToastViewport';
 import { showToast } from '@/components/ui/toast-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -201,36 +202,37 @@ export default function App({ initialSettings }: AppProps) {
 
   return (
     <div className="flex h-full flex-col bg-canvas">
-      <Header
-        currentView={currentView}
-        onBack={handleBack}
-        showBack={currentView !== 'events'}
-        onAddClick={() => openManualReview(null)}
-        onSettingsClick={onOpenSettings}
-        onCaptureClick={() => void handleCapture()}
-        capturing={capturing}
-      />
-      <main className="flex-1 overflow-y-auto bg-canvas">
-        {currentView === 'events' && (
-          <EventList
-            onSelectBooth={handleSelectBooth}
-            onExportEvent={handleExportEvent}
-            onAddBooth={handleAddBoothToEvent}
-          />
-        )}
-        {currentView === 'booth-detail' && selectedBoothId && (
-          <BoothDetail
-            boothId={selectedBoothId}
-            settings={settings}
-            onOpenSettings={onOpenSettings}
-          />
-        )}
-      </main>
-      {adsEnabled && <SponsorSlot placement="footer" />}
+      {/* The panel and every sheet opened from it. Settings cover this layer
+          instead of replacing it, so a review in progress (its edits and a
+          running analysis) is still there when the user comes back. */}
+      <CoveredLayer covered={showSettings} className="flex min-h-0 flex-1 flex-col">
+        <Header
+          currentView={currentView}
+          onBack={handleBack}
+          showBack={currentView !== 'events'}
+          onAddClick={() => openManualReview(null)}
+          onSettingsClick={onOpenSettings}
+          onCaptureClick={() => void handleCapture()}
+          capturing={capturing}
+        />
+        <main className="flex-1 overflow-y-auto bg-canvas">
+          {currentView === 'events' && (
+            <EventList
+              onSelectBooth={handleSelectBooth}
+              onExportEvent={handleExportEvent}
+              onAddBooth={handleAddBoothToEvent}
+            />
+          )}
+          {currentView === 'booth-detail' && selectedBoothId && (
+            <BoothDetail
+              boothId={selectedBoothId}
+              settings={settings}
+              onOpenSettings={onOpenSettings}
+            />
+          )}
+        </main>
+        {adsEnabled && <SponsorSlot placement="footer" />}
 
-      {/* Settings open on top of the review: the sheet steps aside and
-          comes back fresh (so a newly connected AI starts analyzing). */}
-      {!showSettings && (
         <CaptureReviewSheet
           source={reviewSource}
           settings={settings}
@@ -240,22 +242,23 @@ export default function App({ initialSettings }: AppProps) {
           onSaved={handleSaved}
           onOpenSettings={onOpenSettings}
         />
-      )}
 
+        {showExport && exportEventId && (
+          <ChecklistReceipt
+            eventId={exportEventId}
+            onClose={() => {
+              setShowExport(false);
+              setExportEventId(null);
+            }}
+          />
+        )}
+      </CoveredLayer>
+
+      {/* Settings: a layer above the panel and its dialogs (--z-overlay). */}
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
       />
-
-      {showExport && exportEventId && (
-        <ChecklistReceipt
-          eventId={exportEventId}
-          onClose={() => {
-            setShowExport(false);
-            setExportEventId(null);
-          }}
-        />
-      )}
 
       <ToastViewport />
     </div>

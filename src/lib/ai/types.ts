@@ -88,15 +88,36 @@ export interface ExtractionMeta {
   skippedImages?: number[];
 }
 
-export interface ExtractionResult {
-  booth: ExtractedBooth;
+/** Items and currency of one provider call (one image, or the text alone). */
+export interface ExtractionCall {
+  /** Index into the requested images; null for a text-only call. */
+  imageIndex: number | null;
   currency: CurrencyCode | null;
   items: ExtractedItem[];
+}
+
+export interface ExtractionResult {
+  booth: ExtractedBooth;
+  /** Merged currency (the text-bearing call wins, else the majority). */
+  currency: CurrencyCode | null;
+  /** Merged items across calls, deduped by name and price. */
+  items: ExtractedItem[];
   meta: ExtractionMeta;
+  /**
+   * Per-call results in call order, each with its own currency: a post can
+   * mix price lists in different currencies. Absent on single-call results.
+   */
+  calls?: ExtractionCall[];
 }
 
 export interface PartialExtraction {
   items: ExtractedItem[];
+  /**
+   * Currency of these items as soon as it is parsed from the stream (the
+   * wire schema writes it before the items); undefined while still unknown,
+   * null when the model reported none.
+   */
+  currency?: CurrencyCode | null;
 }
 
 export interface ProviderCallOptions {

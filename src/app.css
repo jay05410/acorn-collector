@@ -151,6 +151,8 @@
   --z-sticky: 10;
   --z-popover: 30;
   --z-dialog: 50;
+  /* Full layers over the panel and its dialogs, e.g. Settings. */
+  --z-overlay: 55;
   --z-toast: 60;
 }
 

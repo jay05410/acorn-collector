@@ -1,13 +1,12 @@
 /**
  * AI extraction for the review sheets (ACORN-7): a small state machine
- * idle -> preparing -> streaming -> done | error | cancelled around
- * extractBooth.
+ * idle -> preparing -> streaming -> done | error | cancelled around one
+ * extractBooth run.
  *
- * The engine merges all images into one result with one currency. A post can
- * mix price lists (e.g. a Korean and a Japanese one), so this hook runs one
- * extractBooth per image, in parallel, exactly like the engine's own fan-out
- * (call #1 carries the post text), and keeps each call's currency on its
- * rows. Cost and latency are the same as a single multi-image call.
+ * The engine runs one call per image and reports each call's items with that
+ * call's own currency, while streaming and in the result (`calls`). A post
+ * can mix price lists (e.g. a Korean and a Japanese one), so every row keeps
+ * the currency of the call it came from.
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { getLanguage } from '@/i18n';
@@ -16,7 +15,6 @@ import { ensureAIRuntime, getAnalysisCache, setRuntimeAISettings } from '@/lib/a
 import { normalizeName } from '@/lib/ai/schema';
 import {
   AIError,
-  type ExtractedBooth,
   type ExtractedItem,
   type ExtractionRequest,
   type ExtractionResult,
@@ -37,32 +35,41 @@ export type ExtractionStatus =
 export const CLI_MAX_IMAGES = 6;
 
 export interface ExtractionRow {
-  /** Stable across partial updates and the final result. */
+  /**
+   * Stable for the item across partial updates, the final result and later
+   * runs of the same sheet: `<image index or t>:<normalized name>|<price>`
+   * of the call it first appeared in.
+   */
   key: string;
-  /** Index of the call (image) the item came from. */
+  /** Index into ExtractionResult.calls of the call the item came from. */
   call: number;
   item: ExtractedItem;
-  /** Currency of the call's prices: undefined until the call finishes, null when none. */
+  /** Currency of the call's prices: undefined while unknown, null when none. */
   currency: string | null | undefined;
 }
 
-export interface ExtractionMetaSummary {
-  provider: ProviderId;
-  model: string;
-  /** Slowest call (calls run in parallel). */
-  latencyMs: number;
-  /** Every call was served from the local cache. */
-  cached: boolean;
-  /** Indices into the analyzed image list that could not be read. */
-  skippedImages: number[];
+/** What one engine call has reported so far. */
+export interface CallRows {
+  /** Index into the analyzed images; null for a text-only call. */
+  imageIndex: number | null;
+  items: ExtractedItem[];
+  /** Undefined until the call's currency has been parsed. */
+  currency: string | null | undefined;
 }
 
-export interface ExtractionOutcome {
-  booth: ExtractedBooth;
-  /** First call's currency, else the first known one. */
-  currency: string | null;
-  meta: ExtractionMetaSummary;
+/**
+ * Row keys handed out so far. They are sticky: once an item is shown under a
+ * key it keeps that key, so rows never swap keys (and user edits never land
+ * on a duplicate) whatever order the calls stream in.
+ */
+export interface RowKeys {
+  /** Own key of an item in a call -> the row key it is shown under. */
+  own: Readonly<Record<string, string>>;
+  /** Normalized name, price and known currency -> the row key showing it. */
+  identity: Readonly<Record<string, string>>;
 }
+
+export type ExtractionOutcome = Pick<ExtractionResult, 'booth' | 'currency' | 'meta'>;
 
 export interface ExtractionState {
   status: ExtractionStatus;
@@ -71,15 +78,15 @@ export interface ExtractionState {
   tier: ModelTier;
   provider: ProviderId | null;
   model: string | null;
-  /** Images sent for analysis in this run. */
-  imageCount: number;
+  /** Image URLs sent in this run; skipped image indices refer to this list. */
+  images: readonly string[];
   startedAt: number | null;
   finishedAt: number | null;
-  /** Items per call as they stream in; a finished call holds its final list. */
-  partial: ExtractedItem[][];
-  /** Per-call currencies; undefined until the run finishes. */
-  currencies: (string | null | undefined)[];
+  /** Per engine call (by call index), as reported so far. */
+  calls: readonly (CallRows | undefined)[];
   rows: ExtractionRow[];
+  /** Kept across runs, so a re-run lands on the rows the user already edited. */
+  keys: RowKeys;
   outcome: ExtractionOutcome | null;
   error: AIError | null;
 }
@@ -90,105 +97,101 @@ export const INITIAL_EXTRACTION_STATE: ExtractionState = {
   tier: 'fast',
   provider: null,
   model: null,
-  imageCount: 0,
+  images: [],
   startedAt: null,
   finishedAt: null,
-  partial: [],
-  currencies: [],
+  calls: [],
   rows: [],
+  keys: { own: {}, identity: {} },
   outcome: null,
   error: null,
 };
-
-/** Result of one call; null when its image could not be loaded. */
-export type CallResult = ExtractionResult | null;
 
 export type ExtractionAction =
   | {
       type: 'start';
       runId: number;
       at: number;
-      calls: number;
-      imageCount: number;
+      images: readonly string[];
       tier: ModelTier;
       provider: ProviderId | null;
       model: string | null;
     }
-  | { type: 'partial'; runId: number; call: number; items: ExtractedItem[] }
-  | { type: 'done'; runId: number; at: number; results: CallResult[] }
-  | { type: 'fail'; runId: number; at: number; error: AIError }
-  | { type: 'reset' };
-
-function rowKey(call: number, item: ExtractedItem): string {
-  return `${call}:${normalizeName(item.name)}|${item.price ?? ''}`;
-}
+  | {
+      type: 'partial';
+      runId: number;
+      call: number;
+      imageIndex: number | null;
+      items: ExtractedItem[];
+      /** Undefined when this update does not carry the currency (yet). */
+      currency?: string | null;
+    }
+  | { type: 'done'; runId: number; at: number; result: ExtractionResult }
+  | { type: 'fail'; runId: number; at: number; error: AIError };
 
 /**
- * Flattens per-call items in call order. An item repeated on another image
- * (same name, price and currency) is kept once, at its first position.
+ * Flattens the calls' items in call order into rows. An item another call
+ * already shows (same name and price, both currencies known and equal) is
+ * shown once, under the key it got first; see RowKeys.
  */
 export function assembleRows(
-  lists: readonly (readonly ExtractedItem[] | undefined)[],
-  currencies: readonly (string | null | undefined)[]
-): ExtractionRow[] {
+  calls: readonly (CallRows | undefined)[],
+  keys: RowKeys
+): { rows: ExtractionRow[]; keys: RowKeys } {
+  const own: Record<string, string> = { ...keys.own };
+  const identity: Record<string, string> = { ...keys.identity };
   const rows: ExtractionRow[] = [];
-  const seen = new Set<string>();
-  lists.forEach((items, call) => {
-    const currency = currencies[call];
-    for (const item of items ?? []) {
-      const identity = `${normalizeName(item.name)}|${item.price ?? ''}|${currency ?? ''}`;
-      const key = rowKey(call, item);
-      if (seen.has(identity) || seen.has(key)) continue;
-      seen.add(identity);
-      seen.add(key);
-      rows.push({ key, call, item, currency });
+  const shown = new Set<string>();
+  calls.forEach((call, index) => {
+    if (!call) return;
+    const source = call.imageIndex === null ? 't' : String(call.imageIndex);
+    for (const item of call.items) {
+      const name = normalizeName(item.name);
+      const price = item.price ?? '';
+      const ownKey = `${source}:${name}|${price}`;
+      // Unknown currency: never merged with another call's item.
+      const id = call.currency === undefined ? null : `${name}|${price}|${call.currency ?? ''}`;
+      let key = own[ownKey];
+      if (key === undefined) {
+        key = (id !== null ? identity[id] : undefined) ?? ownKey;
+        own[ownKey] = key;
+      }
+      if (id !== null) identity[id] ??= key;
+      if (shown.has(key)) continue;
+      shown.add(key);
+      rows.push({ key, call: index, item, currency: call.currency });
     }
   });
-  return rows;
+  return { rows, keys: { own, identity } };
 }
 
-function firstNonNull<T>(values: readonly (T | null | undefined)[]): T | null {
-  for (const value of values) if (value !== null && value !== undefined) return value;
-  return null;
+function withRows(state: ExtractionState, calls: readonly (CallRows | undefined)[]): ExtractionState {
+  const { rows, keys } = assembleRows(calls, state.keys);
+  return { ...state, calls, rows, keys };
 }
 
-/** Booth fields and meta over the calls, in call order (like mergeWire). */
-export function summarizeResults(results: readonly CallResult[]): ExtractionOutcome | null {
-  const done = results.filter((r): r is ExtractionResult => r !== null);
-  const first = done[0];
-  if (!first) return null;
-  const booth = (field: Exclude<keyof ExtractedBooth, 'isMailOrder'>) =>
-    firstNonNull(done.map((r) => r.booth[field]));
-  const skippedImages: number[] = [];
-  results.forEach((result, call) => {
-    if (result === null || result.meta.skippedImages?.includes(0)) skippedImages.push(call);
-  });
-  return {
-    booth: {
-      boothNumber: booth('boothNumber'),
-      circleName: booth('circleName'),
-      eventName: booth('eventName'),
-      zone: booth('zone'),
-      isMailOrder: done.some((r) => r.booth.isMailOrder),
+/** Per-call lists of a finished run (a result without `calls` is one call). */
+function finalCalls(state: ExtractionState, result: ExtractionResult): CallRows[] {
+  if (result.calls) {
+    return result.calls.map((call) => ({
+      imageIndex: call.imageIndex,
+      items: call.items,
+      currency: call.currency,
+    }));
+  }
+  return [
+    {
+      imageIndex: state.calls[0]?.imageIndex ?? null,
+      items: result.items,
+      currency: result.currency,
     },
-    currency: firstNonNull(done.map((r) => r.currency)),
-    meta: {
-      provider: first.meta.provider,
-      model: first.meta.model,
-      latencyMs: Math.max(...done.map((r) => r.meta.latencyMs)),
-      cached: done.every((r) => r.meta.cached),
-      skippedImages,
-    },
-  };
+  ];
 }
 
 export function extractionReducer(
   state: ExtractionState,
   action: ExtractionAction
 ): ExtractionState {
-  if (action.type === 'reset') {
-    return { ...INITIAL_EXTRACTION_STATE, runId: state.runId };
-  }
   if (action.type === 'start') {
     return {
       ...INITIAL_EXTRACTION_STATE,
@@ -197,10 +200,9 @@ export function extractionReducer(
       tier: action.tier,
       provider: action.provider,
       model: action.model,
-      imageCount: action.imageCount,
+      images: action.images,
       startedAt: action.at,
-      partial: Array.from({ length: action.calls }, () => []),
-      currencies: new Array<string | null | undefined>(action.calls).fill(undefined),
+      keys: state.keys,
     };
   }
   // Events of a superseded or finished run.
@@ -212,44 +214,36 @@ export function extractionReducer(
   }
   switch (action.type) {
     case 'partial': {
-      const partial = state.partial.map((items, call) =>
-        call === action.call ? action.items : items
-      );
-      return {
-        ...state,
-        status: 'streaming',
-        partial,
-        rows: assembleRows(partial, state.currencies),
+      const calls = [...state.calls];
+      calls[action.call] = {
+        imageIndex: action.imageIndex,
+        items: action.items,
+        currency: action.currency !== undefined ? action.currency : calls[action.call]?.currency,
       };
+      return withRows({ ...state, status: 'streaming' }, calls);
     }
     case 'done': {
-      const partial = action.results.map((result) => result?.items ?? []);
-      const currencies = action.results.map((result) => result?.currency ?? null);
-      const outcome = summarizeResults(action.results);
-      return {
-        ...state,
-        status: 'done',
-        finishedAt: action.at,
-        partial,
-        currencies,
-        rows: assembleRows(partial, currencies),
-        outcome,
-        provider: outcome?.meta.provider ?? state.provider,
-        model: outcome?.meta.model ?? state.model,
-      };
+      const { result } = action;
+      return withRows(
+        {
+          ...state,
+          status: 'done',
+          finishedAt: action.at,
+          outcome: { booth: result.booth, currency: result.currency, meta: result.meta },
+          provider: result.meta.provider,
+          model: result.meta.model,
+        },
+        finalCalls(state, result)
+      );
     }
-    case 'fail': {
-      // Rows kept from the stream fall back to the event currency.
-      const currencies = state.currencies.map((currency) => currency ?? null);
+    case 'fail':
+      // Rows kept from the stream keep their currency, or stay unknown.
       return {
         ...state,
-        currencies,
-        rows: assembleRows(state.partial, currencies),
         status: action.error.code === 'cancelled' ? 'cancelled' : 'error',
         finishedAt: action.at,
         error: action.error.code === 'cancelled' ? null : action.error,
       };
-    }
   }
 }
 
@@ -266,76 +260,11 @@ export interface ExtractionInput {
 
 export type ExtractFn = typeof extractBooth;
 
-interface RunPlan {
-  input: ExtractionInput;
-  settings: AppSettings;
-  tier: ModelTier;
-  signal: AbortSignal;
-  extract: ExtractFn;
-  onPartial: (call: number, items: ExtractedItem[]) => void;
-}
-
-/** An image the engine could not download or decode (no provider involved). */
-function isImageLoadError(error: unknown): boolean {
-  return (
-    error instanceof AIError &&
-    error.provider === undefined &&
-    error.code !== 'cancelled' &&
-    error.code !== 'not_configured'
-  );
-}
-
 /** Images actually sent: the CLI gets at most CLI_MAX_IMAGES. */
 export function imagesFor(settings: AppSettings, images: readonly string[]): string[] {
   return settings.ai.provider === 'cli'
     ? images.slice(0, CLI_MAX_IMAGES)
     : [...images];
-}
-
-/**
- * One extractBooth per image (text on the first), in parallel. The first
- * failure aborts the others, as in the engine. A later image that cannot be
- * loaded yields null (reported as skipped) instead of failing the run.
- */
-export async function runExtractionCalls(plan: RunPlan): Promise<CallResult[]> {
-  const { input, settings, signal, extract } = plan;
-  const images = imagesFor(settings, input.images);
-  const ai = { ...settings.ai, tier: plan.tier };
-  const group = new AbortController();
-  const onAbort = () => group.abort(signal.reason);
-  if (signal.aborted) onAbort();
-  else signal.addEventListener('abort', onAbort, { once: true });
-
-  const calls: Array<{ text: string; images: string[] }> =
-    images.length === 0
-      ? [{ text: input.text, images: [] }]
-      : images.map((url, index) => ({ text: index === 0 ? input.text : '', images: [url] }));
-
-  try {
-    return await Promise.all(
-      calls.map(async (call, index) => {
-        try {
-          return await extract(
-            {
-              text: call.text,
-              images: call.images,
-              targetLanguage: getLanguage(),
-              hints: input.hints,
-              signal: group.signal,
-              onPartial: ({ items }) => plan.onPartial(index, items),
-            },
-            { settings: ai, cache: getAnalysisCache() }
-          );
-        } catch (error) {
-          if (index > 0 && isImageLoadError(error) && !group.signal.aborted) return null;
-          group.abort(new DOMException('Another extraction call failed', 'AbortError'));
-          throw error;
-        }
-      })
-    );
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-  }
 }
 
 export function asAIError(error: unknown): AIError {
@@ -355,17 +284,14 @@ export interface UseExtractionOptions {
 export interface StartOptions {
   /** Overrides settings.ai.tier for this run. */
   tier?: ModelTier;
+  /** Re-analyze without reading the cache (the fresh result is still stored). */
+  fresh?: boolean;
 }
 
 export interface UseExtraction {
   state: ExtractionState;
   start: (input: ExtractionInput, options?: StartOptions) => void;
-  /** Re-runs the last input, optionally on another tier. */
-  retry: (options?: StartOptions) => void;
   cancel: () => void;
-  reset: () => void;
-  /** Whether start() has an input to re-run. */
-  canRetry: boolean;
 }
 
 /** Model the run will use, for the status chip; null when unknown. */
@@ -391,8 +317,6 @@ export function useExtraction({
   nowRef.current = now;
   const runRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
-  const lastInput = useRef<ExtractionInput | null>(null);
-  const [canRetry, setCanRetry] = useState(false);
 
   const cancel = useCallback(() => {
     controllerRef.current?.abort(new DOMException('Cancelled by the user', 'AbortError'));
@@ -404,8 +328,6 @@ export function useExtraction({
     const controller = new AbortController();
     controllerRef.current = controller;
     const runId = ++runRef.current;
-    lastInput.current = input;
-    setCanRetry(true);
     const current = settingsRef.current;
     const tier = options.tier ?? current?.ai.tier ?? 'fast';
     ensureAIRuntime();
@@ -415,8 +337,7 @@ export function useExtraction({
       type: 'start',
       runId,
       at: nowRef.current(),
-      calls: Math.max(1, images.length),
-      imageCount: images.length,
+      images,
       tier,
       provider: current?.ai.provider ?? null,
       model: current ? plannedModel(current, tier) : null,
@@ -433,42 +354,46 @@ export function useExtraction({
       fail(new AIError('unknown', 'Nothing to analyze'));
       return;
     }
-    runExtractionCalls({
-      input,
-      settings: current,
-      tier,
-      signal: controller.signal,
-      extract: extractRef.current,
-      onPartial: (call, items) => dispatch({ type: 'partial', runId, call, items }),
-    }).then(
-      (results) => dispatch({ type: 'done', runId, at: nowRef.current(), results }),
-      (error: unknown) => {
-        if (controller.signal.aborted) {
-          fail(new AIError('cancelled', 'The analysis was cancelled'));
-        } else {
-          fail(error);
+    extractRef
+      .current(
+        {
+          text: input.text,
+          images,
+          targetLanguage: getLanguage(),
+          hints: input.hints,
+          signal: controller.signal,
+          onPartial: (partial, call) =>
+            dispatch({
+              type: 'partial',
+              runId,
+              call: call.index,
+              imageIndex: call.imageIndex,
+              items: partial.items,
+              currency: partial.currency,
+            }),
+        },
+        {
+          settings: { ...current.ai, tier },
+          cache: getAnalysisCache(),
+          ...(options.fresh ? { bypassCacheRead: true } : {}),
         }
-      }
-    );
+      )
+      .then(
+        (result) => dispatch({ type: 'done', runId, at: nowRef.current(), result }),
+        (error: unknown) => {
+          fail(
+            controller.signal.aborted
+              ? new AIError('cancelled', 'The analysis was cancelled')
+              : error
+          );
+        }
+      );
   }, []);
-
-  const retry = useCallback(
-    (options?: StartOptions) => {
-      if (lastInput.current) start(lastInput.current, options);
-    },
-    [start]
-  );
-
-  const reset = useCallback(() => {
-    cancel();
-    runRef.current += 1;
-    dispatch({ type: 'reset' });
-  }, [cancel]);
 
   // Cancel the run in flight when the sheet unmounts.
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  return { state, start, retry, cancel, reset, canRetry };
+  return { state, start, cancel };
 }
 
 /** Milliseconds since the run started, ticking while it runs. */

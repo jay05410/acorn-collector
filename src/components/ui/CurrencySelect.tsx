@@ -8,6 +8,8 @@ interface CurrencySelectProps {
   value: string;
   onChange: (currency: string) => void;
   className?: string;
+  /** Overrides the generic "Currency" label outside a Field. */
+  'aria-label'?: string;
 }
 
 /** Compact ISO currency picker; keeps an unlisted current value selectable. */
@@ -15,6 +17,7 @@ export function CurrencySelect({
   value,
   onChange,
   className,
+  'aria-label': ariaLabel,
 }: CurrencySelectProps) {
   useLanguage();
   const inField = useContext(FieldContext) !== null;
@@ -26,7 +29,7 @@ export function CurrencySelect({
     <Select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      aria-label={inField ? undefined : label}
+      aria-label={ariaLabel ?? (inField ? undefined : label)}
       title={label}
       className={className}
     >

@@ -7,9 +7,11 @@ import { showToast } from '@/components/ui/toast-store';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import { useEvents } from '@/hooks/useEvents';
 import { useItems } from '@/hooks/useItems';
-import { useExtraction } from '@/hooks/useExtraction';
+import type { ExtractionInput } from '@/hooks/useExtraction';
+import { useReviewRun } from '@/hooks/useReviewRun';
 import { t, tn, useLanguage } from '@/i18n';
 import { isAIConfigured } from '@/lib/ai/runtime';
+import type { ModelTier } from '@/lib/ai/types';
 import type { AppSettings } from '@/lib/settings-types';
 import type { Booth } from '@/types';
 import { AnalysisStatus } from './AnalysisStatus';
@@ -24,12 +26,13 @@ interface AnalysisSheetProps {
   /** Resolved currency of the booth's event. */
   eventCurrency: string;
   settings: AppSettings | null;
+  /** Opens Settings on top of the sheet, which stays open underneath. */
   onOpenSettings?: () => void;
 }
 
 /**
  * Re-analyzes a saved booth's images and post text, then adds the chosen
- * items. Identical inputs are answered from the local cache.
+ * items. Calls whose input is unchanged are answered from the local cache.
  */
 export function AnalysisSheet(props: AnalysisSheetProps) {
   if (!props.open) return null;
@@ -50,8 +53,6 @@ function AnalysisSheetContent({
   const [rows, dispatchRows] = useReducer(reviewReducer, []);
   const [badgeId, setBadgeId] = useState<string>(DEFAULT_BADGE_ID);
   const [adding, setAdding] = useState(false);
-  const extraction = useExtraction({ settings });
-  const { state } = extraction;
   const { events, isLoading: eventsLoading } = useEvents();
   const { items: existingItems, isLoading: itemsLoading } = useItems(booth.id);
   // Items the booth already has start unchecked, so re-analysis adds no duplicates.
@@ -65,61 +66,47 @@ function AnalysisSheetContent({
       ),
     [existingItems]
   );
-  const configured = settings ? isAIConfigured(settings.ai) : false;
+  const run = useReviewRun({ settings, dispatchRows, known });
+  const { state } = run;
   const selectedImages = images.filter((_, index) => included[index]);
   const canStart = text.trim() !== '' || selectedImages.length > 0;
-  const analyzedUrls = useRef<string[]>([]);
 
-  const start = (tier?: 'fast' | 'accurate') => {
-    analyzedUrls.current = selectedImages;
-    // Same hints as the capture review, so an unchanged booth is a cache hit.
-    const hints = { eventNames: events.map((event) => event.name), defaultCurrency: eventCurrency };
-    extraction.start({ text, images: selectedImages, hints }, tier ? { tier } : undefined);
-  };
+  // Same hints as the capture review. The hints only reach the call that
+  // carries the post text, so image-only calls of an analyzed booth are
+  // answered from the cache even after the event list changed.
+  const input = (): ExtractionInput => ({
+    text,
+    images: selectedImages,
+    hints: { eventNames: events.map((event) => event.name), defaultCurrency: eventCurrency },
+  });
 
-  // The user asked for this analysis: start as soon as settings are known.
+  // The user asked for this analysis: start once settings are known and an
+  // AI is connected (also when it gets connected from this sheet).
   const started = useRef(false);
   useEffect(() => {
     if (started.current || !settings || eventsLoading || itemsLoading) return;
+    if (!isAIConfigured(settings.ai)) return;
     started.current = true;
-    if (isAIConfigured(settings.ai) && canStart) start();
+    if (canStart && state.status === 'idle') run.start(input());
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opening
   }, [settings, eventsLoading, itemsLoading]);
 
-  const syncedRun = useRef(0);
-  useEffect(() => {
-    if (state.runId === 0 || state.status === 'idle') return;
-    if (syncedRun.current !== state.runId) {
-      syncedRun.current = state.runId;
-      dispatchRows({ type: 'reset' });
-    }
-    dispatchRows({
-      type: 'sync',
-      rows: state.rows.map((row) => ({ key: row.key, item: row.item, currency: row.currency })),
-      known,
-    });
-    // `known` is read when rows first appear; later item changes do not re-sync.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.runId, state.status, state.rows]);
-
   const skipped = useMemo(() => {
     const set = new Set<number>();
-    if (state.status !== 'done') return set;
-    for (const index of state.outcome?.meta.skippedImages ?? []) {
-      const at = images.indexOf(analyzedUrls.current[index] ?? '');
-      if (at >= 0) set.add(at);
-    }
+    images.forEach((url, index) => {
+      if (run.skippedUrls.has(url)) set.add(index);
+    });
     return set;
-  }, [state.status, state.outcome, images]);
+  }, [run.skippedUrls, images]);
 
-  const running = state.status === 'preparing' || state.status === 'streaming';
+  const { running } = run;
   const count = includedRows(rows).length;
 
   const handleAdd = async () => {
     setAdding(true);
     try {
       const added = await addReviewedItems({ boothId: booth.id, rows, eventCurrency, badgeId });
-      extraction.cancel();
+      run.cancel();
       showToast({ message: tn('analysis', 'added', added), tone: 'success' });
       onClose();
     } catch (error) {
@@ -127,11 +114,6 @@ function AnalysisSheetContent({
       showToast({ message: t('analysis', 'addFailed'), tone: 'error' });
       setAdding(false);
     }
-  };
-
-  const openSettings = () => {
-    onClose();
-    onOpenSettings?.();
   };
 
   return (
@@ -172,13 +154,14 @@ function AnalysisSheetContent({
       )}
       <AnalysisStatus
         state={state}
-        configured={configured}
+        configured={run.configured}
         canStart={canStart}
         itemCount={rows.length}
-        onStart={() => start()}
-        onCancel={extraction.cancel}
-        onRetry={(tier) => start(tier)}
-        onOpenSettings={openSettings}
+        onStart={() => run.start(input())}
+        onCancel={run.cancel}
+        onRetry={(tier?: ModelTier) => run.retry(input(), tier)}
+        onRunAgain={(tier?: ModelTier) => run.runAgain(input(), tier)}
+        onOpenSettings={() => onOpenSettings?.()}
       />
       {(rows.length > 0 || running) && (
         <ItemsReview

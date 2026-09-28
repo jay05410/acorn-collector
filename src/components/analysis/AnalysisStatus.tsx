@@ -20,7 +20,10 @@ interface AnalysisStatusProps {
   itemCount: number;
   onStart: () => void;
   onCancel: () => void;
+  /** After an error or a stop; no tier keeps the last run's. */
   onRetry: (tier?: ModelTier) => void;
+  /** After a finished run; no tier re-analyzes on the last run's tier. */
+  onRunAgain: (tier?: ModelTier) => void;
   onOpenSettings: () => void;
   className?: string;
 }
@@ -102,13 +105,14 @@ export function AnalysisStatus({
   onStart,
   onCancel,
   onRetry,
+  onRunAgain,
   onOpenSettings,
   className,
 }: AnalysisStatusProps) {
   useLanguage();
   const elapsedMs = useElapsed(state);
   const running = state.status === 'preparing' || state.status === 'streaming';
-  const skipped = state.status === 'done' ? (state.outcome?.meta.skippedImages.length ?? 0) : 0;
+  const skipped = state.status === 'done' ? (state.outcome?.meta.skippedImages?.length ?? 0) : 0;
 
   let body: ReactNode = null;
   if (state.status === 'idle') {
@@ -146,8 +150,8 @@ export function AnalysisStatus({
           <p aria-hidden="true" className="min-w-0 flex-1 text-sm font-medium text-fg">
             {state.status === 'streaming' && itemCount > 0
               ? tn('review', 'statusStreaming', itemCount)
-              : state.imageCount > 0
-                ? tn('analysis', 'analyzingImages', state.imageCount)
+              : state.images.length > 0
+                ? tn('analysis', 'analyzingImages', state.images.length)
                 : t('review', 'statusReadingText')}
           </p>
           <Button variant="secondary" size="sm" onClick={onCancel}>
@@ -180,12 +184,12 @@ export function AnalysisStatus({
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 pl-7">
           {state.tier === 'fast' ? (
-            <Button variant="soft" size="sm" onClick={() => onRetry('accurate')}>
+            <Button variant="soft" size="sm" onClick={() => onRunAgain('accurate')}>
               <WandSparkles />
               {t('review', 'runAccurate')}
             </Button>
           ) : (
-            <Button variant="secondary" size="sm" onClick={() => onRetry()}>
+            <Button variant="secondary" size="sm" onClick={() => onRunAgain()}>
               <RotateCw />
               {t('review', 'runAgain')}
             </Button>

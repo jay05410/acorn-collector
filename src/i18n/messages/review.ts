@@ -43,6 +43,8 @@ export default defineMessages({
     aiMayBeWrong: 'AI can make mistakes. Check before saving.',
     skippedImages_one: "{count} image couldn't be read and was skipped.",
     skippedImages_other: "{count} images couldn't be read and were skipped.",
+    currencyOf: 'Currency of {name}',
+    currencyUnknown: 'Currency not detected. Saved in {currency} unless you pick another.',
   },
   ko: {
     itemsTitle: '상품',
@@ -85,6 +87,8 @@ export default defineMessages({
     aiMayBeWrong: 'AI는 틀릴 수 있어요. 저장 전에 확인해 주세요.',
     skippedImages_one: '이미지 {count}개를 읽지 못해 건너뛰었어요.',
     skippedImages_other: '이미지 {count}개를 읽지 못해 건너뛰었어요.',
+    currencyOf: '{name} 통화',
+    currencyUnknown: '통화를 알아내지 못했어요. 다른 통화를 고르지 않으면 {currency}로 저장돼요.',
   },
   ja: {
     itemsTitle: '商品',
@@ -127,6 +131,8 @@ export default defineMessages({
     aiMayBeWrong: 'AIは間違えることがあります。保存前に確認してください。',
     skippedImages_one: '{count}枚の画像を読み込めなかったため、スキップしました。',
     skippedImages_other: '{count}枚の画像を読み込めなかったため、スキップしました。',
+    currencyOf: '{name}の通貨',
+    currencyUnknown: '通貨を判別できませんでした。別の通貨を選ばない場合は{currency}で保存されます。',
   },
   'zh-CN': {
     itemsTitle: '商品',
@@ -169,6 +175,8 @@ export default defineMessages({
     aiMayBeWrong: 'AI 可能会出错，保存前请检查。',
     skippedImages_one: '有 {count} 张图片无法读取，已跳过。',
     skippedImages_other: '有 {count} 张图片无法读取，已跳过。',
+    currencyOf: '{name}的币种',
+    currencyUnknown: '未能识别币种。如不选择其他币种，将按 {currency} 保存。',
   },
   'zh-TW': {
     itemsTitle: '商品',
@@ -211,5 +219,7 @@ export default defineMessages({
     aiMayBeWrong: 'AI 可能會出錯，儲存前請檢查。',
     skippedImages_one: '有 {count} 張圖片無法讀取，已略過。',
     skippedImages_other: '有 {count} 張圖片無法讀取，已略過。',
+    currencyOf: '{name}的幣別',
+    currencyUnknown: '無法辨識幣別。若未選擇其他幣別，將以 {currency} 儲存。',
   },
 });

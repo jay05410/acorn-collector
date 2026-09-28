@@ -1,8 +1,9 @@
 /**
  * Row state of the items review list (pure, unit-tested). Rows arrive from
  * the AI stream or a structured source; the user's choices (include, name,
- * price, option, quantity) survive later updates of the same row.
+ * price, currency, option, quantity) survive later updates of the same row.
  */
+import { MAX_ITEM_QUANTITY } from '@/constants/items';
 import { normalizeCurrencyCode } from '@/i18n/format';
 import { normalizeName } from '@/lib/ai/schema';
 import type { ExtractedItem } from '@/lib/ai/types';
@@ -24,10 +25,14 @@ export interface IncomingRow {
 
 export interface ReviewRow {
   key: string;
+  /** Set on a copy made with 'duplicate': the key of the row it copies. */
+  copyOf?: string;
   /** Latest data from the source. */
   source: ExtractedItem;
   /** Null when the source has none; undefined while it is still unknown. */
   sourceCurrency: string | null | undefined;
+  /** Currency the user picked; undefined follows the source. */
+  currency?: string;
   included: boolean;
   /** The booth already has an item with this name and price. */
   known?: boolean;
@@ -42,24 +47,24 @@ export interface ReviewRow {
   touched: boolean;
 }
 
+export type RowPatch = Partial<Pick<ReviewRow, 'name' | 'price' | 'currency' | 'option' | 'quantity'>>;
+
 export type ReviewAction =
   | {
       type: 'sync';
       rows: readonly IncomingRow[];
       /** knownItemKey()s of items the booth already has; they start excluded. */
       known?: ReadonlySet<string>;
+      /**
+       * Drop untouched rows the source no longer has (default). False keeps
+       * them, e.g. while a re-run is still streaming.
+       */
+      prune?: boolean;
     }
   | { type: 'toggle'; key: string }
   | { type: 'setAll'; included: boolean }
-  | {
-      type: 'edit';
-      key: string;
-      patch: Partial<Pick<ReviewRow, 'name' | 'price' | 'option' | 'quantity'>>;
-    }
-  | { type: 'duplicate'; key: string }
-  | { type: 'reset' };
-
-export const MAX_REVIEW_QUANTITY = 999;
+  | { type: 'edit'; key: string; patch: RowPatch }
+  | { type: 'duplicate'; key: string };
 
 /** Identity used to spot items the booth already has. */
 export function knownItemKey(name: string, price: number | null): string {
@@ -87,28 +92,31 @@ function newRow(incoming: IncomingRow, known: ReadonlySet<string> | undefined): 
   };
 }
 
-function baseKey(key: string): string {
-  return key.split('#')[0] ?? key;
+/** Key of the row a row copies, or its own key. */
+function originOf(row: ReviewRow): string {
+  return row.copyOf ?? row.key;
 }
 
 /**
  * Applies a new list from the source, in source order: rows it already had
  * get the new data with the user's edits kept, new rows appear at their
  * source position (streams only append, so existing rows never swap), and
- * rows the source no longer has are dropped unless the user touched them,
- * in which case they stay where they were. Copies made with 'duplicate'
- * follow their original.
+ * rows the source no longer has are dropped unless the user touched them (or
+ * `prune` is false), in which case they stay where they were. Copies made
+ * with 'duplicate' follow their original.
  */
 function sync(
   rows: readonly ReviewRow[],
   incoming: readonly IncomingRow[],
-  known: ReadonlySet<string> | undefined
+  known: ReadonlySet<string> | undefined,
+  prune: boolean
 ): ReviewRow[] {
   const previous = new Map(rows.map((row) => [row.key, row]));
   const copies = new Map<string, ReviewRow[]>();
   for (const row of rows) {
-    const base = baseKey(row.key);
-    if (base !== row.key) copies.set(base, [...(copies.get(base) ?? []), row]);
+    if (row.copyOf !== undefined) {
+      copies.set(row.copyOf, [...(copies.get(row.copyOf) ?? []), row]);
+    }
   }
   const out: ReviewRow[] = [];
   for (const update of incoming) {
@@ -124,7 +132,7 @@ function sync(
   }
   const incomingKeys = new Set(incoming.map((row) => row.key));
   rows.forEach((row, index) => {
-    if (!row.touched || incomingKeys.has(baseKey(row.key))) return;
+    if (incomingKeys.has(originOf(row)) || (prune && !row.touched)) return;
     let at = 0;
     for (let i = index - 1; i >= 0; i--) {
       const position = out.findIndex((kept) => kept.key === rows[i]?.key);
@@ -138,21 +146,20 @@ function sync(
   return out;
 }
 
-function isSibling(row: ReviewRow, base: string): boolean {
-  return row.key === base || row.key.startsWith(`${base}#`);
-}
-
 /** Adds a copy of a row right after its last copy, on the next unused option. */
 function duplicate(rows: readonly ReviewRow[], key: string): ReviewRow[] {
   const original = rows.find((row) => row.key === key);
   if (!original) return [...rows];
-  const base = baseKey(key);
-  const used = new Set(rows.filter((row) => isSibling(row, base)).map(selectedOption));
+  const origin = originOf(original);
+  const siblings = (row: ReviewRow) => originOf(row) === origin;
+  const used = new Set(rows.filter(siblings).map(selectedOption));
   const nextOption =
     original.source.options.find((option) => !used.has(option)) ?? selectedOption(original);
   const copy: ReviewRow = {
     ...original,
-    key: `${base}#${generateId()}`,
+    // Source keys never start with "copy:" (see ExtractionRow and prefilledRows).
+    key: `copy:${generateId()}`,
+    copyOf: origin,
     option: nextOption,
     quantity: 1,
     included: true,
@@ -160,7 +167,7 @@ function duplicate(rows: readonly ReviewRow[], key: string): ReviewRow[] {
   };
   let last = -1;
   rows.forEach((row, index) => {
-    if (isSibling(row, base)) last = index;
+    if (siblings(row)) last = index;
   });
   const out = [...rows];
   out.splice(last + 1, 0, copy);
@@ -170,7 +177,7 @@ function duplicate(rows: readonly ReviewRow[], key: string): ReviewRow[] {
 export function reviewReducer(rows: ReviewRow[], action: ReviewAction): ReviewRow[] {
   switch (action.type) {
     case 'sync':
-      return sync(rows, action.rows, action.known);
+      return sync(rows, action.rows, action.known, action.prune ?? true);
     case 'toggle':
       return rows.map((row) =>
         row.key === action.key ? { ...row, included: !row.included, touched: true } : row
@@ -185,8 +192,6 @@ export function reviewReducer(rows: ReviewRow[], action: ReviewAction): ReviewRo
       );
     case 'duplicate':
       return duplicate(rows, action.key);
-    case 'reset':
-      return [];
   }
 }
 
@@ -206,9 +211,18 @@ export function selectedOption(row: ReviewRow): string | null {
   return row.source.options[0] ?? null;
 }
 
-/** The row's currency, falling back to the event's. */
+/** The row's currency: the user's pick, else the source's, else the event's. */
 export function rowCurrency(row: ReviewRow, fallback: string): string {
-  return normalizeCurrencyCode(row.sourceCurrency) ?? fallback;
+  return row.currency ?? normalizeCurrencyCode(row.sourceCurrency) ?? fallback;
+}
+
+/**
+ * Nobody knows the row's currency yet (its analysis call stopped before the
+ * currency arrived, and the user has not picked one): it is saved in the
+ * event currency unless the user picks another.
+ */
+export function currencyUnknown(row: ReviewRow): boolean {
+  return row.currency === undefined && row.sourceCurrency === undefined;
 }
 
 export function includedRows(rows: readonly ReviewRow[]): ReviewRow[] {
@@ -266,7 +280,7 @@ export function toItemRecords(rows: readonly ReviewRow[], options: ItemRecordOpt
       option: selectedOption(row),
       badgeId: options.badgeId,
       checked: false,
-      quantity: Math.min(MAX_REVIEW_QUANTITY, Math.max(1, Math.round(row.quantity) || 1)),
+      quantity: Math.min(MAX_ITEM_QUANTITY, Math.max(1, Math.round(row.quantity) || 1)),
       createdAt: options.now + index,
     };
   });

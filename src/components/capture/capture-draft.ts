@@ -289,7 +289,9 @@ export function boothFields({
     boothNumber: draft.boothNumber.trim() || (draft.isMailOrder ? mailOrderLabel : ''),
     circleName: draft.circleName.trim(),
     zone: draft.zone.trim() || null,
-    sourceUrl: snapshot?.url ?? null,
+    // The post's permalink: `url` can be the page it was captured from (e.g.
+    // the X home timeline when a status link was right-clicked).
+    sourceUrl: snapshot ? (snapshot.canonicalUrl ?? snapshot.url) : null,
     formUrl: links.length > 0 ? links.join('\n') : null,
     memo: draft.memo.trim() || null,
     imageUrls: imageUrls.length > 0 ? [...imageUrls] : null,

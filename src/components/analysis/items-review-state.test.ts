@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ExtractedItem } from '@/lib/ai/types';
 import {
+  currencyUnknown,
   includedRows,
   knownItemKey,
   prefilledRows,
   reviewReducer,
   reviewTotals,
+  rowCurrency,
   rowName,
   rowPrice,
   selectedOption,
@@ -85,9 +87,15 @@ describe('reviewReducer sync', () => {
     expect(rowPrice(rows[0]!)).toBe(900);
   });
 
-  it('resets', () => {
-    const rows = synced([incoming('a', item('A', 1))]);
-    expect(reviewReducer(rows, { type: 'reset' })).toEqual([]);
+  it('keeps untouched rows the source dropped when not pruning (a re-run under way)', () => {
+    let rows = synced([incoming('a', item('A', 1)), incoming('b', item('B', 1))]);
+    rows = reviewReducer(rows, { type: 'sync', rows: [incoming('b', item('B', 2))], prune: false });
+    expect(rows.map((r) => [r.key, rowPrice(r)])).toEqual([
+      ['a', 1],
+      ['b', 2],
+    ]);
+    rows = reviewReducer(rows, { type: 'sync', rows: [incoming('b', item('B', 2))] });
+    expect(rows.map((r) => r.key)).toEqual(['b']);
   });
 });
 
@@ -115,6 +123,63 @@ describe('reviewReducer bulk and duplicate', () => {
       rows
     );
     expect(rows.slice(0, 3).map((r) => rowPrice(r))).toEqual([450, 450, 450]);
+  });
+});
+
+describe('duplicate copies', () => {
+  it('tracks copies explicitly, even when a source key contains #', () => {
+    // normalizeName keeps symbol-only names, so an AI key can be "0:#|500".
+    const key = '0:#|500';
+    let rows = synced([incoming(key, item('#', 500, { options: ['A', 'B'] }))]);
+    rows = reviewReducer(rows, { type: 'toggle', key });
+    rows = reviewReducer(rows, { type: 'duplicate', key });
+    expect(rows.map((r) => [r.copyOf ?? null, selectedOption(r)])).toEqual([
+      [null, 'A'],
+      [key, 'B'],
+    ]);
+    // Stream updates keep exactly one original and its copy.
+    for (let i = 0; i < 3; i++) {
+      rows = synced([incoming(key, item('#', 500 + i, { options: ['A', 'B'] }))], rows);
+    }
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.key)).size).toBe(2);
+    expect(rows.map((r) => rowPrice(r))).toEqual([502, 502]);
+  });
+
+  it('copies of a copy belong to the original', () => {
+    let rows = synced([incoming('a', item('Badge', 400, { options: ['A', 'B', 'C'] }))]);
+    rows = reviewReducer(rows, { type: 'duplicate', key: 'a' });
+    rows = reviewReducer(rows, { type: 'duplicate', key: rows[1]!.key });
+    expect(rows.map((r) => [r.copyOf ?? null, selectedOption(r)])).toEqual([
+      [null, 'A'],
+      ['a', 'B'],
+      ['a', 'C'],
+    ]);
+  });
+});
+
+describe('row currency', () => {
+  it('is unknown until the source or the user sets it, and saves in the event currency meanwhile', () => {
+    let rows = synced([{ key: 'a', item: item('Book', 800), currency: undefined }]);
+    const [row] = rows;
+    expect(row?.sourceCurrency).toBeUndefined();
+    expect(currencyUnknown(row!)).toBe(true);
+    expect(rowCurrency(row!, 'KRW')).toBe('KRW');
+    const options = { boothId: 'b1', eventCurrency: 'KRW', badgeId: 'x', now: 1 };
+    expect(toItemRecords(rows, options)[0]?.currency).toBeNull();
+
+    rows = reviewReducer(rows, { type: 'edit', key: 'a', patch: { currency: 'JPY' } });
+    expect(currencyUnknown(rows[0]!)).toBe(false);
+    expect(toItemRecords(rows, options)[0]?.currency).toBe('JPY');
+    // The choice survives later updates, even once the source knows a currency.
+    rows = synced([incoming('a', item('Book', 800), 'KRW')], rows);
+    expect(rowCurrency(rows[0]!, 'KRW')).toBe('JPY');
+  });
+
+  it('treats a null source currency as known (none), priced in the event currency', () => {
+    const [row] = synced([incoming('a', item('Book', 800), null)]);
+    expect(currencyUnknown(row!)).toBe(false);
+    expect(rowCurrency(row!, 'TWD')).toBe('TWD');
   });
 });
 
