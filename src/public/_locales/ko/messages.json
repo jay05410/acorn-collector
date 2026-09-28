@@ -4,5 +4,17 @@
   },
   "appDescription": {
     "message": "덕질 행사/전시회에서 방문할 부스와 구매할 상품을 관리하는 체크리스트"
+  },
+  "contextMenuAdd": {
+    "message": "도토리 주머니에 담기",
+    "description": "Context menu item on pages, selections and links"
+  },
+  "contextMenuAnalyzeImage": {
+    "message": "이 이미지 분석하기",
+    "description": "Context menu item on images"
+  },
+  "commandCapture": {
+    "message": "보고 있는 페이지 담기",
+    "description": "Keyboard shortcut description (chrome://extensions/shortcuts)"
   }
 }

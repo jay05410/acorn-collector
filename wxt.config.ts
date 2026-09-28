@@ -38,7 +38,14 @@ export default defineConfig({
     description: '__MSG_appDescription__',
     default_locale: 'en',
     version: '1.0.0',
-    permissions: ['storage', 'contextMenus', 'activeTab', 'sidePanel', 'identity'],
+    permissions: [
+      'storage',
+      'contextMenus',
+      'activeTab',
+      'sidePanel',
+      'identity',
+      'scripting',
+    ],
     // Requested at runtime when the user turns on the local CLI bridge.
     optional_permissions: ['nativeMessaging'],
     // Development builds get a fixed extension ID (elmococmlnkhkpegnjnoflakfnakhcdn)
@@ -60,6 +67,12 @@ export default defineConfig({
     },
     side_panel: {
       default_path: 'sidepanel.html',
+    },
+    commands: {
+      'capture-page': {
+        suggested_key: { default: 'Alt+Shift+A' },
+        description: '__MSG_commandCapture__',
+      },
     },
   }),
 });

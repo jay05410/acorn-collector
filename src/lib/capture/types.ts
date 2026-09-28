@@ -61,12 +61,15 @@ export interface PageSnapshot {
   prefilledCurrency: string | null;
 }
 
-export type CaptureTrigger =
-  | 'context-menu'
-  | 'image-context-menu'
-  | 'action'
-  | 'shortcut'
-  | 'panel-button';
+export const CAPTURE_TRIGGERS = [
+  'context-menu',
+  'image-context-menu',
+  'action',
+  'shortcut',
+  'panel-button',
+] as const;
+
+export type CaptureTrigger = (typeof CAPTURE_TRIGGERS)[number];
 
 /**
  * Background -> side panel handoff, kept in chrome.storage.session under
@@ -79,6 +82,11 @@ export interface CaptureHandoff {
   /** For image-context-menu: the single image the user right-clicked. */
   focusImageUrl: string | null;
   createdAt: number;
+  /**
+   * Browser window of the captured tab. Side panels ignore handoffs for
+   * other windows; null/absent means any window.
+   */
+  windowId?: number | null;
 }
 
 export const CAPTURE_HANDOFF_KEY = 'capture:pending';
