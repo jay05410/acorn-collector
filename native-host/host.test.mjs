@@ -3,7 +3,7 @@
  * as the first argument, framed JSON over stdio.
  */
 import { spawn } from 'node:child_process';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -129,6 +129,22 @@ describe('host.mjs', () => {
     });
     host.child.stdin.end();
     expect(await host.exited).toBe(0);
+  });
+
+  it('keeps stdout for frames: runtime modules never log or write to it directly', async () => {
+    const root = fileURLToPath(new URL('.', import.meta.url));
+    const runtime = ['host.mjs', 'protocol.mjs'];
+    for (const sub of ['lib', 'cli']) {
+      for (const name of await readdir(join(root, sub))) {
+        if (name.endsWith('.mjs') && !name.endsWith('.test.mjs')) runtime.push(`${sub}/${name}`);
+      }
+    }
+    for (const file of runtime) {
+      const source = await readFile(join(root, file), 'utf8');
+      expect(source, file).not.toMatch(/console\./);
+      const writes = source.match(/process\.stdout\.write/g) ?? [];
+      expect(writes.length, file).toBe(file === 'host.mjs' ? 1 : 0);
+    }
   });
 
   it('reports a malformed request instead of crashing', async () => {
