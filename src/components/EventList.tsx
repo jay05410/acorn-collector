@@ -30,6 +30,7 @@ import {
   tp,
   useLanguage,
 } from '@/i18n';
+import { resolveEventCurrency, shouldPersistEventCurrency } from '@/lib/utils';
 import type { Event, Booth } from '@/types';
 
 interface EventListProps {
@@ -232,25 +233,35 @@ function EventItem({
   const [editDate, setEditDate] = useState(event.date || '');
   const [editLocation, setEditLocation] = useState(event.location || '');
   const [editCurrency, setEditCurrency] = useState('');
+  // What the picker showed when editing began. For an event without a
+  // currency this is only a display fallback and must not be saved as is.
+  const [seededCurrency, setSeededCurrency] = useState('');
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
+    const seeded = resolveEventCurrency(event.currency);
     setEditName(event.name);
     setEditDate(event.date || '');
     setEditLocation(event.location || '');
-    setEditCurrency(event.currency ?? getLanguageInfo().defaultCurrency);
+    setEditCurrency(seeded);
+    setSeededCurrency(seeded);
     setIsEditing(true);
   };
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!editName.trim()) return;
-    await onUpdate({
+    const update: Partial<Event> = {
       name: editName.trim(),
       date: editDate || null,
       location: editLocation.trim() || null,
-      currency: editCurrency,
-    });
+    };
+    if (
+      shouldPersistEventCurrency(event.currency, seededCurrency, editCurrency)
+    ) {
+      update.currency = editCurrency;
+    }
+    await onUpdate(update);
     setIsEditing(false);
   };
 

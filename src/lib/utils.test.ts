@@ -1,9 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { formatPrice, getLanguage, setLanguage } from '@/i18n';
 import {
   parsePriceInput,
+  resolveEventCurrency,
   resolveItemCurrency,
+  shouldPersistEventCurrency,
   totalsByCurrency,
 } from './utils';
+
+const initialLanguage = getLanguage();
+
+afterEach(() => {
+  setLanguage(initialLanguage);
+});
 
 describe('parsePriceInput', () => {
   it('parses integers and decimals', () => {
@@ -28,6 +37,49 @@ describe('resolveItemCurrency', () => {
   it('falls back when the item has none or a malformed one', () => {
     expect(resolveItemCurrency({ currency: null }, 'KRW')).toBe('KRW');
     expect(resolveItemCurrency({ currency: 'yen' + '!' }, 'KRW')).toBe('KRW');
+  });
+});
+
+describe('resolveEventCurrency', () => {
+  it('uses a valid event currency', () => {
+    setLanguage('en');
+    expect(resolveEventCurrency('twd')).toBe('TWD');
+  });
+
+  it('falls back to the UI language default', () => {
+    setLanguage('ja');
+    expect(resolveEventCurrency(null)).toBe('JPY');
+    expect(resolveEventCurrency(undefined)).toBe('JPY');
+    expect(resolveEventCurrency('yen' + '!')).toBe('JPY');
+  });
+
+  it('gives the checklist and the receipt the same item price', () => {
+    // ItemChecklist and ChecklistReceipt both format prices with
+    // resolveItemCurrency(item, resolveEventCurrency(event.currency)).
+    setLanguage('en');
+    const eventCurrency = resolveEventCurrency('KRW');
+    const malformed = { currency: 'yen' + '!' };
+    expect(
+      formatPrice(3000, resolveItemCurrency(malformed, eventCurrency))
+    ).toBe(formatPrice(3000, 'KRW'));
+    expect(
+      formatPrice(500, resolveItemCurrency({ currency: 'JPY' }, eventCurrency))
+    ).toBe(formatPrice(500, 'JPY'));
+  });
+});
+
+describe('shouldPersistEventCurrency', () => {
+  it('does not save the display fallback of an event without a currency', () => {
+    expect(shouldPersistEventCurrency(null, 'USD', 'USD')).toBe(false);
+  });
+
+  it('saves a currency the user picked for an event without one', () => {
+    expect(shouldPersistEventCurrency(null, 'USD', 'KRW')).toBe(true);
+  });
+
+  it('always saves for an event that already has a currency', () => {
+    expect(shouldPersistEventCurrency('TWD', 'TWD', 'TWD')).toBe(true);
+    expect(shouldPersistEventCurrency('TWD', 'TWD', 'JPY')).toBe(true);
   });
 });
 

@@ -2,6 +2,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { nanoid } from 'nanoid';
 import { normalizeCurrencyCode } from '@/i18n/format';
+import { getLanguageInfo } from '@/i18n/state';
 import type { Item } from '@/types';
 
 export function cn(...inputs: ClassValue[]): string {
@@ -18,6 +19,30 @@ export function parsePriceInput(value: string): number | null {
   if (!trimmed) return null;
   const price = Number(trimmed);
   return Number.isFinite(price) && price >= 0 ? price : null;
+}
+
+/**
+ * Currency an event's prices are shown in: its own, else the UI language's
+ * default. Every price view resolves it here so they agree.
+ */
+export function resolveEventCurrency(
+  currency: string | null | undefined
+): string {
+  return normalizeCurrencyCode(currency) ?? getLanguageInfo().defaultCurrency;
+}
+
+/**
+ * Whether saving an event edit should write the currency picker's value.
+ * For an event without a currency the picker shows `seeded` (the UI
+ * language's default) only as a display fallback, so it is written only
+ * when the user picked something else; a guess is never saved silently.
+ */
+export function shouldPersistEventCurrency(
+  stored: string | null,
+  seeded: string,
+  selected: string
+): boolean {
+  return stored !== null || selected !== seeded;
 }
 
 /** Currency an item is priced in: its own, else the given fallback. */

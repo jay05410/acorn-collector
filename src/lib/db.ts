@@ -4,6 +4,12 @@ import { PRESET_BADGES } from '@/constants/presetBadges';
 
 export const DB_NAME = 'AcornCollectorDB';
 
+/**
+ * Currency of data written before DB v5 / backup 2.0. v1 had no currency
+ * field and rendered every price as KRW, so legacy events are KRW.
+ */
+export const LEGACY_EVENT_CURRENCY = 'KRW';
+
 /** Local AI analysis cache row (see ./analysis-cache.ts). Added in DB v5. */
 export interface AnalysisCacheEntry {
   key: string;
@@ -88,10 +94,16 @@ export function createAppDatabase(name: string = DB_NAME): AppDatabase {
     .version(5)
     .stores({ ...V4_STORES, analysisCache: 'key, createdAt' })
     .upgrade(async (tx) => {
+      // Events keep the currency v1 displayed; items stay null so they
+      // inherit it from their event.
       await tx
         .table('events')
         .toCollection()
-        .modify((event: Row) => fillMissing(event, ['currency']));
+        .modify((event: Row) => {
+          if (event.currency === undefined || event.currency === null) {
+            event.currency = LEGACY_EVENT_CURRENCY;
+          }
+        });
       await tx
         .table('booths')
         .toCollection()

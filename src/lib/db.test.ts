@@ -94,7 +94,9 @@ describe('database v5 migration', () => {
   it('fills the v5 fields on rows written by v4', async () => {
     const name = uniqueName();
     await seedLegacy(name, 4, V4_STORES, async (legacy) => {
-      await legacy.table('events').add(legacyEvent);
+      await legacy
+        .table('events')
+        .bulkAdd([legacyEvent, { ...legacyEvent, id: 'e2', currency: 'JPY' }]);
       await legacy
         .table('booths')
         .add({ ...legacyBooth, zone: null, formUrl: null, imageUrls: null });
@@ -111,8 +113,9 @@ describe('database v5 migration', () => {
     expect(database.verno).toBe(5);
     expect(await database.events.get('e1')).toEqual({
       ...legacyEvent,
-      currency: null,
+      currency: 'KRW',
     });
+    expect((await database.events.get('e2'))?.currency).toBe('JPY');
     expect(await database.booths.get('b1')).toMatchObject({
       boothNumber: 'A-01',
       sourceText: null,
@@ -142,6 +145,10 @@ describe('database v5 migration', () => {
 
     const database = await openApp(name);
 
+    expect(await database.events.get('e1')).toEqual({
+      ...legacyEvent,
+      currency: 'KRW',
+    });
     expect(await database.booths.get('b1')).toEqual({
       ...legacyBooth,
       formUrl: null,

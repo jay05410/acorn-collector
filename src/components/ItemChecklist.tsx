@@ -8,7 +8,11 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { OCRModal, type SelectedItem } from '@/components/OCRModal';
-import { parsePriceInput } from '@/lib/utils';
+import {
+  parsePriceInput,
+  resolveEventCurrency,
+  resolveItemCurrency,
+} from '@/lib/utils';
 import { formatPrice, getBadgeLabel, t, useLanguage } from '@/i18n';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import type { Badge as BadgeRecord, Item } from '@/types';
@@ -50,6 +54,8 @@ export function ItemChecklist({
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const hasImages = imageUrls && imageUrls.length > 0;
+  // Same resolution as ChecklistReceipt, so both show the same currency.
+  const eventCurrency = resolveEventCurrency(currency);
 
   useEffect(() => {
     if (isAdding && nameInputRef.current) {
@@ -359,7 +365,7 @@ export function ItemChecklist({
               <ItemRow
                 key={item.id}
                 item={item}
-                currency={currency}
+                eventCurrency={eventCurrency}
                 badge={getBadgeById(item.badgeId)}
                 badges={badges}
                 onToggle={() => toggleItemCheck(item.id)}
@@ -376,7 +382,7 @@ export function ItemChecklist({
           isOpen={isOCRModalOpen}
           onClose={() => setIsOCRModalOpen(false)}
           imageUrls={imageUrls}
-          currency={currency}
+          currency={eventCurrency}
           onItemsSelected={handleOCRItemsSelected}
           onOpenSettings={onOpenSettings}
         />
@@ -387,7 +393,8 @@ export function ItemChecklist({
 
 interface ItemRowProps {
   item: Item;
-  currency: string | null;
+  /** Resolved event currency, for items without their own. */
+  eventCurrency: string;
   badge?: BadgeRecord;
   badges: BadgeRecord[];
   onToggle: () => void;
@@ -397,7 +404,7 @@ interface ItemRowProps {
 
 function ItemRow({
   item,
-  currency,
+  eventCurrency,
   badge,
   badges,
   onToggle,
@@ -534,7 +541,7 @@ function ItemRow({
         </div>
         {item.price !== null && (
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {formatPrice(item.price, item.currency ?? currency)}
+            {formatPrice(item.price, resolveItemCurrency(item, eventCurrency))}
           </span>
         )}
       </div>

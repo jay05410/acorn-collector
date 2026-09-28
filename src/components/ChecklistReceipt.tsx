@@ -6,13 +6,15 @@ import { useItemsForBooths } from '@/hooks/useItems';
 import { useBadges } from '@/hooks/useBadges';
 import { Button } from '@/components/ui/Button';
 import { exportChecklistAsImage } from '@/lib/export';
-import { resolveItemCurrency, totalsByCurrency } from '@/lib/utils';
+import {
+  resolveEventCurrency,
+  resolveItemCurrency,
+  totalsByCurrency,
+} from '@/lib/utils';
 import {
   formatDate,
   formatPrice,
   getBadgeLabel,
-  getLanguageInfo,
-  normalizeCurrencyCode,
   t,
   tp,
   useLanguage,
@@ -47,8 +49,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
   const [mode, setMode] = useState<ExportMode>('checklist');
 
   const eventName = event?.name ?? '';
-  const eventCurrency =
-    normalizeCurrencyCode(event?.currency) ?? getLanguageInfo().defaultCurrency;
+  const eventCurrency = resolveEventCurrency(event?.currency);
   const totals = useMemo(
     () => totalsByCurrency(items, eventCurrency).filter((row) => row.total > 0),
     [items, eventCurrency]

@@ -67,7 +67,11 @@ describe('parseBackup', () => {
 
     expect(backup.version).toBe(BACKUP_VERSION);
     expect(backup.exportedAt).toBe(v1Backup.exportedAt);
-    expect(backup.events[0]).toEqual({ ...v1Backup.events[0], currency: null });
+    // v1 rendered every price as KRW; items inherit it from the event.
+    expect(backup.events[0]).toEqual({
+      ...v1Backup.events[0],
+      currency: 'KRW',
+    });
     expect(backup.booths[0]).toEqual({
       ...v1Backup.booths[0],
       sourceText: null,
@@ -79,6 +83,33 @@ describe('parseBackup', () => {
       category: null,
       option: null,
     });
+  });
+
+  it('keeps an explicit currency in a v1 backup', () => {
+    const backup = parseBackup(
+      {
+        ...v1Backup,
+        version: '1.2',
+        events: [{ ...v1Backup.events[0], currency: 'jpy' }],
+      },
+      NOW
+    );
+
+    expect(backup.events[0]?.currency).toBe('JPY');
+  });
+
+  it('does not guess a currency for a v2 event without one', () => {
+    const backup = parseBackup(
+      {
+        ...v1Backup,
+        version: '2.0',
+        events: [{ ...v1Backup.events[0], currency: null }],
+      },
+      NOW
+    );
+
+    expect(backup.events[0]?.currency).toBeNull();
+    expect(backup.items[0]?.currency).toBeNull();
   });
 
   it('keeps v2 fields', () => {
@@ -141,7 +172,7 @@ describe('parseBackup', () => {
 
     expect(backup.events[0]).toMatchObject({
       date: null,
-      currency: null,
+      currency: 'KRW',
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -221,6 +252,7 @@ describe('backup round trip', () => {
     const summary = await importDataFromJson(blob(v1Backup));
 
     expect(summary).toEqual({ events: 1, booths: 1, items: 1 });
+    expect((await db.events.get('e1'))?.currency).toBe('KRW');
     expect(await db.items.get('i1')).toMatchObject({
       currency: null,
       quantity: 2,

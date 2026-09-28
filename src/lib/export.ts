@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+import { LEGACY_EVENT_CURRENCY, db } from '@/lib/db';
 import { DEFAULT_BADGE_ID, PRESET_BADGE_IDS } from '@/constants/presetBadges';
 import { normalizeCurrencyCode } from '@/i18n/format';
 import {
@@ -145,15 +145,26 @@ function category(value: unknown): ItemCategory | null {
     : null;
 }
 
-function normalizeEvent(row: Row, path: string, now: number): Event {
+/**
+ * `legacy` is true for 1.x backups, written before events had a currency;
+ * v1 rendered every price as KRW, so their events default to KRW. Items
+ * keep a null currency either way and inherit the event's.
+ */
+function normalizeEvent(
+  row: Row,
+  path: string,
+  now: number,
+  legacy: boolean
+): Event {
   const createdAt = finiteNumber(row, 'createdAt') ?? now;
+  const currency = normalizeCurrencyCode(optionalText(row, 'currency'));
   return {
     id: id(row, 'id', path),
     name: text(row, 'name', path),
     date: optionalText(row, 'date'),
     location: optionalText(row, 'location'),
     mapImageUrl: optionalText(row, 'mapImageUrl'),
-    currency: normalizeCurrencyCode(optionalText(row, 'currency')),
+    currency: currency ?? (legacy ? LEGACY_EVENT_CURRENCY : null),
     createdAt,
     updatedAt: finiteNumber(row, 'updatedAt') ?? createdAt,
   };
@@ -216,18 +227,19 @@ function normalizeBadge(row: Row, path: string, now: number): Badge {
 
 /**
  * Validates a parsed backup file and normalizes it to the current schema.
- * v1 backups get the fields added in DB v5 (null). Throws BackupFormatError
- * when the file is not a backup or a row lacks an id or required text.
+ * v1 backups get the fields added in DB v5 (null), except that events
+ * without a currency get KRW. Throws BackupFormatError when the file is not
+ * a backup or a row lacks an id or required text.
  */
 export function parseBackup(raw: unknown, now: number = Date.now()): Backup {
   const backup = asRow(raw, 'backup');
   const version = backup.version;
-  if (
-    typeof version !== 'string' ||
-    !SUPPORTED_MAJORS.includes(version.split('.')[0] ?? '')
-  ) {
+  const major =
+    typeof version === 'string' ? (version.split('.')[0] ?? '') : '';
+  if (!SUPPORTED_MAJORS.includes(major)) {
     throw new BackupFormatError('Unsupported backup version');
   }
+  const legacy = major !== '2';
 
   const presetIds: readonly string[] = PRESET_BADGE_IDS;
   return {
@@ -237,7 +249,7 @@ export function parseBackup(raw: unknown, now: number = Date.now()): Backup {
         ? backup.exportedAt
         : new Date(now).toISOString(),
     events: rows(backup, 'events', true).map((row, i) =>
-      normalizeEvent(row, `events[${i}]`, now)
+      normalizeEvent(row, `events[${i}]`, now, legacy)
     ),
     booths: rows(backup, 'booths', false).map((row, i) =>
       normalizeBooth(row, `booths[${i}]`, i, now)
