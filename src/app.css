@@ -321,6 +321,21 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Tailwind 4 defaults borders to currentColor; unstyled ones use the divider. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--line);
+  }
+
+  /* Korean wraps between words, not inside them; long runs still break. */
+  :lang(ko) {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
   :focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
