@@ -1,4 +1,6 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useRef,
@@ -45,8 +47,27 @@ function focusableIn(root: HTMLElement | null): HTMLElement[] {
   );
 }
 
-/** Open dialogs, innermost last; only the top one traps focus. */
-const openDialogs: symbol[] = [];
+interface OpenDialog {
+  token: symbol;
+  depth: number;
+}
+
+/**
+ * Open dialogs. The top one (deepest in the React tree, latest on ties) owns
+ * focus and Escape. Depth, not mount order, decides: effects of a nested
+ * dialog run before its parent's when both mount together.
+ */
+const openDialogs: OpenDialog[] = [];
+const DialogDepth = createContext(0);
+
+function isTopDialog(token: symbol): boolean {
+  let top: OpenDialog | undefined;
+  for (const dialog of openDialogs) {
+    if (!top || dialog.depth >= top.depth) top = dialog;
+  }
+  return top?.token === token;
+}
+
 let scrollLocks = 0;
 let savedOverflow = '';
 
@@ -83,14 +104,17 @@ function DialogPanel({
   bodyClassName,
 }: DialogProps) {
   useLanguage();
+  const depth = useContext(DialogDepth) + 1;
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const tokenRef = useRef<symbol | null>(null);
 
   useEffect(() => {
     const token = Symbol('dialog');
-    openDialogs.push(token);
+    tokenRef.current = token;
+    openDialogs.push({ token, depth });
     const opener =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -98,12 +122,14 @@ function DialogPanel({
     lockScroll();
 
     const panel = panelRef.current;
-    const target =
-      initialFocusRef?.current ?? focusableIn(contentRef.current)[0] ?? panel;
-    target?.focus();
+    if (isTopDialog(token)) {
+      const target =
+        initialFocusRef?.current ?? focusableIn(contentRef.current)[0] ?? panel;
+      target?.focus();
+    }
 
     const keepFocusInside = (event: FocusEvent) => {
-      if (openDialogs[openDialogs.length - 1] !== token || !panel) return;
+      if (!panel || !isTopDialog(token)) return;
       if (!panel.contains(event.target as Node)) {
         (focusableIn(panel)[0] ?? panel).focus();
       }
@@ -112,16 +138,21 @@ function DialogPanel({
 
     return () => {
       document.removeEventListener('focusin', keepFocusInside);
-      openDialogs.splice(openDialogs.indexOf(token), 1);
+      openDialogs.splice(
+        openDialogs.findIndex((dialog) => dialog.token === token),
+        1
+      );
       unlockScroll();
       if (opener?.isConnected) opener.focus();
     };
-  }, [initialFocusRef]);
+  }, [depth, initialFocusRef]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const panel = panelRef.current;
+    const token = tokenRef.current;
     // Keydowns from dialogs nested in portals bubble here through React.
-    if (!panel || !panel.contains(event.target as Node)) return;
+    if (!panel || !token || !panel.contains(event.target as Node)) return;
+    if (!isTopDialog(token)) return;
 
     if (event.key === 'Escape') {
       event.stopPropagation();
@@ -149,64 +180,66 @@ function DialogPanel({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-(--z-dialog) flex items-end justify-center sm:items-center sm:p-6">
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 animate-fade-in bg-scrim"
-        onClick={onClose}
-      />
-      <div
-        ref={panelRef}
-        role={role}
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
-        tabIndex={-1}
-        onKeyDown={handleKeyDown}
-        className={cn(
-          'relative flex max-h-[min(92dvh,44rem)] w-full flex-col overflow-hidden bg-surface-raised shadow-xl outline-none',
-          'animate-sheet-in rounded-t-2xl border-t border-line',
-          'sm:animate-pop-in sm:rounded-2xl sm:border',
-          size === 'sm' ? 'sm:max-w-sm' : 'sm:max-w-md'
-        )}
-      >
-        <div className="flex shrink-0 items-start gap-2 py-3 pr-2 pl-4">
-          <div className="min-w-0 flex-1 pt-1.5">
-            <h2
-              id={titleId}
-              className="text-base leading-snug font-semibold break-words text-fg"
-            >
-              {title}
-            </h2>
-            {description && (
-              <p id={descriptionId} className="mt-1 text-sm text-fg-muted">
-                {description}
-              </p>
+    <DialogDepth.Provider value={depth}>
+      <div className="fixed inset-0 z-(--z-dialog) flex items-end justify-center sm:items-center sm:p-6">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 animate-fade-in bg-scrim"
+          onClick={onClose}
+        />
+        <div
+          ref={panelRef}
+          role={role}
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={description ? descriptionId : undefined}
+          tabIndex={-1}
+          onKeyDown={handleKeyDown}
+          className={cn(
+            'relative flex max-h-[min(92dvh,44rem)] w-full flex-col overflow-hidden bg-surface-raised shadow-xl outline-none',
+            'animate-sheet-in rounded-t-2xl border-t border-line',
+            'sm:animate-pop-in sm:rounded-2xl sm:border',
+            size === 'sm' ? 'sm:max-w-sm' : 'sm:max-w-md'
+          )}
+        >
+          <div className="flex shrink-0 items-start gap-2 py-3 pr-2 pl-4">
+            <div className="min-w-0 flex-1 pt-1.5">
+              <h2
+                id={titleId}
+                className="text-base leading-snug font-semibold break-words text-fg"
+              >
+                {title}
+              </h2>
+              {description && (
+                <p id={descriptionId} className="mt-1 text-sm text-fg-muted">
+                  {description}
+                </p>
+              )}
+            </div>
+            <IconButton label={t('common', 'close')} onClick={onClose}>
+              <X />
+            </IconButton>
+          </div>
+          <div ref={contentRef} className="flex min-h-0 flex-1 flex-col">
+            {children && (
+              <div
+                className={cn(
+                  'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4',
+                  bodyClassName
+                )}
+              >
+                {children}
+              </div>
+            )}
+            {footer && (
+              <div className="flex shrink-0 gap-2 border-t border-line px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                {footer}
+              </div>
             )}
           </div>
-          <IconButton label={t('common', 'close')} onClick={onClose}>
-            <X />
-          </IconButton>
-        </div>
-        <div ref={contentRef} className="flex min-h-0 flex-1 flex-col">
-          {children && (
-            <div
-              className={cn(
-                'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4',
-                bodyClassName
-              )}
-            >
-              {children}
-            </div>
-          )}
-          {footer && (
-            <div className="flex shrink-0 gap-2 border-t border-line px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              {footer}
-            </div>
-          )}
         </div>
       </div>
-    </div>,
+    </DialogDepth.Provider>,
     document.body
   );
 }
