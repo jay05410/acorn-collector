@@ -38,7 +38,7 @@ export default defineConfig({
     description: '__MSG_appDescription__',
     default_locale: 'ko',
     version: '1.0.0',
-    permissions: ['storage', 'contextMenus', 'activeTab', 'sidePanel', 'identity'],
+    permissions: ['storage', 'contextMenus', 'activeTab', 'sidePanel'],
     host_permissions: ['<all_urls>'],
     action: {
       default_icon: {
