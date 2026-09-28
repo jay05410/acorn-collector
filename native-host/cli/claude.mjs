@@ -39,12 +39,15 @@ const RATE_LIMITED = /\b429\b|rate_limit|rate limit|usage limit|hit your limit/i
 /**
  * Command-line arguments. Values use the `--flag=value` form so a prompt that
  * starts with "-" can never be read as another flag.
+ *
+ * `--tools StructuredOutput` offers the model no Bash, file or web tools, so
+ * page text cannot steer it into running anything. Verified live on Claude
+ * Code 2.1.283 (2026-09-29): the init line lists only StructuredOutput and
+ * the prompt shrank from 25.6k to 7.1k input tokens.
  * @param {Pick<AnalyzeRequest, 'model' | 'system' | 'schema'>} request
- * @param {{ restrictTools?: boolean }} [options] Offer the model only the
- *   StructuredOutput tool (no Bash, file or web tools).
  * @returns {string[]}
  */
-export function buildClaudeArgs({ model, system, schema }, { restrictTools = true } = {}) {
+export function buildClaudeArgs({ model, system, schema }) {
   const args = [
     '-p',
     '--input-format',
@@ -58,7 +61,8 @@ export function buildClaudeArgs({ model, system, schema }, { restrictTools = tru
     'dontAsk',
     '--max-turns',
     String(CLAUDE_MAX_TURNS),
-    ...(restrictTools ? ['--tools', 'StructuredOutput'] : []),
+    '--tools',
+    'StructuredOutput',
     `--json-schema=${JSON.stringify(schema)}`,
   ];
   if (model) args.push(`--model=${model}`);
