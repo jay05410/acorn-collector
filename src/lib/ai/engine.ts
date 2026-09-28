@@ -29,12 +29,13 @@ import {
   type AIProvider,
   type ExtractionRequest,
   type ExtractionResult,
+  type ImageInput,
   type PartialExtraction,
   type ProviderId,
   type ProviderRawResult,
 } from './types';
 
-/** Per-call budget; combined with the caller's signal. */
+/** Per-call budget (and image-preparation budget); combined with the caller's signal. */
 export const CALL_TIMEOUT_MS = 60_000;
 const RETRY_DELAY_MS = 1000;
 /** One retry for retryable failures (rate_limit, network, timeout, unavailable). */
@@ -87,11 +88,14 @@ export function resolveTarget(settings: AISettings): Target {
 }
 
 /** A child signal that aborts with the parent or with a TimeoutError after `ms`. */
-function callSignal(parent: AbortSignal, ms: number): { signal: AbortSignal; dispose: () => void } {
+function timeoutSignal(
+  parent: AbortSignal | undefined,
+  ms: number
+): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();
-  const onAbort = () => controller.abort(parent.reason);
-  if (parent.aborted) onAbort();
-  else parent.addEventListener('abort', onAbort, { once: true });
+  const onAbort = () => controller.abort(parent?.reason);
+  if (parent?.aborted) onAbort();
+  else parent?.addEventListener('abort', onAbort, { once: true });
   const timer = setTimeout(
     () => controller.abort(new DOMException(`No response within ${ms} ms`, 'TimeoutError')),
     ms
@@ -100,7 +104,7 @@ function callSignal(parent: AbortSignal, ms: number): { signal: AbortSignal; dis
     signal: controller.signal,
     dispose() {
       clearTimeout(timer);
-      parent.removeEventListener('abort', onAbort);
+      parent?.removeEventListener('abort', onAbort);
     },
   };
 }
@@ -212,7 +216,7 @@ async function runCalls(plan: CallPlan): Promise<ProviderRawResult[]> {
   const runOne = async (request: ExtractionRequest, index: number): Promise<ProviderRawResult> => {
     for (let attempt = 1; ; attempt++) {
       partials.reset(index);
-      const call = callSignal(group.signal, plan.timeoutMs);
+      const call = timeoutSignal(group.signal, plan.timeoutMs);
       try {
         return await target.provider.extract(
           { ...request, signal: call.signal },
@@ -261,11 +265,19 @@ export async function extractBooth(
     throw new AIError('unknown', 'Nothing to analyze: no text and no images', providerId);
   }
 
-  const images = await prepareImages(input.images, {
-    ...imageLimitsFor(target.model),
-    signal: input.signal,
-    codec: options.codec,
-  });
+  const timeoutMs = options.callTimeoutMs ?? CALL_TIMEOUT_MS;
+  // Image downloads get the same budget so a stalled URL cannot hang analysis.
+  const prep = timeoutSignal(input.signal, timeoutMs);
+  let images: ImageInput[];
+  try {
+    images = await prepareImages(input.images, {
+      ...imageLimitsFor(target.model),
+      signal: prep.signal,
+      codec: options.codec,
+    });
+  } finally {
+    prep.dispose();
+  }
 
   const textHash = await sha256Hex(
     JSON.stringify([
@@ -300,7 +312,7 @@ export async function extractBooth(
     requests,
     signal: input.signal,
     onPartial: input.onPartial,
-    timeoutMs: options.callTimeoutMs ?? CALL_TIMEOUT_MS,
+    timeoutMs,
     retryDelayMs: options.retryDelayMs ?? RETRY_DELAY_MS,
   });
 

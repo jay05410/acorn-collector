@@ -293,6 +293,26 @@ describe('extractBooth', () => {
       expect(provider.calls).toHaveLength(1);
     });
 
+    it('times out a stalled image download without calling the provider', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_url: string, init: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+            })
+        )
+      );
+      try {
+        await expect(
+          extractBooth(input({ images: ['https://pbs.twimg.com/media/stalled.jpg'] }), options({ callTimeoutMs: 15 }))
+        ).rejects.toMatchObject({ name: 'AIError', code: 'timeout' });
+        expect(provider.calls).toHaveLength(0);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('rejects immediately when already cancelled', async () => {
       const controller = new AbortController();
       controller.abort();
