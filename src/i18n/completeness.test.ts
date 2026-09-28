@@ -7,6 +7,8 @@ import { namespaces } from './registry';
 type Table = Partial<Record<string, Partial<Record<string, string>>>>;
 
 const PLACEHOLDER = /\{(\w+)\}/g;
+/** Plural forms other than `_other`, which tn() needs as the fallback. */
+const PLURAL_FORM = /^(.+)_(zero|one|two|few|many)$/;
 const EXTENDED_LANGUAGES = APP_LANGUAGES.filter(
   (lang) => !(CORE_LANGUAGES as readonly string[]).includes(lang)
 );
@@ -54,6 +56,19 @@ describe.each(entries)('namespace %s', (_name, table) => {
       expect(value?.trim(), `${lang}.${key}`).not.toBe('');
     }
   });
+
+  it.each(APP_LANGUAGES)(
+    'pairs every plural form with an _other form in %s',
+    (lang) => {
+      const keys = Object.keys(table[lang] ?? {});
+      for (const key of keys) {
+        const base = PLURAL_FORM.exec(key)?.[1];
+        if (base !== undefined) {
+          expect(keys, `${lang}.${key}`).toContain(`${base}_other`);
+        }
+      }
+    }
+  );
 
   it.each(APP_LANGUAGES)('keeps the English placeholders in %s', (lang) => {
     const messages = table[lang] ?? {};

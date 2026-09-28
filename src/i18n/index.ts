@@ -1,5 +1,6 @@
 /**
- * i18n entry point: `import { t, tp, useLanguage, formatPrice } from '@/i18n'`.
+ * i18n entry point:
+ * `import { t, tp, tn, useLanguage, formatPrice } from '@/i18n'`.
  * Strings live in ./messages/<namespace>.ts; missing keys fall back to English.
  */
 import { useSyncExternalStore } from 'react';
@@ -11,7 +12,11 @@ import {
   type PresetBadgeId,
 } from '@/types';
 import { formatNumber } from './format';
-import { FALLBACK_LANGUAGE, type AppLanguage } from './languages';
+import {
+  FALLBACK_LANGUAGE,
+  LANGUAGE_INFO,
+  type AppLanguage,
+} from './languages';
 import { namespaces } from './registry';
 import { getLanguage, subscribeLanguage } from './state';
 
@@ -39,6 +44,12 @@ export type MessageKey<N extends Namespace> = Extract<
 >;
 export type MessageParams = Record<string, string | number>;
 
+type PluralBase<K extends string> = K extends `${infer Base}_other`
+  ? Base
+  : never;
+/** Base keys of namespace N that have an `<base>_other` plural form. */
+export type PluralKey<N extends Namespace> = PluralBase<MessageKey<N>>;
+
 type LooseTable = Partial<Record<AppLanguage, Partial<Record<string, string>>>>;
 
 function lookup(namespace: Namespace, key: string): string {
@@ -53,16 +64,69 @@ export function t<N extends Namespace>(
   return lookup(namespace, key);
 }
 
+function interpolate(message: string, params: MessageParams): string {
+  return message.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = params[name];
+    if (value === undefined) return match;
+    return typeof value === 'number' ? formatNumber(value) : value;
+  });
+}
+
 /** Like t(), replacing `{name}` placeholders. Numbers use locale grouping. */
 export function tp<N extends Namespace>(
   namespace: N,
   key: MessageKey<N>,
   params: MessageParams
 ): string {
-  return lookup(namespace, key).replace(/\{(\w+)\}/g, (match, name: string) => {
-    const value = params[name];
-    if (value === undefined) return match;
-    return typeof value === 'number' ? formatNumber(value) : value;
+  return interpolate(lookup(namespace, key), params);
+}
+
+const pluralRules = new Map<string, Intl.PluralRules>();
+
+function pluralCategory(language: AppLanguage, count: number): string {
+  const locale = LANGUAGE_INFO[language].intlLocale;
+  let rules = pluralRules.get(locale);
+  if (!rules) {
+    rules = new Intl.PluralRules(locale);
+    pluralRules.set(locale, rules);
+  }
+  return rules.select(count);
+}
+
+/**
+ * `<base>_<category>` in the current language, else its `<base>_other`.
+ * When the language lacks both, English is used with English plural rules.
+ */
+function lookupPlural(
+  namespace: Namespace,
+  baseKey: string,
+  count: number
+): string {
+  const table: LooseTable = namespaces[namespace];
+  const pick = (language: AppLanguage): string | undefined => {
+    const messages = table[language];
+    const category = pluralCategory(language, count);
+    return (
+      messages?.[`${baseKey}_${category}`] || messages?.[`${baseKey}_other`]
+    );
+  };
+  return pick(getLanguage()) || pick(FALLBACK_LANGUAGE) || `${baseKey}_other`;
+}
+
+/**
+ * Count-dependent message: picks `<baseKey>_<Intl plural category>` (e.g.
+ * `boothCount_one`), falling back to `<baseKey>_other`, then fills `{count}`
+ * and `params` like tp(). Only keys with an `_other` form are accepted.
+ */
+export function tn<N extends Namespace>(
+  namespace: N,
+  baseKey: PluralKey<N>,
+  count: number,
+  params: MessageParams = {}
+): string {
+  return interpolate(lookupPlural(namespace, baseKey, count), {
+    ...params,
+    count,
   });
 }
 

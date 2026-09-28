@@ -23,6 +23,7 @@
   ```
 - 새 네임스페이스는 `src/i18n/registry.ts`에 한 줄 등록한다.
 - 매개변수는 `{name}` 형식, `tp(ns, key, { name })`로 치환.
+- 개수에 따라 달라지는 문자열은 `<key>_one`/`<key>_other`(필요하면 `_zero`/`_two`/`_few`/`_many`)로 나누고 `tn(ns, key, count, params?)`로 호출한다. `Intl.PluralRules` 범주를 고르고 없으면 `_other`를 쓰며, `{count}`는 자동으로 채운다. 단복수 구분이 없는 언어(ko, ja, zh-CN, zh-TW)는 두 키에 같은 문장을 넣는다. 모든 복수형 키에는 `_other` 짝이 있어야 한다(완전성 테스트).
 - UI 코드(.tsx)와 사용자에게 보이는 문자열에 하드코딩된 한글·외국어 금지. 테스트가 검사한다. 예외는 `src/i18n/messages/**`, `src/lib/parser/**` 키워드 사전, 테스트 파일.
 - 핵심 5개 언어(ko, en, ja, zh-CN, zh-TW)는 모든 키가 채워져 있어야 한다(완전성 테스트).
 

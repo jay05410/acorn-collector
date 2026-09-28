@@ -4,7 +4,8 @@ export default defineMessages({
   en: {
     title: 'Image Analysis',
     analyzing: 'Analyzing...',
-    analyzingImages: 'Analyzing {count} images...',
+    analyzingImages_one: 'Analyzing {count} image...',
+    analyzingImages_other: 'Analyzing {count} images...',
     downloading: 'Downloading images...',
     processing: 'AI analyzing...',
     complete: 'Complete!',
@@ -21,7 +22,8 @@ export default defineMessages({
   ko: {
     title: '이미지 분석',
     analyzing: '분석 중...',
-    analyzingImages: '이미지 {count}개 분석 중...',
+    analyzingImages_one: '이미지 {count}개 분석 중...',
+    analyzingImages_other: '이미지 {count}개 분석 중...',
     downloading: '이미지 다운로드 중...',
     processing: 'AI 분석 중...',
     complete: '완료!',
@@ -38,7 +40,8 @@ export default defineMessages({
   ja: {
     title: '画像分析',
     analyzing: '分析中...',
-    analyzingImages: '画像{count}枚を分析中...',
+    analyzingImages_one: '画像{count}枚を分析中...',
+    analyzingImages_other: '画像{count}枚を分析中...',
     downloading: '画像ダウンロード中...',
     processing: 'AI分析中...',
     complete: '完了！',
@@ -55,7 +58,8 @@ export default defineMessages({
   'zh-CN': {
     title: '图片分析',
     analyzing: '分析中...',
-    analyzingImages: '正在分析{count}张图片...',
+    analyzingImages_one: '正在分析{count}张图片...',
+    analyzingImages_other: '正在分析{count}张图片...',
     downloading: '下载图片中...',
     processing: 'AI分析中...',
     complete: '完成！',
@@ -72,7 +76,8 @@ export default defineMessages({
   'zh-TW': {
     title: '圖片分析',
     analyzing: '分析中…',
-    analyzingImages: '正在分析 {count} 張圖片…',
+    analyzingImages_one: '正在分析 {count} 張圖片…',
+    analyzingImages_other: '正在分析 {count} 張圖片…',
     downloading: '正在下載圖片…',
     processing: 'AI 分析中…',
     complete: '完成！',

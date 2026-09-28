@@ -27,7 +27,7 @@ import {
   getBadgeLabel,
   getLanguageInfo,
   t,
-  tp,
+  tn,
   useLanguage,
 } from '@/i18n';
 import { resolveEventCurrency, shouldPersistEventCurrency } from '@/lib/utils';
@@ -355,7 +355,7 @@ function EventItem({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-primary dark:text-primary bg-primary-light dark:bg-primary-light px-2 py-0.5 rounded-full">
-            {tp('events', 'boothCount', { count: boothCount })}
+            {tn('events', 'boothCount', boothCount)}
           </span>
           <Button
             variant="ghost"

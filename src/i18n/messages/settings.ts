@@ -15,7 +15,7 @@ export default defineMessages({
     exportData: 'Export Data (JSON)',
     importData: 'Import Data',
     importSuccess:
-      'Imported {events} events, {booths} booths and {items} items',
+      'Import complete. Events: {events}, booths: {booths}, items: {items}',
     importFailed: 'Import failed. Please check the file format.',
     exportFailed: 'Export failed. Please try again.',
   },

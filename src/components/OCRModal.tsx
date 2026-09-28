@@ -24,6 +24,7 @@ import {
   formatPrice,
   getCategoryLabel,
   t,
+  tn,
   tp,
   useLanguage,
 } from '@/i18n';
@@ -589,7 +590,7 @@ function LoadingState({
           {getStatusText()}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          {tp('analysis', 'analyzingImages', { count: imageCount })}
+          {tn('analysis', 'analyzingImages', imageCount)}
         </p>
       </div>
       <div className="w-full max-w-xs">
