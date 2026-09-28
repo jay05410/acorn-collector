@@ -100,9 +100,9 @@ describe('getCategoryLabel', () => {
 describe('getBadgeLabel', () => {
   it('localizes preset badges by id, ignoring the stored label', () => {
     setLanguage('zh-TW');
-    expect(
-      getBadgeLabel({ id: 'pickup', label: '수령', isPreset: true })
-    ).toBe('取貨');
+    expect(getBadgeLabel({ id: 'pickup', label: '수령', isPreset: true })).toBe(
+      '取貨'
+    );
   });
 
   it('keeps custom badge labels', () => {

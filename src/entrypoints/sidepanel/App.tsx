@@ -8,10 +8,13 @@ import { ChecklistReceipt } from '@/components/ChecklistReceipt';
 import { useUIStore } from '@/stores/useUIStore';
 import {
   appStorage,
+  getSettings,
+  watchSettings,
   type PendingAddData,
-  type ColorTheme,
 } from '@/lib/storage';
-import { setLanguage } from '@/lib/i18n';
+import type { AppSettings, ColorTheme } from '@/lib/settings-types';
+import { LANGUAGE_INFO } from '@/i18n/languages';
+import { setLanguage, t, useLanguage } from '@/i18n';
 
 type View = 'events' | 'booth-detail';
 
@@ -32,6 +35,7 @@ function applyDarkMode(isDark: boolean): void {
 }
 
 export default function App() {
+  const language = useLanguage();
   const [currentView, setCurrentView] = useState<View>('events');
   const [isDark, setIsDark] = useState(() => getSystemPrefersDark());
   const [pendingData, setPendingData] = useState<PendingAddData | null>(null);
@@ -48,21 +52,26 @@ export default function App() {
   } = useUIStore();
 
   useEffect(() => {
-    const applySettings = (colorTheme: ColorTheme) => {
-      applyColorTheme(colorTheme);
+    document.documentElement.lang = LANGUAGE_INFO[language].intlLocale;
+    document.title = t('common', 'appName');
+  }, [language]);
+
+  useEffect(() => {
+    const applySettings = (settings: AppSettings) => {
+      applyColorTheme(settings.colorTheme);
+      setLanguage(settings.language);
       const dark = getSystemPrefersDark();
       setIsDark(dark);
       applyDarkMode(dark);
     };
 
-    appStorage.getSettings().then((settings) => {
-      applySettings(settings.colorTheme);
-      setLanguage(settings.language);
-    });
+    getSettings()
+      .then(applySettings)
+      .catch((error: unknown) => {
+        console.error('Failed to load settings:', error);
+      });
 
-    const unwatch = appStorage.watchSettings((settings) => {
-      applySettings(settings.colorTheme);
-    });
+    const unwatch = watchSettings(applySettings);
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemChange = (e: MediaQueryListEvent) => {

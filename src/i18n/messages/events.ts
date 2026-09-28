@@ -78,8 +78,7 @@ export default defineMessages({
     eventDate: '活動日期',
     eventLocation: '地點',
     eventLocationPlaceholder: '地點（例：花博爭艷館）',
-    deleteConfirm:
-      '確定要刪除這個活動嗎？活動中的所有攤位和商品也會一併刪除。',
+    deleteConfirm: '確定要刪除這個活動嗎？活動中的所有攤位和商品也會一併刪除。',
     boothCount: '{count} 個攤位',
     selectDate: '選擇日期',
     clearDate: '清除日期',

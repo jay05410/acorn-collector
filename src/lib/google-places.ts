@@ -21,8 +21,10 @@ export function hasGooglePlacesApiKey(): boolean {
   return GOOGLE_PLACES_API_KEY.length > 0;
 }
 
+/** Text search; `languageCode` (BCP 47) localizes names and addresses. */
 export async function searchGooglePlaces(
-  query: string
+  query: string,
+  languageCode: string
 ): Promise<GooglePlace[]> {
   if (!query.trim()) {
     return [];
@@ -45,6 +47,7 @@ export async function searchGooglePlaces(
         },
         body: JSON.stringify({
           textQuery: query,
+          languageCode,
           pageSize: 10,
         }),
       }

@@ -43,12 +43,13 @@ type LooseTable = Partial<Record<AppLanguage, Partial<Record<string, string>>>>;
 
 function lookup(namespace: Namespace, key: string): string {
   const table: LooseTable = namespaces[namespace];
-  return (
-    table[getLanguage()]?.[key] || table[FALLBACK_LANGUAGE]?.[key] || key
-  );
+  return table[getLanguage()]?.[key] || table[FALLBACK_LANGUAGE]?.[key] || key;
 }
 
-export function t<N extends Namespace>(namespace: N, key: MessageKey<N>): string {
+export function t<N extends Namespace>(
+  namespace: N,
+  key: MessageKey<N>
+): string {
   return lookup(namespace, key);
 }
 

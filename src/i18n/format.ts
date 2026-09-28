@@ -53,7 +53,9 @@ export function formatPrice(
       new Intl.NumberFormat(intlLocale, {
         style: 'currency',
         currency: code,
-        ...(whole ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {}),
+        ...(whole
+          ? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
+          : {}),
       })
   ).format(amount);
 }
@@ -81,7 +83,7 @@ export function toIsoDate(date: Date): string {
 }
 
 /**
- * Localized date ("Oct 3, 2026", "2026년 10월 3일"). Date-only strings are
+ * Localized date (e.g. "Oct 3, 2026" in English). Date-only strings are
  * read as local dates so they never shift by a day; other ISO strings go
  * through Date. Unparseable input is returned unchanged.
  */

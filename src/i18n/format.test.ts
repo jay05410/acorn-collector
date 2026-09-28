@@ -56,7 +56,10 @@ describe('formatPrice', () => {
   it('follows the current locale for foreign currencies', () => {
     setLanguage('ja');
     expect(formatPrice(1500, 'JPY')).toBe(
-      new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(1500)
+      new Intl.NumberFormat('ja-JP', {
+        style: 'currency',
+        currency: 'JPY',
+      }).format(1500)
     );
     setLanguage('ko');
     expect(formatPrice(5, 'usd')).toBe('US$5');

@@ -1,114 +1,89 @@
 import { useState, useEffect, useRef } from 'react';
-import {
-  X,
-  Upload,
-  Download,
-  Key,
-  Sparkles,
-  Check,
-  Loader2,
-} from 'lucide-react';
+import { X, Upload, Download, Sparkles, Check } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import {
-  appStorage,
-  type AppSettings,
-  type ColorTheme,
-  type Language,
+  createDefaultSettings,
+  getSettings,
+  updateSettings,
+  type SettingsPatch,
 } from '@/lib/storage';
-import { setLanguage, LANGUAGE_OPTIONS, t } from '@/lib/i18n';
+import type { AppSettings, ColorTheme } from '@/lib/settings-types';
+import {
+  CORE_LANGUAGES,
+  LANGUAGE_INFO,
+  type AppLanguage,
+} from '@/i18n/languages';
+import { setLanguage, t, tp, useLanguage } from '@/i18n';
 import { exportDataAsJson, importDataFromJson } from '@/lib/export';
-import { testGeminiApiKey } from '@/lib/ai';
 
 const COLOR_THEMES: {
   value: ColorTheme;
-  labelKey: 'acorn' | 'pink' | 'sky' | 'lavender';
   colors: { primary: string; accent: string };
 }[] = [
-  {
-    value: 'acorn',
-    labelKey: 'acorn',
-    colors: { primary: '#d4a574', accent: '#f5e6d3' },
-  },
-  {
-    value: 'pink',
-    labelKey: 'pink',
-    colors: { primary: '#e8a0b4', accent: '#fce4ec' },
-  },
-  {
-    value: 'sky',
-    labelKey: 'sky',
-    colors: { primary: '#7eb8da', accent: '#e3f2fd' },
-  },
-  {
-    value: 'lavender',
-    labelKey: 'lavender',
-    colors: { primary: '#b39ddb', accent: '#ede7f6' },
-  },
+  { value: 'acorn', colors: { primary: '#d4a574', accent: '#f5e6d3' } },
+  { value: 'pink', colors: { primary: '#e8a0b4', accent: '#fce4ec' } },
+  { value: 'sky', colors: { primary: '#7eb8da', accent: '#e3f2fd' } },
+  { value: 'lavender', colors: { primary: '#b39ddb', accent: '#ede7f6' } },
 ];
+
+const STATUS_DURATION_MS = 3000;
+
+type BackupStatus = { kind: 'success' | 'error'; message: string } | null;
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+async function persist(patch: SettingsPatch): Promise<void> {
+  try {
+    await updateSettings(patch);
+  } catch (error) {
+    console.error('[settings] could not save settings', error);
+  }
+}
+
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [settings, setSettings] = useState<AppSettings>({
-    colorTheme: 'acorn',
-    defaultSortBy: 'createdAt',
-    aiEnabled: false,
-    geminiApiKey: '',
-    language: 'ko',
-  });
-  const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [apiKeyStatus, setApiKeyStatus] = useState<{
-    testing: boolean;
-    result?: { success: boolean; error?: string };
-  }>({ testing: false });
+  useLanguage();
+  const [settings, setSettings] = useState<AppSettings>(createDefaultSettings);
+  const [backupStatus, setBackupStatus] = useState<BackupStatus>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      appStorage.getSettings().then(setSettings);
-      setApiKeyStatus({ testing: false });
-    }
+    if (!isOpen) return;
+    getSettings()
+      .then(setSettings)
+      .catch((error: unknown) => {
+        console.error('[settings] could not load settings', error);
+      });
   }, [isOpen]);
 
-  const handleTestApiKey = async () => {
-    setApiKeyStatus({ testing: true });
-    const result = await testGeminiApiKey(settings.geminiApiKey);
-    setApiKeyStatus({ testing: false, result });
+  useEffect(() => {
+    if (!backupStatus) return;
+    const timer = setTimeout(() => setBackupStatus(null), STATUS_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [backupStatus]);
 
-    setTimeout(() => setApiKeyStatus({ testing: false }), 5000);
-  };
-
-  const handleColorThemeChange = async (colorTheme: ColorTheme) => {
+  const handleColorThemeChange = (colorTheme: ColorTheme) => {
     setSettings((prev) => ({ ...prev, colorTheme }));
-    await appStorage.updateSettings({ colorTheme });
+    void persist({ colorTheme });
   };
 
-  const handleLanguageChange = async (language: Language) => {
+  const handleLanguageChange = (language: AppLanguage) => {
     setSettings((prev) => ({ ...prev, language }));
     setLanguage(language);
-    await appStorage.updateSettings({ language });
-  };
-
-  const handleAiToggle = async () => {
-    const aiEnabled = !settings.aiEnabled;
-    setSettings((prev) => ({ ...prev, aiEnabled }));
-    await appStorage.updateSettings({ aiEnabled });
-  };
-
-  const handleApiKeyChange = async (key: string) => {
-    setSettings((prev) => ({ ...prev, geminiApiKey: key }));
-    await appStorage.updateSettings({ geminiApiKey: key });
+    void persist({ language });
   };
 
   const handleExport = async () => {
     try {
       await exportDataAsJson();
-    } catch (e) {
-      console.error('Export failed:', e);
+    } catch (error) {
+      console.error('Export failed:', error);
+      setBackupStatus({
+        kind: 'error',
+        message: t('settings', 'exportFailed'),
+      });
     }
   };
 
@@ -117,21 +92,25 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
 
     try {
       const result = await importDataFromJson(file);
-      setImportStatus(
-        `가져오기 완료: ${result.events}개 행사, ${result.booths}개 부스, ${result.items}개 상품`
-      );
-      setTimeout(() => setImportStatus(null), 3000);
-    } catch {
-      setImportStatus('가져오기 실패: 파일 형식을 확인해주세요');
-      setTimeout(() => setImportStatus(null), 3000);
+      setBackupStatus({
+        kind: 'success',
+        message: tp('settings', 'importSuccess', { ...result }),
+      });
+    } catch (error) {
+      console.error('Import failed:', error);
+      setBackupStatus({
+        kind: 'error',
+        message: t('settings', 'importFailed'),
+      });
+    } finally {
+      input.value = '';
     }
-
-    e.target.value = '';
   };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
@@ -152,7 +131,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             {t('settings', 'title')}
           </h2>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            aria-label={t('common', 'close')}
+          >
             <X className="w-5 h-5" />
           </Button>
         </div>
@@ -172,6 +156,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <button
                     key={theme.value}
                     onClick={() => handleColorThemeChange(theme.value)}
+                    aria-pressed={isSelected}
                     className={`relative flex flex-col items-center gap-1.5 p-2 rounded-lg border transition-colors ${
                       isSelected
                         ? 'border-gray-900 dark:border-white'
@@ -185,7 +170,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       }}
                     />
                     <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                      {t('themes', theme.labelKey)}
+                      {t('themes', theme.value)}
                     </span>
                     {isSelected && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center">
@@ -202,20 +187,23 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               {t('settings', 'language')}
             </h3>
-            <div className="grid grid-cols-4 gap-2">
-              {LANGUAGE_OPTIONS.map((lang) => {
-                const isSelected = settings.language === lang.value;
+            <div className="grid grid-cols-3 gap-2">
+              {CORE_LANGUAGES.map((code) => {
+                const info = LANGUAGE_INFO[code];
+                const isSelected = settings.language === code;
                 return (
                   <button
-                    key={lang.value}
-                    onClick={() => handleLanguageChange(lang.value)}
+                    key={code}
+                    lang={info.intlLocale}
+                    onClick={() => handleLanguageChange(code)}
+                    aria-pressed={isSelected}
                     className={`relative flex items-center justify-center p-2 rounded-lg border transition-colors text-sm ${
                       isSelected
                         ? 'border-gray-900 dark:border-white bg-gray-100 dark:bg-gray-700'
                         : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'
                     }`}
                   >
-                    {lang.label}
+                    {info.nativeName}
                     {isSelected && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center">
                         <Check className="w-2.5 h-2.5 text-white dark:text-gray-900" />
@@ -228,73 +216,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
-                {t('settings', 'aiFeatures')}
-              </h3>
-              <button
-                onClick={handleAiToggle}
-                className={`relative w-11 h-6 rounded-full transition-colors ${
-                  settings.aiEnabled
-                    ? 'bg-primary'
-                    : 'bg-gray-300 dark:bg-gray-600'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    settings.aiEnabled ? 'translate-x-5' : ''
-                  }`}
-                />
-              </button>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              {t('settings', 'aiFeatures')}
+            </h3>
+            <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+              <p>{t('settings', 'aiDesc')}</p>
+              <p>{t('settings', 'aiComingSoon')}</p>
             </div>
-            {settings.aiEnabled && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                      type="password"
-                      value={settings.geminiApiKey}
-                      onChange={(e) => handleApiKeyChange(e.target.value)}
-                      placeholder={t('settings', 'apiKeyPlaceholder')}
-                      className="pl-9"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={handleTestApiKey}
-                    disabled={apiKeyStatus.testing}
-                    className="shrink-0"
-                  >
-                    {apiKeyStatus.testing ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      t('common', 'confirm')
-                    )}
-                  </Button>
-                </div>
-                {apiKeyStatus.result && (
-                  <p
-                    className={`text-xs ${
-                      apiKeyStatus.result.success
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}
-                  >
-                    {apiKeyStatus.result.success
-                      ? `✓ ${t('settings', 'apiKeyValid')}`
-                      : `✗ ${apiKeyStatus.result.error}`}
-                  </p>
-                )}
-                <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                  <p>{t('settings', 'aiDesc')}</p>
-                  <p className="text-gray-400 dark:text-gray-500">
-                    {t('settings', 'aiLimit')}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
 
           <div>
@@ -321,14 +250,21 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".json"
+                accept=".json,application/json"
                 onChange={handleFileChange}
                 className="hidden"
               />
             </div>
-            {importStatus && (
-              <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-                {importStatus}
+            {backupStatus && (
+              <p
+                role="status"
+                className={`mt-2 text-sm ${
+                  backupStatus.kind === 'success'
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}
+              >
+                {backupStatus.message}
               </p>
             )}
           </div>
@@ -336,7 +272,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         <div className="p-4 border-t dark:border-gray-700">
           <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-            {t('settings', 'version')} v1.0.0
+            {t('common', 'appName')} v{chrome.runtime.getManifest().version}
           </p>
         </div>
       </div>

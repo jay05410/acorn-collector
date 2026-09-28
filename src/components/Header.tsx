@@ -1,6 +1,6 @@
 import { ChevronLeft, Nut, Plus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { t } from '@/lib/i18n';
+import { t, useLanguage } from '@/i18n';
 
 interface HeaderProps {
   currentView: string;
@@ -17,12 +17,14 @@ export function Header({
   onAddClick,
   onSettingsClick,
 }: HeaderProps) {
+  useLanguage();
+
   const getTitle = () => {
     switch (currentView) {
       case 'booth-detail':
         return t('booths', 'title');
       default:
-        return t('settings', 'version');
+        return t('common', 'appName');
     }
   };
 
@@ -30,7 +32,7 @@ export function Header({
     <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 sticky top-0 z-10">
       <div className="flex items-center gap-2">
         {showBack ? (
-          <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back">
+          <Button variant="ghost" size="icon" onClick={onBack} aria-label={t('common', 'back')}>
             <ChevronLeft className="w-5 h-5" />
           </Button>
         ) : (

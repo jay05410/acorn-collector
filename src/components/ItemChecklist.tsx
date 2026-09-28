@@ -8,22 +8,26 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { OCRModal, type SelectedItem } from '@/components/OCRModal';
-import { formatPrice } from '@/lib/utils';
-import { t } from '@/lib/i18n';
+import { parsePriceInput } from '@/lib/utils';
+import { formatPrice, getBadgeLabel, t, useLanguage } from '@/i18n';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
-import type { Item } from '@/types';
+import type { Badge as BadgeRecord, Item } from '@/types';
 
 interface ItemChecklistProps {
   boothId: string;
   imageUrls?: string[] | null;
+  /** The event's currency; items without their own currency use it. */
+  currency: string | null;
   onOpenSettings?: () => void;
 }
 
 export function ItemChecklist({
   boothId,
   imageUrls,
+  currency,
   onOpenSettings,
 }: ItemChecklistProps) {
+  useLanguage();
   const {
     items,
     isLoading,
@@ -59,7 +63,7 @@ export function ItemChecklist({
     await createItem({
       boothId,
       name: itemName.trim(),
-      price: itemPrice ? parseInt(itemPrice, 10) : null,
+      price: parsePriceInput(itemPrice),
       badgeId: selectedBadgeId,
       quantity: Math.max(1, itemQuantity),
     });
@@ -129,6 +133,9 @@ export function ItemChecklist({
             />
             <Input
               type="number"
+              min="0"
+              step="any"
+              inputMode="decimal"
               placeholder={t('items', 'pricePlaceholder')}
               value={itemPrice}
               onChange={(e) => setItemPrice(e.target.value)}
@@ -178,7 +185,8 @@ export function ItemChecklist({
                       setItemQuantity(5);
                     }}
                     className="w-9 h-9 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 flex items-center justify-center cursor-pointer transition-colors"
-                    title="직접 입력"
+                    title={t('items', 'customQuantity')}
+                    aria-label={t('items', 'customQuantity')}
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -217,7 +225,7 @@ export function ItemChecklist({
                     {selectedBadgeId === badge.id && (
                       <Check className="w-3 h-3 inline mr-1" />
                     )}
-                    {badge.label}
+                    {getBadgeLabel(badge)}
                   </button>
                 ))}
                 {!isCreatingBadge && (
@@ -225,7 +233,8 @@ export function ItemChecklist({
                     type="button"
                     onClick={() => setIsCreatingBadge(true)}
                     className="w-8 h-8 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 flex items-center justify-center cursor-pointer transition-colors"
-                    title="커스텀 뱃지 추가"
+                    title={t('items', 'addCustomBadge')}
+                    aria-label={t('items', 'addCustomBadge')}
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -246,7 +255,8 @@ export function ItemChecklist({
                   type="button"
                   onClick={handleCreateBadge}
                   className="w-8 h-8 rounded-full bg-primary text-white hover:bg-primary-dark flex items-center justify-center cursor-pointer transition-colors"
-                  title="추가"
+                  title={t('common', 'add')}
+                  aria-label={t('common', 'add')}
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -257,7 +267,8 @@ export function ItemChecklist({
                     setNewBadgeLabel('');
                   }}
                   className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 flex items-center justify-center cursor-pointer transition-colors"
-                  title="취소"
+                  title={t('common', 'cancel')}
+                  aria-label={t('common', 'cancel')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -348,6 +359,7 @@ export function ItemChecklist({
               <ItemRow
                 key={item.id}
                 item={item}
+                currency={currency}
                 badge={getBadgeById(item.badgeId)}
                 badges={badges}
                 onToggle={() => toggleItemCheck(item.id)}
@@ -364,6 +376,7 @@ export function ItemChecklist({
           isOpen={isOCRModalOpen}
           onClose={() => setIsOCRModalOpen(false)}
           imageUrls={imageUrls}
+          currency={currency}
           onItemsSelected={handleOCRItemsSelected}
           onOpenSettings={onOpenSettings}
         />
@@ -374,8 +387,9 @@ export function ItemChecklist({
 
 interface ItemRowProps {
   item: Item;
-  badge?: { label: string; color: string | null };
-  badges: Array<{ id: string; label: string; color: string | null }>;
+  currency: string | null;
+  badge?: BadgeRecord;
+  badges: BadgeRecord[];
   onToggle: () => void;
   onUpdate: (data: Partial<Item>) => Promise<void>;
   onDelete: () => void;
@@ -383,6 +397,7 @@ interface ItemRowProps {
 
 function ItemRow({
   item,
+  currency,
   badge,
   badges,
   onToggle,
@@ -413,7 +428,7 @@ function ItemRow({
     if (!editName.trim()) return;
     await onUpdate({
       name: editName.trim(),
-      price: editPrice ? parseInt(editPrice, 10) : null,
+      price: parsePriceInput(editPrice),
       badgeId: editBadgeId,
     });
     setIsEditing(false);
@@ -439,6 +454,9 @@ function ItemRow({
           />
           <Input
             type="number"
+            min="0"
+            step="any"
+            inputMode="decimal"
             placeholder={t('items', 'price')}
             value={editPrice}
             onChange={(e) => setEditPrice(e.target.value)}
@@ -468,7 +486,7 @@ function ItemRow({
                 {editBadgeId === b.id && (
                   <Check className="w-3 h-3 inline mr-0.5" />
                 )}
-                {b.label}
+                {getBadgeLabel(b)}
               </button>
             ))}
           </div>
@@ -498,7 +516,7 @@ function ItemRow({
       <Checkbox checked={item.checked} onCheckedChange={onToggle} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          {badge && <Badge label={badge.label} color={badge.color} />}
+          {badge && <Badge label={getBadgeLabel(badge)} color={badge.color} />}
           <span
             className={`text-sm ${
               item.checked
@@ -516,7 +534,7 @@ function ItemRow({
         </div>
         {item.price !== null && (
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {formatPrice(item.price)}
+            {formatPrice(item.price, item.currency ?? currency)}
           </span>
         )}
       </div>
@@ -525,7 +543,7 @@ function ItemRow({
         size="icon"
         onClick={handleEdit}
         className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-primary-dark"
-        aria-label="수정"
+        aria-label={t('common', 'edit')}
       >
         <Pencil className="w-4 h-4" />
       </Button>
@@ -537,7 +555,7 @@ function ItemRow({
           onDelete();
         }}
         className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30"
-        aria-label="삭제"
+        aria-label={t('common', 'delete')}
       >
         <Trash2 className="w-4 h-4" />
       </Button>

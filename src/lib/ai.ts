@@ -3,7 +3,7 @@
  * provider-based engine lands in ACORN-4 under src/lib/ai/ and replaces this
  * file. Until then analysis reports "not configured".
  */
-import { t } from './i18n';
+import { t } from '@/i18n';
 
 export interface ImageAnalysisItem {
   name: string;

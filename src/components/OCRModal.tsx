@@ -20,12 +20,20 @@ import {
   ApiKeyFailedError,
   NoAnalysisMethodError,
 } from '@/lib/ai';
-import { t, tWithParams, getCategoryLabel } from '@/lib/i18n';
+import {
+  formatPrice,
+  getCategoryLabel,
+  t,
+  tp,
+  useLanguage,
+} from '@/i18n';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   imageUrls: string[];
+  /** Currency for displaying extracted prices (the event's currency). */
+  currency: string | null;
   onItemsSelected: (items: SelectedItem[]) => void;
   onOpenSettings?: () => void;
 }
@@ -51,9 +59,11 @@ export function OCRModal({
   isOpen,
   onClose,
   imageUrls,
+  currency,
   onItemsSelected,
   onOpenSettings,
 }: Props) {
+  useLanguage();
   const [status, setStatus] = useState<Status>('idle');
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
@@ -83,7 +93,7 @@ export function OCRModal({
   const checkCapabilityAndStart = async () => {
     if (!(await isAIEnabled())) {
       setApiKeyFailed(true);
-      setError(t('analysis', 'noMethod'));
+      setError(t('errors', 'noAnalysisMethod'));
       setStatus('error');
       return;
     }
@@ -119,12 +129,12 @@ export function OCRModal({
     } catch (err) {
       if (err instanceof ApiKeyFailedError) {
         setApiKeyFailed(true);
-        setError(t('analysis', 'apiKeyFailed'));
+        setError(t('errors', 'apiKeyInvalid'));
       } else if (err instanceof NoAnalysisMethodError) {
         setApiKeyFailed(true);
-        setError(t('analysis', 'noMethod'));
+        setError(t('errors', 'noAnalysisMethod'));
       } else {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : t('errors', 'unknown'));
       }
       setStatus('error');
     }
@@ -246,7 +256,12 @@ export function OCRModal({
               </h2>
             </div>
             {status !== 'loading' && (
-              <Button variant="ghost" size="icon" onClick={onClose}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onClose}
+                aria-label={t('common', 'close')}
+              >
                 <X className="w-5 h-5" />
               </Button>
             )}
@@ -318,8 +333,7 @@ export function OCRModal({
                     </span>
                   </label>
                   <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {selectedCount}
-                    {t('analysis', 'selected')}
+                    {tp('analysis', 'selectedCount', { count: selectedCount })}
                   </span>
                 </div>
 
@@ -329,6 +343,7 @@ export function OCRModal({
                       <ProductItem
                         key={index}
                         item={item}
+                        currency={currency}
                         state={itemStates.get(index)!}
                         onToggle={() => toggleItem(index)}
                         onQuantityChange={(delta) =>
@@ -374,8 +389,7 @@ export function OCRModal({
                 disabled={selectedCount === 0}
               >
                 <Check className="w-4 h-4 mr-1" />
-                {selectedCount}
-                {t('analysis', 'addItems')}
+                {tp('analysis', 'addCount', { count: selectedCount })}
               </Button>
             </div>
           )}
@@ -388,6 +402,7 @@ export function OCRModal({
 
 function ProductItem({
   item,
+  currency,
   state,
   onToggle,
   onQuantityChange,
@@ -395,6 +410,7 @@ function ProductItem({
   onNameChange,
 }: {
   item: ImageAnalysisItem;
+  currency: string | null;
   state: ItemState;
   onToggle: () => void;
   onQuantityChange: (delta: number) => void;
@@ -518,7 +534,7 @@ function ProductItem({
         <div className="flex-shrink-0 text-right min-w-12">
           {item.price !== null && item.price > 0 && (
             <span className="text-xs text-gray-600 dark:text-gray-400">
-              {item.price.toLocaleString()}
+              {formatPrice(item.price, currency)}
             </span>
           )}
           {item.price === 0 && (
@@ -573,7 +589,7 @@ function LoadingState({
           {getStatusText()}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          {tWithParams('analysis', 'analyzingImages', { count: imageCount })}
+          {tp('analysis', 'analyzingImages', { count: imageCount })}
         </p>
       </div>
       <div className="w-full max-w-xs">

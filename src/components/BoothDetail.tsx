@@ -7,11 +7,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useBooth, useBooths } from '@/hooks/useBooths';
+import { useEvent } from '@/hooks/useEvents';
 import { ItemChecklist } from '@/components/ItemChecklist';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useUIStore } from '@/stores/useUIStore';
-import { t } from '@/lib/i18n';
+import { t, tp, useLanguage } from '@/i18n';
 
 interface BoothDetailProps {
   boothId: string;
@@ -19,8 +20,10 @@ interface BoothDetailProps {
 }
 
 export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
+  useLanguage();
   const { booth, isLoading } = useBooth(boothId);
   const { updateBooth, deleteBooth } = useBooths(booth?.eventId || '');
+  const event = useEvent(booth?.eventId);
   const { setSelectedBoothId } = useUIStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editBoothNumber, setEditBoothNumber] = useState('');
@@ -125,6 +128,7 @@ export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
                   size="icon"
                   onClick={startEditing}
                   className="text-gray-600 dark:text-gray-300"
+                  aria-label={t('common', 'edit')}
                 >
                   <Pencil className="w-4 h-4" />
                 </Button>
@@ -133,6 +137,7 @@ export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
                   size="icon"
                   onClick={handleDelete}
                   className="text-red-500 hover:text-red-700"
+                  aria-label={t('common', 'delete')}
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
@@ -157,7 +162,9 @@ export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
                         className="text-amber-600 dark:text-amber-400 hover:underline truncate"
                       >
                         {hasMultiple
-                          ? `${t('booths', 'openForm')} ${index + 1}`
+                          ? tp('booths', 'openFormNumbered', {
+                              index: index + 1,
+                            })
                           : t('booths', 'openForm')}
                       </a>
                     </div>
@@ -190,6 +197,7 @@ export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
       <ItemChecklist
         boothId={boothId}
         imageUrls={booth.imageUrls}
+        currency={event?.currency ?? null}
         onOpenSettings={onOpenSettings}
       />
     </div>

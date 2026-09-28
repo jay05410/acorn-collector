@@ -69,10 +69,9 @@ describe('analysis cache', () => {
     const removed = await cache.prune({ maxAgeMs: 15 * DAY });
 
     expect(removed).toBe(2);
-    expect((await database.analysisCache.toCollection().primaryKeys()).sort()).toEqual([
-      'k0',
-      'k1',
-    ]);
+    expect(
+      (await database.analysisCache.toCollection().primaryKeys()).sort()
+    ).toEqual(['k0', 'k1']);
   });
 
   it('keeps only the newest maxEntries', async () => {
@@ -81,10 +80,9 @@ describe('analysis cache', () => {
     const removed = await cache.prune({ maxEntries: 2 });
 
     expect(removed).toBe(3);
-    expect((await database.analysisCache.toCollection().primaryKeys()).sort()).toEqual([
-      'k0',
-      'k1',
-    ]);
+    expect(
+      (await database.analysisCache.toCollection().primaryKeys()).sort()
+    ).toEqual(['k0', 'k1']);
   });
 
   it('defaults to 200 entries and 30 days', async () => {

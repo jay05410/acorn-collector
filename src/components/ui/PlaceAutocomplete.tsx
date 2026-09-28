@@ -7,7 +7,7 @@ import {
   hasGooglePlacesApiKey,
   type GooglePlace,
 } from '@/lib/google-places';
-import { getLanguage } from '@/lib/i18n';
+import { getLanguageInfo, useLanguage } from '@/i18n';
 
 interface Venue {
   name: string;
@@ -35,7 +35,7 @@ export function PlaceAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isKorean = getLanguage() === 'ko';
+  const isKorean = useLanguage() === 'ko';
   const hasApiKey = isKorean ? hasKakaoApiKey() : hasGooglePlacesApiKey();
 
   useEffect(() => {
@@ -74,7 +74,10 @@ export function PlaceAutocomplete({
           }));
           setVenues(mappedVenues);
         } else {
-          const results = await searchGooglePlaces(query);
+          const results = await searchGooglePlaces(
+            query,
+            getLanguageInfo().intlLocale
+          );
           const mappedVenues: Venue[] = results.map((place: GooglePlace) => ({
             name: place.name,
             address: place.formatted_address,

@@ -110,3 +110,16 @@ export function useItems(boothId: string) {
     toggleItemCheck,
   };
 }
+
+/** Live items of several booths (e.g. a whole event), in one query. */
+export function useItemsForBooths(boothIds: readonly string[]): Item[] {
+  const key = boothIds.join('\n');
+  const items = useLiveQuery(
+    () =>
+      boothIds.length > 0
+        ? db.items.where('boothId').anyOf([...boothIds]).toArray()
+        : [],
+    [key]
+  );
+  return items ?? [];
+}

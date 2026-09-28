@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
 import { generateId } from '@/lib/utils';
+import { getLanguageInfo } from '@/i18n';
 import type { Event } from '@/types';
 
 export function useEvents() {
@@ -15,8 +16,8 @@ export function useEvents() {
     const now = Date.now();
     const id = generateId();
     await db.events.add({
-      currency: null,
       ...data,
+      currency: data.currency ?? getLanguageInfo().defaultCurrency,
       id,
       createdAt: now,
       updatedAt: now,
@@ -57,4 +58,14 @@ export function useEvents() {
     deleteEvent,
     getEvent,
   };
+}
+
+/** Live event row; undefined while loading or when the id is missing. */
+export function useEvent(
+  eventId: string | null | undefined
+): Event | undefined {
+  return useLiveQuery(
+    () => (eventId ? db.events.get(eventId) : undefined),
+    [eventId]
+  );
 }

@@ -98,10 +98,12 @@ describe('database v5 migration', () => {
       await legacy
         .table('booths')
         .add({ ...legacyBooth, zone: null, formUrl: null, imageUrls: null });
-      await legacy.table('items').bulkAdd([
-        legacyItem,
-        { ...legacyItem, id: 'i2', currency: 'JPY', option: 'B' },
-      ]);
+      await legacy
+        .table('items')
+        .bulkAdd([
+          legacyItem,
+          { ...legacyItem, id: 'i2', currency: 'JPY', option: 'B' },
+        ]);
     });
 
     const database = await openApp(name);
@@ -172,7 +174,11 @@ describe('initializeDatabase', () => {
     await initializeDatabase();
 
     const badges = await db.badges.toArray();
-    expect(badges.map((b) => b.id).sort()).toEqual(['etc', 'pickup', 'purchase']);
+    expect(badges.map((b) => b.id).sort()).toEqual([
+      'etc',
+      'pickup',
+      'purchase',
+    ]);
     expect(badges.every((b) => b.isPreset)).toBe(true);
   });
 });
