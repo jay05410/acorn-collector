@@ -1,0 +1,13 @@
+{
+  "name": "acorn-collector-bridge",
+  "version": "1.0.0",
+  "description": "Native messaging host that lets the Acorn Collector extension run analysis on your own logged-in Claude Code or Codex CLI",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "acorn-collector-bridge-install": "./install.mjs"
+  }
+}
