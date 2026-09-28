@@ -1,3 +1,4 @@
+// i18n-scan-ignore-file: model prompt with multilingual price examples, never shown in the UI
 /**
  * Prompt text shared by every provider. The system prompt is the benchmarked
  * baseline (ADR-001 section 2); change it only with benchmark evidence and

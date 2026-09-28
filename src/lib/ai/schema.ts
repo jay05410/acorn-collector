@@ -109,7 +109,7 @@ function cleanString(value: unknown): string | null {
   return cleaned === '' ? null : cleaned;
 }
 
-/** Accepts numbers and numeric strings such as "3,000", "¥800" or "1500円". */
+/** Accepts numbers and numeric strings such as "3,000", "¥800" or "1500 yen" written with the yen kanji. */
 export function coercePrice(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null;
   if (typeof value !== 'string') return null;
@@ -142,7 +142,7 @@ function uniqueStrings(values: Iterable<string>): string[] {
 
 /**
  * Normalization used for dedupe keys: NFKC, lower case, no whitespace,
- * punctuation or symbols ("「星の庭」" and "星の庭" collide).
+ * punctuation or symbols (a title with and without corner brackets collides).
  */
 export function normalizeName(name: string): string {
   const folded = name.normalize('NFKC').toLowerCase();

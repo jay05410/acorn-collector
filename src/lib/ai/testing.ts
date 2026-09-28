@@ -1,3 +1,4 @@
+// i18n-scan-ignore-file: multilingual test fixtures
 /**
  * Test-only helpers (imported by *.test.ts files, never by shipped code):
  * fake fetch responses that stream SSE transcripts in small chunks.
