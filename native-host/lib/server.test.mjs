@@ -18,8 +18,16 @@ function setup(overrides = {}) {
   const sent = [];
   const deps = {
     send: (message) => sent.push(message),
-    analyze: vi.fn(async () => ({ output: { items: [] }, model: 'claude-sonnet-5', usage: null })),
-    status: vi.fn(async () => ({ protocol: 1, platform: 'darwin', targets: {} })),
+    analyze: vi.fn(async () => ({
+      output: { items: [] },
+      model: 'claude-sonnet-5',
+      usage: null,
+    })),
+    status: vi.fn(async () => ({
+      protocol: 1,
+      platform: 'darwin',
+      targets: {},
+    })),
     ...overrides,
   };
   return { server: createBridgeServer(deps), sent, deps };
@@ -37,7 +45,11 @@ describe('createBridgeServer', () => {
     await server.handle({ id: 's', op: 'status' });
     expect(deps.status).toHaveBeenCalledTimes(1);
     expect(sent).toEqual([
-      { id: 's', status: 'ok', result: { protocol: 1, platform: 'darwin', targets: {} } },
+      {
+        id: 's',
+        status: 'ok',
+        result: { protocol: 1, platform: 'darwin', targets: {} },
+      },
     ]);
   });
 
@@ -49,7 +61,11 @@ describe('createBridgeServer', () => {
       {
         id: 'r1',
         status: 'ok',
-        result: { output: { items: [] }, model: 'claude-sonnet-5', usage: null },
+        result: {
+          output: { items: [] },
+          model: 'claude-sonnet-5',
+          usage: null,
+        },
       },
     ]);
     const [request, signal] = deps.analyze.mock.calls[0];
@@ -79,7 +95,11 @@ describe('createBridgeServer', () => {
     });
     await server.handle({ id: 's', op: 'status' });
     expect(sent).toEqual([
-      { id: 's', status: 'error', error: { code: 'internal', message: 'x is undefined' } },
+      {
+        id: 's',
+        status: 'error',
+        error: { code: 'internal', message: 'x is undefined' },
+      },
     ]);
   });
 
@@ -140,6 +160,10 @@ describe('createBridgeServer', () => {
     await server.shutdown();
     await job;
     expect(stopped).toBe(true);
-    expect(sent.at(-1)).toMatchObject({ id: 'job', status: 'error', error: { code: 'cancelled' } });
+    expect(sent.at(-1)).toMatchObject({
+      id: 'job',
+      status: 'error',
+      error: { code: 'cancelled' },
+    });
   });
 });

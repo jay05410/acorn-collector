@@ -66,10 +66,13 @@ describe('buildChildEnv', () => {
   });
 
   it('falls back to standard directories when the browser gave no PATH', () => {
-    const env = buildChildEnv({ HOME: '/Users/me' }, {
-      platform: 'darwin',
-      pathDirs: ['/Users/me/.local/bin'],
-    });
+    const env = buildChildEnv(
+      { HOME: '/Users/me' },
+      {
+        platform: 'darwin',
+        pathDirs: ['/Users/me/.local/bin'],
+      }
+    );
     expect(env.PATH.split(':')).toEqual([
       '/Users/me/.local/bin',
       '/usr/local/bin',

@@ -142,6 +142,8 @@ export class FrameDecoder {
       }
     }
     this.#buffered -= size;
-    return parts.length === 1 ? /** @type {Buffer} */ (parts[0]) : Buffer.concat(parts, size);
+    return parts.length === 1
+      ? /** @type {Buffer} */ (parts[0])
+      : Buffer.concat(parts, size);
   }
 }

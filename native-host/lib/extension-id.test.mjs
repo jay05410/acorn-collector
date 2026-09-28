@@ -5,7 +5,9 @@ import { extensionIdFromPublicKey } from './extension-id.mjs';
 describe('extensionIdFromPublicKey', () => {
   it('maps the first 32 hex digits of SHA-256 to a-p', () => {
     // sha256("abc") = ba7816bf8f01cfea414140de5dae2223 b003...
-    expect(extensionIdFromPublicKey(Buffer.from('abc'))).toBe('lkhibglpipabmpokebebeanofnkocccd');
+    expect(extensionIdFromPublicKey(Buffer.from('abc'))).toBe(
+      'lkhibglpipabmpokebebeanofnkocccd'
+    );
   });
 
   it('yields a valid 32-letter ID for a generated RSA key', () => {

@@ -67,7 +67,9 @@ export function parseRequest(raw) {
   if (!isRecord(raw)) throw badRequest('request must be a JSON object');
   const { id, op } = raw;
   if (!isId(id)) {
-    throw badRequest(`id must be a non-empty string of at most ${MAX_ID_CHARS} characters`);
+    throw badRequest(
+      `id must be a non-empty string of at most ${MAX_ID_CHARS} characters`
+    );
   }
   switch (op) {
     case 'ping':
@@ -139,7 +141,11 @@ export function decodeImage(raw, index) {
     throw badRequest(`${label} must be an object with a base64 string`);
   }
   const base64 = raw.base64;
-  if (base64.length === 0 || base64.length % 4 !== 0 || !BASE64_PATTERN.test(base64)) {
+  if (
+    base64.length === 0 ||
+    base64.length % 4 !== 0 ||
+    !BASE64_PATTERN.test(base64)
+  ) {
     throw badRequest(`${label} is not valid base64`);
   }
   const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
@@ -158,12 +164,19 @@ export function decodeImage(raw, index) {
  * @returns {Pick<ImageFile, 'mimeType' | 'extension'> | null}
  */
 export function sniffImage(bytes) {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+  if (
+    bytes.length >= 3 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff
+  ) {
     return { mimeType: 'image/jpeg', extension: 'jpg' };
   }
   if (
     bytes.length >= 8 &&
-    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((b, i) => bytes[i] === b)
+    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every(
+      (b, i) => bytes[i] === b
+    )
   ) {
     return { mimeType: 'image/png', extension: 'png' };
   }
@@ -204,7 +217,11 @@ function optionalString(value, name, max) {
  * @returns {value is string}
  */
 function isId(value) {
-  return typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_CHARS;
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_ID_CHARS
+  );
 }
 
 /**

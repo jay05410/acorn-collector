@@ -41,19 +41,29 @@ export function configPath(env, hostDir) {
  */
 export function parseConfig(raw) {
   if (!isRecord(raw) || raw.version !== CONFIG_VERSION) {
-    throw new Error(`config.json must be an object with "version": ${CONFIG_VERSION}`);
+    throw new Error(
+      `config.json must be an object with "version": ${CONFIG_VERSION}`
+    );
   }
   const { allowedOrigins, cliPaths } = raw;
   if (
     !Array.isArray(allowedOrigins) ||
-    !allowedOrigins.every((origin) => typeof origin === 'string' && ORIGIN_PATTERN.test(origin))
+    !allowedOrigins.every(
+      (origin) => typeof origin === 'string' && ORIGIN_PATTERN.test(origin)
+    )
   ) {
-    throw new Error('config.json allowedOrigins must be chrome-extension://<id>/ origins');
+    throw new Error(
+      'config.json allowedOrigins must be chrome-extension://<id>/ origins'
+    );
   }
-  if (!isRecord(cliPaths)) throw new Error('config.json cliPaths must be an object');
+  if (!isRecord(cliPaths))
+    throw new Error('config.json cliPaths must be an object');
   return {
     allowedOrigins,
-    cliPaths: { claude: pathOrNull(cliPaths.claude), codex: pathOrNull(cliPaths.codex) },
+    cliPaths: {
+      claude: pathOrNull(cliPaths.claude),
+      codex: pathOrNull(cliPaths.codex),
+    },
   };
 }
 

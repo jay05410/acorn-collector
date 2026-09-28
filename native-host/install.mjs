@@ -13,7 +13,14 @@
  */
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,7 +60,12 @@ async function which(name, platform) {
       const { stdout } = await run('where.exe', [name], { windowsHide: true });
       return pickWindowsExecutable(stdout);
     }
-    const { stdout } = await run('sh', ['-c', 'command -v -- "$1"', 'sh', name]);
+    const { stdout } = await run('sh', [
+      '-c',
+      'command -v -- "$1"',
+      'sh',
+      name,
+    ]);
     const found = stdout.trim();
     return found.startsWith('/') ? found : null;
   } catch {
@@ -72,7 +84,8 @@ async function listFiles(root, dir = root) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) files.push(...(await listFiles(root, full)));
-    else if (entry.isFile()) files.push(relative(root, full).split(sep).join('/'));
+    else if (entry.isFile())
+      files.push(relative(root, full).split(sep).join('/'));
   }
   return files;
 }
@@ -114,13 +127,19 @@ async function execute(action) {
       await rm(action.path, { recursive: true, force: true });
       return;
     case 'reg-add':
-      await run('reg', ['add', action.key, '/ve', '/t', 'REG_SZ', '/d', action.value, '/f'], {
-        windowsHide: true,
-      });
+      await run(
+        'reg',
+        ['add', action.key, '/ve', '/t', 'REG_SZ', '/d', action.value, '/f'],
+        {
+          windowsHide: true,
+        }
+      );
       return;
     case 'reg-delete':
       // Missing keys are fine when uninstalling.
-      await run('reg', ['delete', action.key, '/f'], { windowsHide: true }).catch(() => {});
+      await run('reg', ['delete', action.key, '/f'], {
+        windowsHide: true,
+      }).catch(() => {});
       return;
   }
 }
@@ -141,14 +160,18 @@ async function main() {
 
   const platform = process.platform;
   if (!isSupportedPlatform(platform)) {
-    throw new Error(`unsupported platform ${platform}; macOS, Linux and Windows are supported`);
+    throw new Error(
+      `unsupported platform ${platform}; macOS, Linux and Windows are supported`
+    );
   }
   if (typeof process.getuid === 'function' && process.getuid() === 0) {
     throw new Error('run the installer as your own user, not with sudo');
   }
   const major = Number(process.versions.node.split('.')[0]);
   if (major < MIN_NODE_MAJOR) {
-    throw new Error(`Node.js ${MIN_NODE_MAJOR} or newer is required (found ${process.version})`);
+    throw new Error(
+      `Node.js ${MIN_NODE_MAJOR} or newer is required (found ${process.version})`
+    );
   }
   const context = { platform, home: homedir(), env: process.env };
 
@@ -157,16 +180,24 @@ async function main() {
   if (values.uninstall) {
     actions = planUninstall(context);
   } else {
-    if (!values['extension-id']?.length) throw new Error('at least one --extension-id is required');
-    const [claude, codex] = await Promise.all([which('claude', platform), which('codex', platform)]);
+    if (!values['extension-id']?.length)
+      throw new Error('at least one --extension-id is required');
+    const [claude, codex] = await Promise.all([
+      which('claude', platform),
+      which('codex', platform),
+    ]);
     console.log(`claude: ${claude ?? 'not found'}`);
     console.log(`codex:  ${codex ?? 'not found'}`);
     if (!claude && !codex) {
-      console.warn('Neither claude nor codex was found on PATH. Install one, log in, then re-run.');
+      console.warn(
+        'Neither claude nor codex was found on PATH. Install one, log in, then re-run.'
+      );
     }
     const locations = manifestLocations(context);
     const existingRoots = new Set(
-      locations.map((location) => location.root).filter((root) => existsSync(root))
+      locations
+        .map((location) => location.root)
+        .filter((root) => existsSync(root))
     );
     actions = planInstall({
       context,
@@ -177,9 +208,13 @@ async function main() {
       extensionIds: values['extension-id'] ?? [],
       existingRoots,
     });
-    const browsers = locations.filter((l) => existingRoots.has(l.root)).map((l) => l.browser);
+    const browsers = locations
+      .filter((l) => existingRoots.has(l.root))
+      .map((l) => l.browser);
     if (platform !== 'win32' && browsers.length === 0) {
-      console.warn('No supported browser profile was found; no manifest will be written.');
+      console.warn(
+        'No supported browser profile was found; no manifest will be written.'
+      );
     } else if (platform !== 'win32') {
       console.log(`browsers: ${browsers.join(', ')}`);
     }
@@ -199,8 +234,12 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`install failed: ${error instanceof Error ? error.message : error}`);
-  if (!(error instanceof Error && error.message.startsWith('run the installer'))) {
+  console.error(
+    `install failed: ${error instanceof Error ? error.message : error}`
+  );
+  if (
+    !(error instanceof Error && error.message.startsWith('run the installer'))
+  ) {
     console.error(USAGE);
   }
   process.exit(1);

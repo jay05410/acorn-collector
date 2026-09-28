@@ -28,7 +28,12 @@ import { parseRequest, requestIdOf } from './validate.mjs';
 /**
  * @param {ServerDeps} deps
  */
-export function createBridgeServer({ send, analyze, status, queue: queueOptions }) {
+export function createBridgeServer({
+  send,
+  analyze,
+  status,
+  queue: queueOptions,
+}) {
   const queue = new JobQueue({
     ...queueOptions,
     onState: (id, state) => send({ id, status: state }),
@@ -44,7 +49,11 @@ export function createBridgeServer({ send, analyze, status, queue: queueOptions 
     try {
       request = parseRequest(raw);
     } catch (error) {
-      send({ id: requestIdOf(raw), status: 'error', error: toErrorPayload(error) });
+      send({
+        id: requestIdOf(raw),
+        status: 'error',
+        error: toErrorPayload(error),
+      });
       return;
     }
     try {

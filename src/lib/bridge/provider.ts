@@ -59,27 +59,37 @@ export function createCliProvider(config: CliProviderConfig): AIProvider {
           model,
           system,
           text,
-          images: req.images.map(({ mimeType, base64 }) => ({ mimeType, base64 })),
+          images: req.images.map(({ mimeType, base64 }) => ({
+            mimeType,
+            base64,
+          })),
           schema: config.schema,
         },
         opts.signal ?? req.signal
       );
       if (!isWireExtraction(result.output)) {
-        throw bridgeError('bad_response', 'cli_bad_output', 'output does not match WireExtraction');
+        throw bridgeError(
+          'bad_response',
+          'cli_bad_output',
+          'output does not match WireExtraction'
+        );
       }
       const raw: ProviderRawResult = {
         wire: result.output,
         model: result.model ?? (model || `${target}-default`),
       };
-      if (result.usage?.inputTokens !== undefined) raw.inputTokens = result.usage.inputTokens;
-      if (result.usage?.outputTokens !== undefined) raw.outputTokens = result.usage.outputTokens;
+      if (result.usage?.inputTokens !== undefined)
+        raw.inputTokens = result.usage.inputTokens;
+      if (result.usage?.outputTokens !== undefined)
+        raw.outputTokens = result.usage.outputTokens;
       return raw;
     },
 
     async testConnection(): Promise<void> {
       const status = await client().status();
       const target = status.targets[config.getTarget()];
-      if (!target.installed) throw bridgeError('not_configured', 'cli_not_installed');
+      if (!target.installed)
+        throw bridgeError('not_configured', 'cli_not_installed');
       if (!target.loggedIn) throw bridgeError('auth', 'cli_not_logged_in');
     },
   };
@@ -93,14 +103,16 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const isNullableString = (value: unknown) => value === null || typeof value === 'string';
+const isNullableString = (value: unknown) =>
+  value === null || typeof value === 'string';
 
 function isWireItem(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value.name === 'string' &&
     isNullableString(value.orig) &&
-    (value.price === null || (typeof value.price === 'number' && Number.isFinite(value.price))) &&
+    (value.price === null ||
+      (typeof value.price === 'number' && Number.isFinite(value.price))) &&
     ITEM_CATEGORY_SET.has(value.cat) &&
     Array.isArray(value.opts) &&
     value.opts.every((opt) => typeof opt === 'string')

@@ -27,8 +27,24 @@ const ORIGIN = `chrome-extension://${'a'.repeat(32)}/`;
 
 /** Mirrors ITEM_CATEGORIES in src/types/index.ts. */
 const CATEGORIES = [
-  'acrylic', 'keyring', 'stand', 'poster', 'postcard', 'sticker', 'photocard', 'memo',
-  'tape', 'badge', 'book', 'calendar', 'pouch', 'plush', 'apparel', 'set', 'digital', 'other',
+  'acrylic',
+  'keyring',
+  'stand',
+  'poster',
+  'postcard',
+  'sticker',
+  'photocard',
+  'memo',
+  'tape',
+  'badge',
+  'book',
+  'calendar',
+  'pouch',
+  'plush',
+  'apparel',
+  'set',
+  'digital',
+  'other',
 ];
 
 const nullableString = { type: ['string', 'null'] };
@@ -87,7 +103,9 @@ const { values } = parseArgs({
   },
 });
 if (!values.image) {
-  console.error('usage: node native-host/scripts/e2e.mjs --image <file> [--truth <file>]');
+  console.error(
+    'usage: node native-host/scripts/e2e.mjs --image <file> [--truth <file>]'
+  );
   process.exit(2);
 }
 const target = values.target === 'codex' ? 'codex' : 'claude';
@@ -124,7 +142,9 @@ const host = spawn(process.execPath, [HOST, ORIGIN], {
 const waiting = new Map();
 const decoder = new FrameDecoder();
 host.stdout.on('data', (/** @type {Buffer} */ chunk) => {
-  for (const message of /** @type {Record<string, any>[]} */ (decoder.push(chunk))) {
+  for (const message of /** @type {Record<string, any>[]} */ (
+    decoder.push(chunk)
+  )) {
     if (message.status === 'queued' || message.status === 'running') {
       console.log(`[${elapsed()}] ${message.id}: ${message.status}`);
       continue;
@@ -146,7 +166,10 @@ function call(request) {
 }
 
 try {
-  console.log('ping ->', JSON.stringify(await call({ id: 'ping', op: 'ping' })));
+  console.log(
+    'ping ->',
+    JSON.stringify(await call({ id: 'ping', op: 'ping' }))
+  );
   const status = await call({ id: 'status', op: 'status' });
   console.log('status ->', JSON.stringify(status, null, 2));
 
@@ -158,7 +181,9 @@ try {
     model,
     system: SYSTEM,
     text: 'Extract every item and price from this booth price list.',
-    images: [{ mimeType: kind.mimeType, base64: imageBytes.toString('base64') }],
+    images: [
+      { mimeType: kind.mimeType, base64: imageBytes.toString('base64') },
+    ],
     schema: WIRE_SCHEMA,
   });
   const latencyMs = Date.now() - t0;
@@ -167,7 +192,10 @@ try {
 
   if (response.status === 'ok' && values.truth) {
     const truth = JSON.parse(await readFile(values.truth, 'utf8'));
-    console.log('score ->', JSON.stringify(score(response.result.output, truth), null, 2));
+    console.log(
+      'score ->',
+      JSON.stringify(score(response.result.output, truth), null, 2)
+    );
   }
 } finally {
   host.stdin.end();
@@ -177,7 +205,9 @@ try {
 
 /** @param {string} name */
 function whichSync(name) {
-  return execFileSync('sh', ['-c', 'command -v -- "$1"', 'sh', name], { encoding: 'utf8' }).trim();
+  return execFileSync('sh', ['-c', 'command -v -- "$1"', 'sh', name], {
+    encoding: 'utf8',
+  }).trim();
 }
 
 /** @param {unknown} value */

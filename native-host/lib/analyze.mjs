@@ -57,7 +57,9 @@ export async function runAnalyzeJob(request, signal, deps) {
       run: deps.run,
       debug: deps.debug,
     };
-    return request.target === 'claude' ? await runClaude(context) : await runCodex(context);
+    return request.target === 'claude'
+      ? await runClaude(context)
+      : await runCodex(context);
   } finally {
     await removeJobDir(jobDir);
   }

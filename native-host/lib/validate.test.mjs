@@ -11,7 +11,9 @@ import {
 } from './validate.mjs';
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]);
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]);
+const PNG = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d,
+]);
 const WEBP = Buffer.concat([
   Buffer.from('RIFF'),
   Buffer.from([0x24, 0, 0, 0]),
@@ -50,8 +52,14 @@ function badRequest(fn) {
 
 describe('parseRequest envelope', () => {
   it('accepts ping, status and cancel', () => {
-    expect(parseRequest({ id: 'a', op: 'ping' })).toEqual({ id: 'a', op: 'ping' });
-    expect(parseRequest({ id: 'b', op: 'status' })).toEqual({ id: 'b', op: 'status' });
+    expect(parseRequest({ id: 'a', op: 'ping' })).toEqual({
+      id: 'a',
+      op: 'ping',
+    });
+    expect(parseRequest({ id: 'b', op: 'status' })).toEqual({
+      id: 'b',
+      op: 'status',
+    });
     expect(parseRequest({ id: 'c', op: 'cancel', targetId: 'r1' })).toEqual({
       id: 'c',
       op: 'cancel',
@@ -65,7 +73,9 @@ describe('parseRequest envelope', () => {
     badRequest(() => parseRequest({ op: 'ping' }));
     badRequest(() => parseRequest({ id: '', op: 'ping' }));
     badRequest(() => parseRequest({ id: 'x'.repeat(65), op: 'ping' }));
-    expect(badRequest(() => parseRequest({ id: 'a', op: 'exec' }))).toMatch(/unknown op/);
+    expect(badRequest(() => parseRequest({ id: 'a', op: 'exec' }))).toMatch(
+      /unknown op/
+    );
     badRequest(() => parseRequest({ id: 'a', op: 'cancel' }));
   });
 
@@ -78,7 +88,9 @@ describe('parseRequest envelope', () => {
 
 describe('parseRequest analyze', () => {
   it('normalizes a valid request and sniffs the image type', () => {
-    const request = parseRequest(analyze({ images: [image(PNG, 'image/jpeg')] }));
+    const request = parseRequest(
+      analyze({ images: [image(PNG, 'image/jpeg')] })
+    );
     expect(request).toMatchObject({
       id: 'r1',
       op: 'analyze',
@@ -88,15 +100,28 @@ describe('parseRequest analyze', () => {
       text: 'アクスタ 1500円',
       schema: { type: 'object' },
     });
-    expect(request.images[0]).toMatchObject({ mimeType: 'image/png', extension: 'png' });
+    expect(request.images[0]).toMatchObject({
+      mimeType: 'image/png',
+      extension: 'png',
+    });
     expect(request.images[0].bytes.equals(PNG)).toBe(true);
   });
 
   it('defaults optional strings and allows the CLI default model', () => {
     const request = parseRequest(
-      analyze({ model: undefined, system: undefined, images: undefined, target: 'codex' })
+      analyze({
+        model: undefined,
+        system: undefined,
+        images: undefined,
+        target: 'codex',
+      })
     );
-    expect(request).toMatchObject({ model: '', system: '', images: [], target: 'codex' });
+    expect(request).toMatchObject({
+      model: '',
+      system: '',
+      images: [],
+      target: 'codex',
+    });
   });
 
   it('rejects unknown targets', () => {
@@ -104,7 +129,9 @@ describe('parseRequest analyze', () => {
   });
 
   it('rejects models that could be read as flags or contain spaces', () => {
-    badRequest(() => parseRequest(analyze({ model: '--dangerously-skip-permissions' })));
+    badRequest(() =>
+      parseRequest(analyze({ model: '--dangerously-skip-permissions' }))
+    );
     badRequest(() => parseRequest(analyze({ model: 'sonnet; rm -rf ~' })));
     expect(parseRequest(analyze({ model: 'claude-opus-5-5[1m]' })).model).toBe(
       'claude-opus-5-5[1m]'
@@ -113,19 +140,25 @@ describe('parseRequest analyze', () => {
 
   it('requires some text or at least one image', () => {
     badRequest(() => parseRequest(analyze({ text: '  ', images: [] })));
-    expect(parseRequest(analyze({ text: '', images: [image()] })).images).toHaveLength(1);
+    expect(
+      parseRequest(analyze({ text: '', images: [image()] })).images
+    ).toHaveLength(1);
   });
 
   it('limits the number of images', () => {
     const images = Array.from({ length: MAX_IMAGES + 1 }, () => image());
-    expect(badRequest(() => parseRequest(analyze({ images })))).toMatch(/at most 6/);
+    expect(badRequest(() => parseRequest(analyze({ images })))).toMatch(
+      /at most 6/
+    );
   });
 
   it('requires an object schema of bounded size', () => {
     badRequest(() => parseRequest(analyze({ schema: undefined })));
     badRequest(() => parseRequest(analyze({ schema: [] })));
     badRequest(() =>
-      parseRequest(analyze({ schema: { description: 'x'.repeat(MAX_SCHEMA_CHARS) } }))
+      parseRequest(
+        analyze({ schema: { description: 'x'.repeat(MAX_SCHEMA_CHARS) } })
+      )
     );
   });
 
@@ -145,7 +178,9 @@ describe('decodeImage', () => {
 
   it('rejects images over the size limit before decoding', () => {
     const base64 = 'A'.repeat(Math.ceil((MAX_IMAGE_BYTES + 3) / 3) * 4);
-    expect(badRequest(() => decodeImage({ base64 }, 2))).toMatch(/images\[2\] exceeds/);
+    expect(badRequest(() => decodeImage({ base64 }, 2))).toMatch(
+      /images\[2\] exceeds/
+    );
   });
 
   it('rejects formats other than JPEG, PNG and WebP', () => {

@@ -30,7 +30,10 @@ export interface BridgePort {
 /** The subset of chrome.runtime the client uses. */
 export interface NativeMessagingRuntime {
   connectNative(application: string): BridgePort;
-  sendNativeMessage(application: string, message: BridgeRequest): Promise<unknown>;
+  sendNativeMessage(
+    application: string,
+    message: BridgeRequest
+  ): Promise<unknown>;
   readonly lastError?: { message?: string };
 }
 
@@ -97,7 +100,11 @@ export class BridgeClient {
   ): Promise<BridgeAnalyzeResult> {
     const result = await this.#request(request, signal);
     if (!isBridgeAnalyzeResult(result)) {
-      throw bridgeError('bad_response', 'bridge_protocol_error', 'malformed analyze result');
+      throw bridgeError(
+        'bad_response',
+        'bridge_protocol_error',
+        'malformed analyze result'
+      );
     }
     return result;
   }
@@ -115,22 +122,35 @@ export class BridgeClient {
     let response: unknown;
     try {
       response = await Promise.race([
-        runtime.sendNativeMessage(BRIDGE_HOST_NAME, { id: 'status', op: 'status' }),
+        runtime.sendNativeMessage(BRIDGE_HOST_NAME, {
+          id: 'status',
+          op: 'status',
+        }),
         timeout,
       ]);
     } catch (error) {
       if (error instanceof AIError) throw error;
-      throw fromRuntimeError(error instanceof Error ? error.message : String(error));
+      throw fromRuntimeError(
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       clearTimeout(timer);
     }
 
     if (!isBridgeResponse(response)) {
-      throw bridgeError('bad_response', 'bridge_protocol_error', 'malformed status response');
+      throw bridgeError(
+        'bad_response',
+        'bridge_protocol_error',
+        'malformed status response'
+      );
     }
     if (response.status === 'error') throw fromHostError(response.error);
     if (response.status !== 'ok' || !isBridgeStatus(response.result)) {
-      throw bridgeError('bad_response', 'bridge_protocol_error', 'malformed status result');
+      throw bridgeError(
+        'bad_response',
+        'bridge_protocol_error',
+        'malformed status result'
+      );
     }
     if (response.result.protocol !== BRIDGE_PROTOCOL_VERSION) {
       throw bridgeError(
@@ -147,7 +167,10 @@ export class BridgeClient {
     this.#teardown(cancelledError());
   }
 
-  #request(request: BridgeAnalyzeRequest, signal?: AbortSignal): Promise<unknown> {
+  #request(
+    request: BridgeAnalyzeRequest,
+    signal?: AbortSignal
+  ): Promise<unknown> {
     if (signal?.aborted) return Promise.reject(cancelledError());
     const port = this.#connect();
     const id = `r${++this.#sequence}`;
@@ -217,8 +240,12 @@ export class BridgeClient {
   #silenceTimer(id: string): ReturnType<typeof setTimeout> {
     return setTimeout(() => {
       // The host stopped responding; a fresh port starts a fresh host.
-      this.#settle(id, (entry) => entry.reject(bridgeError('timeout', 'bridge_unresponsive')));
-      this.#teardown(bridgeError('unavailable', 'bridge_disconnected', 'host unresponsive'));
+      this.#settle(id, (entry) =>
+        entry.reject(bridgeError('timeout', 'bridge_unresponsive'))
+      );
+      this.#teardown(
+        bridgeError('unavailable', 'bridge_disconnected', 'host unresponsive')
+      );
     }, this.#options.silenceTimeoutMs);
   }
 

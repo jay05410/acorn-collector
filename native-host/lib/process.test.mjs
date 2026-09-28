@@ -8,7 +8,12 @@ const node = process.execPath;
 const env = { PATH: process.env.PATH ?? '', HOME: tmpdir() };
 
 /** @param {string} source */
-const script = (source) => ({ command: node, args: ['-e', source], cwd: tmpdir(), env });
+const script = (source) => ({
+  command: node,
+  args: ['-e', source],
+  cwd: tmpdir(),
+  env,
+});
 
 describe('runCli', () => {
   it('feeds stdin and collects stdout, stderr tail and exit code', async () => {
@@ -18,7 +23,11 @@ describe('runCli', () => {
       ),
       input: 'hello',
     });
-    expect(result).toEqual({ exitCode: 3, stdout: 'HELLO', stderrTail: 'warn' });
+    expect(result).toEqual({
+      exitCode: 3,
+      stdout: 'HELLO',
+      stderrTail: 'warn',
+    });
   });
 
   it('streams stdout to onStdout instead of buffering', async () => {
@@ -33,7 +42,9 @@ describe('runCli', () => {
 
   it('runs in the given cwd with exactly the given env', async () => {
     const result = await runCli({
-      ...script(`process.stdout.write(JSON.stringify({cwd:process.cwd(),keys:Object.keys(process.env)}))`),
+      ...script(
+        `process.stdout.write(JSON.stringify({cwd:process.cwd(),keys:Object.keys(process.env)}))`
+      ),
       env: { ONLY_THIS: '1', PATH: env.PATH },
     });
     const seen = JSON.parse(result.stdout);
@@ -86,7 +97,9 @@ describe('runCli', () => {
   it('stops a process that writes more stdout than allowed', async () => {
     await expect(
       runCli({
-        ...script(`process.stdout.write('x'.repeat(100000));setInterval(()=>{},1000)`),
+        ...script(
+          `process.stdout.write('x'.repeat(100000));setInterval(()=>{},1000)`
+        ),
         maxStdoutBytes: 1000,
         graceMs: 100,
       })

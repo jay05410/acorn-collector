@@ -11,7 +11,9 @@ import {
 } from './claude.mjs';
 
 /** Sanitized stream-json from a live Claude Code 2.1.283 run (2026-09-29). */
-const FIXTURE = readFileSync(new URL('./fixtures/claude-stream-success.jsonl', import.meta.url));
+const FIXTURE = readFileSync(
+  new URL('./fixtures/claude-stream-success.jsonl', import.meta.url)
+);
 
 const SCHEMA = { type: 'object', properties: { items: { type: 'array' } } };
 const jpeg = { mimeType: 'image/jpeg', base64: '/9j/4AAQ' };
@@ -27,7 +29,11 @@ function hostError(fn) {
 }
 
 describe('buildClaudeArgs', () => {
-  const args = buildClaudeArgs({ model: 'sonnet', system: 'Be precise.', schema: SCHEMA });
+  const args = buildClaudeArgs({
+    model: 'sonnet',
+    system: 'Be precise.',
+    schema: SCHEMA,
+  });
 
   it('uses the verified print-mode route', () => {
     expect(args.slice(0, 12)).toEqual([
@@ -64,13 +70,22 @@ describe('buildClaudeArgs', () => {
   it('passes the prompt only via stdin, never as a positional argument', () => {
     for (const arg of args) {
       const isFlag = arg.startsWith('-');
-      const isFlagValue = ['stream-json', 'dontAsk', String(CLAUDE_MAX_TURNS), 'StructuredOutput'].includes(arg);
+      const isFlagValue = [
+        'stream-json',
+        'dontAsk',
+        String(CLAUDE_MAX_TURNS),
+        'StructuredOutput',
+      ].includes(arg);
       expect(isFlag || isFlagValue).toBe(true);
     }
   });
 
   it('binds values that start with a dash to their flag', () => {
-    const risky = buildClaudeArgs({ model: '', system: '--dangerously-skip-permissions', schema: SCHEMA });
+    const risky = buildClaudeArgs({
+      model: '',
+      system: '--dangerously-skip-permissions',
+      schema: SCHEMA,
+    });
     expect(risky).toContain('--system-prompt=--dangerously-skip-permissions');
     expect(risky).not.toContain('--dangerously-skip-permissions');
     expect(risky.some((arg) => arg.startsWith('--model'))).toBe(false);
@@ -79,7 +94,10 @@ describe('buildClaudeArgs', () => {
 
 describe('buildClaudeInput', () => {
   it('writes one JSONL user message with images before text', () => {
-    const line = buildClaudeInput({ text: '価格表', images: [jpeg, { ...jpeg, mimeType: 'image/png' }] });
+    const line = buildClaudeInput({
+      text: '価格表',
+      images: [jpeg, { ...jpeg, mimeType: 'image/png' }],
+    });
     expect(line.endsWith('\n')).toBe(true);
     expect(line.trim().split('\n')).toHaveLength(1);
     expect(JSON.parse(line)).toEqual({
@@ -87,8 +105,22 @@ describe('buildClaudeInput', () => {
       message: {
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: '/9j/4AAQ' } },
-          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: '/9j/4AAQ' } },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/jpeg',
+              data: '/9j/4AAQ',
+            },
+          },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: '/9j/4AAQ',
+            },
+          },
           { type: 'text', text: '価格表' },
         ],
       },
@@ -97,7 +129,9 @@ describe('buildClaudeInput', () => {
   });
 
   it('omits the text block when there is no text', () => {
-    const { message } = JSON.parse(buildClaudeInput({ text: '', images: [jpeg] }));
+    const { message } = JSON.parse(
+      buildClaudeInput({ text: '', images: [jpeg] })
+    );
     expect(message.content).toHaveLength(1);
   });
 });
@@ -106,16 +140,23 @@ describe('ClaudeStreamParser', () => {
   it('extracts the model and final result from a real run, split into odd chunks', () => {
     for (const size of [1, 7, 64, 4096]) {
       const parser = new ClaudeStreamParser();
-      for (let i = 0; i < FIXTURE.length; i += size) parser.push(FIXTURE.subarray(i, i + size));
+      for (let i = 0; i < FIXTURE.length; i += size)
+        parser.push(FIXTURE.subarray(i, i + size));
       parser.end();
       expect(parser.model).toBe('claude-sonnet-5');
-      expect(parser.result).toMatchObject({ type: 'result', subtype: 'success', is_error: false });
+      expect(parser.result).toMatchObject({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+      });
     }
   });
 
   it('keeps the last result line and ignores non-JSON noise', () => {
     const parser = new ClaudeStreamParser();
-    parser.push(Buffer.from('warning: something\n{"type":"result","subtype":"a"}\n'));
+    parser.push(
+      Buffer.from('warning: something\n{"type":"result","subtype":"a"}\n')
+    );
     parser.push(Buffer.from('{"type":"result","subtype":"b"}'));
     parser.end();
     expect(parser.result).toEqual({ type: 'result', subtype: 'b' });
@@ -144,7 +185,15 @@ describe('interpretClaudeResult', () => {
 
   it('treats success without structured_output as a bad response', () => {
     const error = hostError(() =>
-      interpretClaudeResult({ type: 'result', subtype: 'success', is_error: false, result: 'Sure!' }, run)
+      interpretClaudeResult(
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: 'Sure!',
+        },
+        run
+      )
     );
     expect(error.code).toBe('bad_output');
   });
@@ -152,7 +201,11 @@ describe('interpretClaudeResult', () => {
   it('maps error_max_structured_output_retries to a bad response', () => {
     const error = hostError(() =>
       interpretClaudeResult(
-        { type: 'result', subtype: 'error_max_structured_output_retries', is_error: true },
+        {
+          type: 'result',
+          subtype: 'error_max_structured_output_retries',
+          is_error: true,
+        },
         run
       )
     );
@@ -162,7 +215,10 @@ describe('interpretClaudeResult', () => {
 
   it('maps error_max_turns to a bad response', () => {
     const error = hostError(() =>
-      interpretClaudeResult({ type: 'result', subtype: 'error_max_turns', is_error: true }, run)
+      interpretClaudeResult(
+        { type: 'result', subtype: 'error_max_turns', is_error: true },
+        run
+      )
     );
     expect(error.code).toBe('bad_output');
   });
@@ -170,7 +226,12 @@ describe('interpretClaudeResult', () => {
   it('classifies login and usage-limit failures', () => {
     const auth = hostError(() =>
       interpretClaudeResult(
-        { type: 'result', subtype: 'success', is_error: true, result: 'Invalid API key · Please run /login' },
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: true,
+          result: 'Invalid API key · Please run /login',
+        },
         run
       )
     );
@@ -178,7 +239,13 @@ describe('interpretClaudeResult', () => {
 
     const byStatus = hostError(() =>
       interpretClaudeResult(
-        { type: 'result', subtype: 'success', is_error: true, api_error_status: 429, result: 'API Error' },
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: true,
+          api_error_status: 429,
+          result: 'API Error',
+        },
         run
       )
     );
@@ -186,7 +253,12 @@ describe('interpretClaudeResult', () => {
 
     const byText = hostError(() =>
       interpretClaudeResult(
-        { type: 'result', subtype: 'success', is_error: true, result: "You've hit your limit · resets 3pm" },
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: true,
+          result: "You've hit your limit · resets 3pm",
+        },
         run
       )
     );
@@ -196,7 +268,13 @@ describe('interpretClaudeResult', () => {
   it('reports other API errors as CLI failures', () => {
     const error = hostError(() =>
       interpretClaudeResult(
-        { type: 'result', subtype: 'success', is_error: true, api_error_status: 529, result: 'Overloaded' },
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: true,
+          api_error_status: 529,
+          result: 'Overloaded',
+        },
         run
       )
     );
@@ -206,9 +284,16 @@ describe('interpretClaudeResult', () => {
 
   it('uses stderr when the CLI exited without a result line', () => {
     expect(
-      hostError(() => interpretClaudeResult(null, { exitCode: 1, stderrTail: 'Not logged in' })).code
+      hostError(() =>
+        interpretClaudeResult(null, {
+          exitCode: 1,
+          stderrTail: 'Not logged in',
+        })
+      ).code
     ).toBe('not_logged_in');
-    const failed = hostError(() => interpretClaudeResult(null, { exitCode: 2, stderrTail: 'segfault' }));
+    const failed = hostError(() =>
+      interpretClaudeResult(null, { exitCode: 2, stderrTail: 'segfault' })
+    );
     expect(failed.code).toBe('cli_failed');
     expect(failed.message).toMatch(/code 2.*segfault/);
   });
@@ -252,7 +337,13 @@ describe('runClaude', () => {
     const signal = new AbortController().signal;
     const result = await runClaude({
       cliPath: '/Users/me/.local/bin/claude',
-      request: { model: 'sonnet', system: 'S', text: 'T', images: [jpeg], schema: SCHEMA },
+      request: {
+        model: 'sonnet',
+        system: 'S',
+        text: 'T',
+        images: [jpeg],
+        schema: SCHEMA,
+      },
       jobDir: '/tmp/acorn-bridge-x',
       env: { HOME: '/Users/me', PATH: '/usr/bin' },
       signal,
@@ -267,6 +358,9 @@ describe('runClaude', () => {
       env: { HOME: '/Users/me', PATH: '/usr/bin' },
       signal,
     });
-    expect(JSON.parse(options.input).message.content.at(-1)).toEqual({ type: 'text', text: 'T' });
+    expect(JSON.parse(options.input).message.content.at(-1)).toEqual({
+      type: 'text',
+      text: 'T',
+    });
   });
 });

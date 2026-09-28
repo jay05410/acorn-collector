@@ -65,11 +65,15 @@ export class JobQueue {
    */
   enqueue(id, task) {
     if (this.#find(id)) {
-      return Promise.reject(new HostError('bad_request', `request ${id} is already pending`));
+      return Promise.reject(
+        new HostError('bad_request', `request ${id} is already pending`)
+      );
     }
     const pending = this.#queued.length + (this.#running ? 1 : 0);
     if (pending >= this.#maxJobs) {
-      return Promise.reject(new HostError('busy', `${pending} jobs are already pending`));
+      return Promise.reject(
+        new HostError('busy', `${pending} jobs are already pending`)
+      );
     }
     return new Promise((resolve, reject) => {
       /** @type {Job<T>} */
@@ -97,12 +101,19 @@ export class JobQueue {
     const index = this.#queued.findIndex((job) => job.id === id);
     if (index >= 0) {
       const [job] = this.#queued.splice(index, 1);
-      if (job) this.#abort(job, new HostError('cancelled', 'cancelled by the extension'));
+      if (job)
+        this.#abort(
+          job,
+          new HostError('cancelled', 'cancelled by the extension')
+        );
       this.#syncHeartbeat();
       return true;
     }
     if (this.#running && !this.#running.settled && this.#running.id === id) {
-      this.#abort(this.#running, new HostError('cancelled', 'cancelled by the extension'));
+      this.#abort(
+        this.#running,
+        new HostError('cancelled', 'cancelled by the extension')
+      );
       this.#syncHeartbeat();
       return true;
     }
@@ -115,7 +126,10 @@ export class JobQueue {
       this.#abort(job, new HostError('cancelled', 'bridge is shutting down'));
     }
     if (this.#running) {
-      this.#abort(this.#running, new HostError('cancelled', 'bridge is shutting down'));
+      this.#abort(
+        this.#running,
+        new HostError('cancelled', 'bridge is shutting down')
+      );
     }
     this.#syncHeartbeat();
   }
@@ -149,7 +163,10 @@ export class JobQueue {
     const timer = setTimeout(() => {
       this.#abort(
         job,
-        new HostError('timeout', `CLI did not finish within ${this.#timeoutMs / 1000} s`)
+        new HostError(
+          'timeout',
+          `CLI did not finish within ${this.#timeoutMs / 1000} s`
+        )
       );
       this.#syncHeartbeat();
     }, this.#timeoutMs);
@@ -190,7 +207,8 @@ export class JobQueue {
 
   #syncHeartbeat() {
     const active =
-      (this.#running !== null && !this.#running.settled) || this.#queued.length > 0;
+      (this.#running !== null && !this.#running.settled) ||
+      this.#queued.length > 0;
     if (active && !this.#heartbeat) {
       this.#heartbeat = setInterval(() => this.#beat(), this.#heartbeatMs);
     } else if (!active && this.#heartbeat) {

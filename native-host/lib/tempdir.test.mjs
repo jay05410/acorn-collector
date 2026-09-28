@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -44,7 +52,10 @@ describe('sweepStaleJobDirs', () => {
     await utimes(unrelated, past, past);
 
     expect(await sweepStaleJobDirs({ root, now })).toBe(1);
-    expect((await readdir(root)).sort()).toEqual([`${JOB_DIR_PREFIX}fresh`, 'acorn-other']);
+    expect((await readdir(root)).sort()).toEqual([
+      `${JOB_DIR_PREFIX}fresh`,
+      'acorn-other',
+    ]);
   });
 
   it('returns 0 when the temp root cannot be read', async () => {

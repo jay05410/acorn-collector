@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { collectStatus, environmentWarnings } from './status.mjs';
 
-const cliPaths = { claude: '/Users/me/.local/bin/claude', codex: '/opt/homebrew/bin/codex' };
+const cliPaths = {
+  claude: '/Users/me/.local/bin/claude',
+  codex: '/opt/homebrew/bin/codex',
+};
 
 describe('collectStatus', () => {
   it('reports login state for each installed CLI', async () => {
@@ -48,11 +51,15 @@ describe('collectStatus', () => {
     });
     expect(JSON.stringify(status)).not.toContain('someone@example.com');
 
-    const claudeCall = run.mock.calls.find(([options]) => options.command === cliPaths.claude)[0];
+    const claudeCall = run.mock.calls.find(
+      ([options]) => options.command === cliPaths.claude
+    )[0];
     expect(claudeCall.args).toEqual(['auth', 'status']);
     expect(claudeCall.env).not.toHaveProperty('ANTHROPIC_API_KEY');
     expect(claudeCall.signal).toBeInstanceOf(AbortSignal);
-    const codexCall = run.mock.calls.find(([options]) => options.command === cliPaths.codex)[0];
+    const codexCall = run.mock.calls.find(
+      ([options]) => options.command === cliPaths.codex
+    )[0];
     expect(codexCall.args).toEqual(['login', 'status']);
   });
 
@@ -65,8 +72,14 @@ describe('collectStatus', () => {
       run,
       isExecutable: async () => false,
     });
-    expect(status.targets.claude).toMatchObject({ installed: false, loggedIn: false });
-    expect(status.targets.codex).toMatchObject({ installed: false, loggedIn: false });
+    expect(status.targets.claude).toMatchObject({
+      installed: false,
+      loggedIn: false,
+    });
+    expect(status.targets.codex).toMatchObject({
+      installed: false,
+      loggedIn: false,
+    });
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -95,7 +108,9 @@ describe('environmentWarnings', () => {
     expect(environmentWarnings('claude', { ANTHROPIC_API_KEY: 'x' })).toEqual([
       'anthropic_api_key_ignored',
     ]);
-    expect(environmentWarnings('codex', { ANTHROPIC_API_KEY: 'x' })).toEqual([]);
+    expect(environmentWarnings('codex', { ANTHROPIC_API_KEY: 'x' })).toEqual(
+      []
+    );
     expect(environmentWarnings('claude', {})).toEqual([]);
   });
 });

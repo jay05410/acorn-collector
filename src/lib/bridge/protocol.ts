@@ -112,10 +112,14 @@ export function isBridgeResponse(value: unknown): value is BridgeResponse {
 }
 
 function isOptionalCount(value: unknown): boolean {
-  return value === undefined || (typeof value === 'number' && Number.isFinite(value));
+  return (
+    value === undefined || (typeof value === 'number' && Number.isFinite(value))
+  );
 }
 
-export function isBridgeAnalyzeResult(value: unknown): value is BridgeAnalyzeResult {
+export function isBridgeAnalyzeResult(
+  value: unknown
+): value is BridgeAnalyzeResult {
   if (!isRecord(value) || !isRecord(value.output)) return false;
   if (typeof value.model !== 'string' && value.model !== null) return false;
   if (value.usage === null) return true;
@@ -132,7 +136,8 @@ function isTargetStatus(value: unknown): value is BridgeTargetStatus {
     typeof value.installed === 'boolean' &&
     typeof value.loggedIn === 'boolean' &&
     (typeof value.authMethod === 'string' || value.authMethod === null) &&
-    (typeof value.subscriptionType === 'string' || value.subscriptionType === null) &&
+    (typeof value.subscriptionType === 'string' ||
+      value.subscriptionType === null) &&
     Array.isArray(value.warnings) &&
     value.warnings.every((warning) => typeof warning === 'string')
   );

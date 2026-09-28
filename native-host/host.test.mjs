@@ -3,7 +3,14 @@
  * as the first argument, framed JSON over stdio.
  */
 import { spawn } from 'node:child_process';
-import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +19,9 @@ import { FrameDecoder, encodeFrame } from './protocol.mjs';
 
 const HOST = fileURLToPath(new URL('./host.mjs', import.meta.url));
 const ORIGIN = `chrome-extension://${'p'.repeat(32)}/`;
-const JPEG_B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString('base64');
+const JPEG_B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString(
+  'base64'
+);
 
 /** Stands in for `claude`: echoes what it received as structured output. */
 const FAKE_CLAUDE = `#!/usr/bin/env node
@@ -41,7 +50,10 @@ afterEach(async () => {
 
 async function writeConfig(cliPaths = { claude: null, codex: null }) {
   const file = join(dir, 'config.json');
-  await writeFile(file, JSON.stringify({ version: 1, allowedOrigins: [ORIGIN], cliPaths }));
+  await writeFile(
+    file,
+    JSON.stringify({ version: 1, allowedOrigins: [ORIGIN], cliPaths })
+  );
   return file;
 }
 
@@ -64,7 +76,9 @@ function startHost(origin, configFile) {
       for (const waiter of waiters.splice(0)) waiter();
     }
   });
-  const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+  const exited = new Promise((resolve) =>
+    child.once('exit', (code) => resolve(code))
+  );
   return {
     child,
     messages,
@@ -87,13 +101,20 @@ describe('host.mjs', () => {
   it('answers ping and exits cleanly when stdin closes', async () => {
     const host = startHost(ORIGIN, await writeConfig());
     host.send({ id: 'p1', op: 'ping' });
-    expect(await host.final('p1')).toEqual({ id: 'p1', status: 'ok', result: { protocol: 1 } });
+    expect(await host.final('p1')).toEqual({
+      id: 'p1',
+      status: 'ok',
+      result: { protocol: 1 },
+    });
     host.child.stdin.end();
     expect(await host.exited).toBe(0);
   });
 
   it('refuses an origin that is not allowlisted, writing nothing to stdout', async () => {
-    const host = startHost(`chrome-extension://${'a'.repeat(32)}/`, await writeConfig());
+    const host = startHost(
+      `chrome-extension://${'a'.repeat(32)}/`,
+      await writeConfig()
+    );
     host.send({ id: 'p1', op: 'ping' });
     expect(await host.exited).toBe(1);
     expect(host.messages).toEqual([]);
@@ -104,7 +125,10 @@ describe('host.mjs', () => {
     const fake = join(dir, 'claude');
     await writeFile(fake, FAKE_CLAUDE);
     await chmod(fake, 0o755);
-    const host = startHost(ORIGIN, await writeConfig({ claude: fake, codex: null }));
+    const host = startHost(
+      ORIGIN,
+      await writeConfig({ claude: fake, codex: null })
+    );
 
     host.send({
       id: 'a1',
@@ -122,7 +146,11 @@ describe('host.mjs', () => {
       id: 'a1',
       status: 'ok',
       result: {
-        output: { blocks: ['image', 'text'], apiKey: null, args: ['--safe-mode'] },
+        output: {
+          blocks: ['image', 'text'],
+          apiKey: null,
+          args: ['--safe-mode'],
+        },
         model: 'fake-model',
         usage: null,
       },
@@ -136,7 +164,8 @@ describe('host.mjs', () => {
     const runtime = ['host.mjs', 'protocol.mjs'];
     for (const sub of ['lib', 'cli']) {
       for (const name of await readdir(join(root, sub))) {
-        if (name.endsWith('.mjs') && !name.endsWith('.test.mjs')) runtime.push(`${sub}/${name}`);
+        if (name.endsWith('.mjs') && !name.endsWith('.test.mjs'))
+          runtime.push(`${sub}/${name}`);
       }
     }
     for (const file of runtime) {

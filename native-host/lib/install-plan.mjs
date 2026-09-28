@@ -12,7 +12,8 @@
 import path from 'node:path';
 
 export const HOST_NAME = 'com.acorn_collector.bridge';
-export const HOST_DESCRIPTION = 'Acorn Collector CLI bridge (Claude Code / Codex)';
+export const HOST_DESCRIPTION =
+  'Acorn Collector CLI bridge (Claude Code / Codex)';
 export const INSTALL_DIR_NAME = 'acorn-collector-bridge';
 const EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
 
@@ -68,9 +69,15 @@ export function installDir({ platform, home, env }) {
     return p.join(home, 'Library', 'Application Support', INSTALL_DIR_NAME);
   }
   if (platform === 'linux') {
-    return p.join(env.XDG_DATA_HOME || p.join(home, '.local', 'share'), INSTALL_DIR_NAME);
+    return p.join(
+      env.XDG_DATA_HOME || p.join(home, '.local', 'share'),
+      INSTALL_DIR_NAME
+    );
   }
-  return p.join(env.LOCALAPPDATA || p.join(home, 'AppData', 'Local'), INSTALL_DIR_NAME);
+  return p.join(
+    env.LOCALAPPDATA || p.join(home, 'AppData', 'Local'),
+    INSTALL_DIR_NAME
+  );
 }
 
 /**
@@ -117,8 +124,14 @@ export function manifestLocations({ platform, home, env }) {
 
 /** HKCU keys whose default value points at the manifest (Windows). */
 export const WINDOWS_REGISTRY_KEYS = [
-  { browser: 'Google Chrome', key: `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}` },
-  { browser: 'Microsoft Edge', key: `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}` },
+  {
+    browser: 'Google Chrome',
+    key: `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
+  },
+  {
+    browser: 'Microsoft Edge',
+    key: `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`,
+  },
 ];
 
 /**
@@ -196,7 +209,8 @@ export function pickWindowsExecutable(whereOutput) {
  */
 export function isRuntimeFile(relativePath) {
   if (relativePath === 'package.json') return true;
-  if (!relativePath.endsWith('.mjs') || relativePath.endsWith('.test.mjs')) return false;
+  if (!relativePath.endsWith('.mjs') || relativePath.endsWith('.test.mjs'))
+    return false;
   return !relativePath.startsWith('scripts/');
 }
 
@@ -216,10 +230,19 @@ export function isRuntimeFile(relativePath) {
  * @returns {Action[]}
  */
 export function planInstall(input) {
-  const { context, sourceDir, sourceFiles, nodePath, cliPaths, extensionIds, existingRoots } = input;
+  const {
+    context,
+    sourceDir,
+    sourceFiles,
+    nodePath,
+    cliPaths,
+    extensionIds,
+    existingRoots,
+  } = input;
   const p = pathFor(context.platform);
   const origins = [...new Set(extensionIds)].map(extensionOrigin);
-  if (origins.length === 0) throw new Error('at least one --extension-id is required');
+  if (origins.length === 0)
+    throw new Error('at least one --extension-id is required');
 
   const dir = installDir(context);
   /** @type {Action[]} */
@@ -253,7 +276,12 @@ export function planInstall(input) {
   const manifest = `${JSON.stringify(buildManifest({ wrapperPath, origins }), null, 2)}\n`;
   if (context.platform === 'win32') {
     const manifestPath = p.join(dir, `${HOST_NAME}.json`);
-    actions.push({ kind: 'write', path: manifestPath, content: manifest, mode: 0o644 });
+    actions.push({
+      kind: 'write',
+      path: manifestPath,
+      content: manifest,
+      mode: 0o644,
+    });
     for (const { key } of WINDOWS_REGISTRY_KEYS) {
       actions.push({ kind: 'reg-add', key, value: manifestPath });
     }
@@ -262,7 +290,12 @@ export function planInstall(input) {
       if (!existingRoots.has(location.root)) continue;
       actions.push(
         { kind: 'mkdir', path: p.dirname(location.manifestPath) },
-        { kind: 'write', path: location.manifestPath, content: manifest, mode: 0o644 }
+        {
+          kind: 'write',
+          path: location.manifestPath,
+          content: manifest,
+          mode: 0o644,
+        }
       );
     }
   }
@@ -279,7 +312,8 @@ export function planUninstall(context) {
   /** @type {Action[]} */
   const actions = [];
   if (context.platform === 'win32') {
-    for (const { key } of WINDOWS_REGISTRY_KEYS) actions.push({ kind: 'reg-delete', key });
+    for (const { key } of WINDOWS_REGISTRY_KEYS)
+      actions.push({ kind: 'reg-delete', key });
   } else {
     for (const location of manifestLocations(context)) {
       actions.push({ kind: 'remove', path: location.manifestPath });

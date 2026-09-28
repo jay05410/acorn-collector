@@ -39,7 +39,10 @@ function send(message) {
     frame = encodeFrame({
       id: message.id ?? null,
       status: 'error',
-      error: { code: 'bad_output', message: 'response exceeds the 1 MB native messaging limit' },
+      error: {
+        code: 'bad_output',
+        message: 'response exceeds the 1 MB native messaging limit',
+      },
     });
   }
   process.stdout.write(frame);
@@ -76,10 +79,17 @@ async function main() {
         env: process.env,
         platform,
         run: runCli,
-        debug: DEBUG ? (line) => log('claude:', line.slice(0, 4000)) : undefined,
+        debug: DEBUG
+          ? (line) => log('claude:', line.slice(0, 4000))
+          : undefined,
       }),
     status: () =>
-      collectStatus({ cliPaths: config.cliPaths, env: process.env, platform, run: runCli }),
+      collectStatus({
+        cliPaths: config.cliPaths,
+        env: process.env,
+        platform,
+        run: runCli,
+      }),
   });
 
   let closing = false;

@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,29 +65,43 @@ describe('buildCodexArgs', () => {
 
 describe('buildCodexPrompt', () => {
   it('leads with the instructions', () => {
-    expect(buildCodexPrompt({ system: ' Rules. ', text: 'Post text' })).toBe('Rules.\n\nPost text');
-    expect(buildCodexPrompt({ system: '', text: 'Only text' })).toBe('Only text');
+    expect(buildCodexPrompt({ system: ' Rules. ', text: 'Post text' })).toBe(
+      'Rules.\n\nPost text'
+    );
+    expect(buildCodexPrompt({ system: '', text: 'Only text' })).toBe(
+      'Only text'
+    );
   });
 });
 
 describe('parseCodexOutput', () => {
   it('parses a JSON object, with or without a code fence', () => {
     expect(parseCodexOutput('{"items":[]}\n')).toEqual({ items: [] });
-    expect(parseCodexOutput('```json\n{"items":[1]}\n```')).toEqual({ items: [1] });
+    expect(parseCodexOutput('```json\n{"items":[1]}\n```')).toEqual({
+      items: [1],
+    });
   });
 
   it('rejects empty, non-JSON and non-object output', () => {
     for (const content of ['', '   ', 'Here you go', '[1,2]', '"text"']) {
-      expect(() => parseCodexOutput(content)).toThrow(expect.objectContaining({ code: 'bad_output' }));
+      expect(() => parseCodexOutput(content)).toThrow(
+        expect.objectContaining({ code: 'bad_output' })
+      );
     }
   });
 });
 
 describe('classifyCodexFailure', () => {
   it('recognizes login and rate-limit failures', () => {
-    expect(classifyCodexFailure(1, 'Error: Not logged in. Run `codex login`').code).toBe('not_logged_in');
-    expect(classifyCodexFailure(1, 'unexpected status 401 Unauthorized').code).toBe('not_logged_in');
-    expect(classifyCodexFailure(1, 'stream error: 429 Too Many Requests').code).toBe('rate_limited');
+    expect(
+      classifyCodexFailure(1, 'Error: Not logged in. Run `codex login`').code
+    ).toBe('not_logged_in');
+    expect(
+      classifyCodexFailure(1, 'unexpected status 401 Unauthorized').code
+    ).toBe('not_logged_in');
+    expect(
+      classifyCodexFailure(1, 'stream error: 429 Too Many Requests').code
+    ).toBe('rate_limited');
   });
 
   it('falls back to a CLI failure with the stderr tail', () => {
@@ -110,7 +131,14 @@ describe('runCodex', () => {
     model: '',
     system: 'Rules.',
     text: 'Post',
-    images: [{ mimeType: 'image/png', extension: 'png', base64: 'AA==', bytes: Buffer.from([1, 2]) }],
+    images: [
+      {
+        mimeType: 'image/png',
+        extension: 'png',
+        base64: 'AA==',
+        bytes: Buffer.from([1, 2]),
+      },
+    ],
     schema: { type: 'object' },
   };
 
@@ -128,7 +156,11 @@ describe('runCodex', () => {
       signal: new AbortController().signal,
       run,
     });
-    expect(result).toEqual({ output: { items: [{ name: 'x' }] }, model: null, usage: null });
+    expect(result).toEqual({
+      output: { items: [{ name: 'x' }] },
+      model: null,
+      usage: null,
+    });
 
     const options = run.mock.calls[0][0];
     expect(options.input).toBe('Rules.\n\nPost');
@@ -136,24 +168,49 @@ describe('runCodex', () => {
     expect(options.args).toContain('image-1.png');
     const schema = await readFile(join(jobDir, 'schema.json'), 'utf8');
     expect(JSON.parse(schema)).toEqual({ type: 'object' });
-    expect(await readFile(join(jobDir, 'image-1.png'))).toEqual(Buffer.from([1, 2]));
+    expect(await readFile(join(jobDir, 'image-1.png'))).toEqual(
+      Buffer.from([1, 2])
+    );
     if (process.platform !== 'win32') {
-      expect((await stat(join(jobDir, 'image-1.png'))).mode & 0o777).toBe(0o600);
+      expect((await stat(join(jobDir, 'image-1.png'))).mode & 0o777).toBe(
+        0o600
+      );
     }
   });
 
   it('classifies a non-zero exit', async () => {
-    const run = async () => ({ exitCode: 1, stdout: '', stderrTail: 'Not logged in' });
+    const run = async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderrTail: 'Not logged in',
+    });
     await expect(
-      runCodex({ cliPath: 'codex', request, jobDir, env: {}, signal: new AbortController().signal, run })
+      runCodex({
+        cliPath: 'codex',
+        request,
+        jobDir,
+        env: {},
+        signal: new AbortController().signal,
+        run,
+      })
     ).rejects.toMatchObject({ code: 'not_logged_in' });
   });
 
   it('fails when codex exits cleanly without an output file', async () => {
     const run = async () => ({ exitCode: 0, stdout: '', stderrTail: '' });
     await expect(
-      runCodex({ cliPath: 'codex', request, jobDir, env: {}, signal: new AbortController().signal, run })
+      runCodex({
+        cliPath: 'codex',
+        request,
+        jobDir,
+        env: {},
+        signal: new AbortController().signal,
+        run,
+      })
     ).rejects.toMatchObject({ code: 'bad_output' });
-    expect((await readdir(jobDir)).sort()).toEqual(['image-1.png', 'schema.json']);
+    expect((await readdir(jobDir)).sort()).toEqual([
+      'image-1.png',
+      'schema.json',
+    ]);
   });
 });

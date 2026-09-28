@@ -30,7 +30,13 @@ const RATE_LIMITED = /\b429\b|rate limit|usage limit/i;
  * @param {string[]} options.imageFiles Names relative to workDir (no commas).
  * @returns {string[]}
  */
-export function buildCodexArgs({ model, workDir, schemaFile, outputFile, imageFiles }) {
+export function buildCodexArgs({
+  model,
+  workDir,
+  schemaFile,
+  outputFile,
+  imageFiles,
+}) {
   const args = [
     'exec',
     '--ephemeral',
@@ -69,7 +75,8 @@ export function parseCodexOutput(content) {
   const trimmed = content.trim();
   const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n```$/.exec(trimmed);
   const body = fenced?.[1] ?? trimmed;
-  if (!body) throw new HostError('bad_output', 'codex wrote an empty final message');
+  if (!body)
+    throw new HostError('bad_output', 'codex wrote an empty final message');
   /** @type {unknown} */
   let parsed;
   try {
@@ -78,7 +85,10 @@ export function parseCodexOutput(content) {
     throw new HostError('bad_output', 'codex final message is not JSON');
   }
   if (!isRecord(parsed)) {
-    throw new HostError('bad_output', 'codex final message is not a JSON object');
+    throw new HostError(
+      'bad_output',
+      'codex final message is not a JSON object'
+    );
   }
   return parsed;
 }
@@ -91,14 +101,20 @@ export function parseCodexOutput(content) {
 export function classifyCodexFailure(exitCode, stderrTail) {
   const detail = stderrTail.trim();
   if (AUTH_FAILURE.test(detail)) {
-    return new HostError('not_logged_in', 'Codex is not logged in; run `codex login`');
+    return new HostError(
+      'not_logged_in',
+      'Codex is not logged in; run `codex login`'
+    );
   }
   if (RATE_LIMITED.test(detail)) {
     return new HostError('rate_limited', truncate(detail, 500));
   }
   return new HostError(
     'cli_failed',
-    truncate(`codex exited with code ${exitCode}${detail ? `: ${detail}` : ''}`, 1000)
+    truncate(
+      `codex exited with code ${exitCode}${detail ? `: ${detail}` : ''}`,
+      1000
+    )
   );
 }
 
@@ -153,7 +169,14 @@ export async function runCodex({ cliPath, request, jobDir, env, signal, run }) {
   try {
     content = await readFile(outputFile, 'utf8');
   } catch {
-    throw new HostError('bad_output', 'codex exited without writing a final message');
+    throw new HostError(
+      'bad_output',
+      'codex exited without writing a final message'
+    );
   }
-  return { output: parseCodexOutput(content), model: request.model || null, usage: null };
+  return {
+    output: parseCodexOutput(content),
+    model: request.model || null,
+    usage: null,
+  };
 }

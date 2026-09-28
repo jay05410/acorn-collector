@@ -8,6 +8,11 @@ import { createHash } from 'node:crypto';
  * @returns {string}
  */
 export function extensionIdFromPublicKey(publicKeyDer) {
-  const hex = createHash('sha256').update(publicKeyDer).digest('hex').slice(0, 32);
-  return Array.from(hex, (digit) => String.fromCharCode(97 + parseInt(digit, 16))).join('');
+  const hex = createHash('sha256')
+    .update(publicKeyDer)
+    .digest('hex')
+    .slice(0, 32);
+  return Array.from(hex, (digit) =>
+    String.fromCharCode(97 + parseInt(digit, 16))
+  ).join('');
 }

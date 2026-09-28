@@ -25,10 +25,18 @@ const win = {
 
 describe('installDir', () => {
   it('uses a per-user app data directory on each platform', () => {
-    expect(installDir(mac)).toBe('/Users/me/Library/Application Support/acorn-collector-bridge');
-    expect(installDir(linux)).toBe('/home/me/.local/share/acorn-collector-bridge');
-    expect(installDir({ ...linux, env: { XDG_DATA_HOME: '/data' } })).toBe('/data/acorn-collector-bridge');
-    expect(installDir(win)).toBe('C:\\Users\\me\\AppData\\Local\\acorn-collector-bridge');
+    expect(installDir(mac)).toBe(
+      '/Users/me/Library/Application Support/acorn-collector-bridge'
+    );
+    expect(installDir(linux)).toBe(
+      '/home/me/.local/share/acorn-collector-bridge'
+    );
+    expect(installDir({ ...linux, env: { XDG_DATA_HOME: '/data' } })).toBe(
+      '/data/acorn-collector-bridge'
+    );
+    expect(installDir(win)).toBe(
+      'C:\\Users\\me\\AppData\\Local\\acorn-collector-bridge'
+    );
   });
 });
 
@@ -36,9 +44,15 @@ describe('manifestLocations', () => {
   it('lists the per-user NativeMessagingHosts dirs on macOS', () => {
     const base = '/Users/me/Library/Application Support';
     const file = `NativeMessagingHosts/${HOST_NAME}.json`;
-    expect(manifestLocations(mac).map((l) => [l.browser, l.manifestPath, l.verified])).toEqual([
+    expect(
+      manifestLocations(mac).map((l) => [l.browser, l.manifestPath, l.verified])
+    ).toEqual([
       ['Google Chrome', `${base}/Google/Chrome/${file}`, true],
-      ['Google Chrome for Testing', `${base}/Google/ChromeForTesting/${file}`, true],
+      [
+        'Google Chrome for Testing',
+        `${base}/Google/ChromeForTesting/${file}`,
+        true,
+      ],
       ['Chromium', `${base}/Chromium/${file}`, true],
       ['Microsoft Edge', `${base}/Microsoft Edge/${file}`, true],
       ['Brave', `${base}/BraveSoftware/Brave-Browser/${file}`, false],
@@ -53,9 +67,10 @@ describe('manifestLocations', () => {
       '/home/me/.config/microsoft-edge',
       '/home/me/.config/BraveSoftware/Brave-Browser',
     ]);
-    expect(manifestLocations({ ...linux, env: { XDG_CONFIG_HOME: '/cfg' } })[0].manifestPath).toBe(
-      `/cfg/google-chrome/NativeMessagingHosts/${HOST_NAME}.json`
-    );
+    expect(
+      manifestLocations({ ...linux, env: { XDG_CONFIG_HOME: '/cfg' } })[0]
+        .manifestPath
+    ).toBe(`/cfg/google-chrome/NativeMessagingHosts/${HOST_NAME}.json`);
   });
 
   it('has no file locations on Windows (registry instead)', () => {
@@ -74,7 +89,9 @@ describe('extensionOrigin', () => {
 
 describe('buildManifest', () => {
   it('follows the Chrome host manifest format', () => {
-    expect(buildManifest({ wrapperPath: '/x/acorn-bridge.sh', origins: [ORIGIN] })).toEqual({
+    expect(
+      buildManifest({ wrapperPath: '/x/acorn-bridge.sh', origins: [ORIGIN] })
+    ).toEqual({
       name: 'com.acorn_collector.bridge',
       description: expect.any(String),
       path: '/x/acorn-bridge.sh',
@@ -90,7 +107,8 @@ describe('buildWrapper', () => {
     const { fileName, content } = buildWrapper({
       platform: 'darwin',
       nodePath: '/opt/homebrew/bin/node',
-      hostPath: "/Users/o'neil/Library/Application Support/acorn-collector-bridge/host.mjs",
+      hostPath:
+        "/Users/o'neil/Library/Application Support/acorn-collector-bridge/host.mjs",
     });
     expect(fileName).toBe('acorn-bridge.sh');
     expect(content.startsWith('#!/bin/sh\n')).toBe(true);
@@ -120,7 +138,9 @@ describe('buildWrapper', () => {
 describe('pickWindowsExecutable', () => {
   it('prefers a native .exe over npm .cmd shims', () => {
     expect(
-      pickWindowsExecutable('C:\\npm\\claude\r\nC:\\npm\\claude.cmd\r\nC:\\Users\\me\\.local\\bin\\claude.exe\r\n')
+      pickWindowsExecutable(
+        'C:\\npm\\claude\r\nC:\\npm\\claude.cmd\r\nC:\\Users\\me\\.local\\bin\\claude.exe\r\n'
+      )
     ).toBe('C:\\Users\\me\\.local\\bin\\claude.exe');
     expect(pickWindowsExecutable('C:\\npm\\codex.cmd\r\n')).toBeNull();
   });
@@ -133,7 +153,9 @@ describe('isRuntimeFile', () => {
     expect(isRuntimeFile('package.json')).toBe(true);
     expect(isRuntimeFile('lib/queue.test.mjs')).toBe(false);
     expect(isRuntimeFile('scripts/e2e.mjs')).toBe(false);
-    expect(isRuntimeFile('cli/fixtures/claude-stream-success.jsonl')).toBe(false);
+    expect(isRuntimeFile('cli/fixtures/claude-stream-success.jsonl')).toBe(
+      false
+    );
     expect(isRuntimeFile('README.md')).toBe(false);
     expect(isRuntimeFile('config.json')).toBe(false);
   });
@@ -142,7 +164,13 @@ describe('isRuntimeFile', () => {
 describe('planInstall', () => {
   const base = {
     sourceDir: '/src/native-host',
-    sourceFiles: ['host.mjs', 'lib/queue.mjs', 'lib/queue.test.mjs', 'scripts/e2e.mjs', 'package.json'],
+    sourceFiles: [
+      'host.mjs',
+      'lib/queue.mjs',
+      'lib/queue.test.mjs',
+      'scripts/e2e.mjs',
+      'package.json',
+    ],
     nodePath: '/opt/homebrew/bin/node',
     cliPaths: { claude: '/Users/me/.local/bin/claude', codex: null },
     extensionIds: [ID, ID],
@@ -151,7 +179,11 @@ describe('planInstall', () => {
   it('copies the runtime, writes config, launcher and manifests for detected browsers', () => {
     const dir = '/Users/me/Library/Application Support/acorn-collector-bridge';
     const chrome = '/Users/me/Library/Application Support/Google/Chrome';
-    const actions = planInstall({ ...base, context: mac, existingRoots: new Set([chrome]) });
+    const actions = planInstall({
+      ...base,
+      context: mac,
+      existingRoots: new Set([chrome]),
+    });
 
     expect(actions.filter((a) => a.kind === 'copy').map((a) => a.to)).toEqual([
       `${dir}/host.mjs`,
@@ -173,7 +205,10 @@ describe('planInstall', () => {
       path: `${dir}/acorn-bridge.sh`,
       allowed_origins: [ORIGIN],
     });
-    expect(actions).toContainEqual({ kind: 'mkdir', path: `${chrome}/NativeMessagingHosts` });
+    expect(actions).toContainEqual({
+      kind: 'mkdir',
+      path: `${chrome}/NativeMessagingHosts`,
+    });
   });
 
   it('does not copy files onto themselves when run from the install dir', () => {
@@ -207,16 +242,28 @@ describe('planInstall', () => {
         value: `${dir}\\${HOST_NAME}.json`,
       },
     ]);
-    const manifest = actions.find((a) => a.kind === 'write' && a.path.endsWith(`${HOST_NAME}.json`));
+    const manifest = actions.find(
+      (a) => a.kind === 'write' && a.path.endsWith(`${HOST_NAME}.json`)
+    );
     expect(JSON.parse(manifest.content).path).toBe(`${dir}\\acorn-bridge.bat`);
   });
 
   it('requires at least one valid extension ID', () => {
-    expect(() => planInstall({ ...base, extensionIds: [], context: mac, existingRoots: new Set() })).toThrow(
-      /extension-id/
-    );
     expect(() =>
-      planInstall({ ...base, extensionIds: ['nope'], context: mac, existingRoots: new Set() })
+      planInstall({
+        ...base,
+        extensionIds: [],
+        context: mac,
+        existingRoots: new Set(),
+      })
+    ).toThrow(/extension-id/);
+    expect(() =>
+      planInstall({
+        ...base,
+        extensionIds: ['nope'],
+        context: mac,
+        existingRoots: new Set(),
+      })
     ).toThrow(/not an extension ID/);
   });
 });
@@ -229,6 +276,10 @@ describe('planUninstall', () => {
   });
 
   it('deletes the registry keys on Windows', () => {
-    expect(planUninstall(win).map((a) => a.kind)).toEqual(['reg-delete', 'reg-delete', 'remove']);
+    expect(planUninstall(win).map((a) => a.kind)).toEqual([
+      'reg-delete',
+      'reg-delete',
+      'remove',
+    ]);
   });
 });

@@ -54,7 +54,11 @@ export async function collectStatus(deps) {
     targetStatus('claude', deps),
     targetStatus('codex', deps),
   ]);
-  return { protocol: PROTOCOL_VERSION, platform: deps.platform, targets: { claude, codex } };
+  return {
+    protocol: PROTOCOL_VERSION,
+    platform: deps.platform,
+    targets: { claude, codex },
+  };
 }
 
 /**
@@ -65,7 +69,9 @@ export async function collectStatus(deps) {
  * @returns {string[]}
  */
 export function environmentWarnings(target, env) {
-  return target === 'claude' && env.ANTHROPIC_API_KEY ? ['anthropic_api_key_ignored'] : [];
+  return target === 'claude' && env.ANTHROPIC_API_KEY
+    ? ['anthropic_api_key_ignored']
+    : [];
 }
 
 /**
@@ -77,7 +83,13 @@ async function targetStatus(target, deps) {
   const { cliPaths, env, platform, run, isExecutable = canExecute } = deps;
   const warnings = environmentWarnings(target, env);
   const cliPath = cliPaths[target];
-  const missing = { installed: false, loggedIn: false, authMethod: null, subscriptionType: null, warnings };
+  const missing = {
+    installed: false,
+    loggedIn: false,
+    authMethod: null,
+    subscriptionType: null,
+    warnings,
+  };
   if (!cliPath || !(await isExecutable(cliPath))) return missing;
 
   try {
@@ -97,14 +109,21 @@ async function targetStatus(target, deps) {
         : parseCodexLoginStatus(outcome.exitCode);
     return { installed: true, ...auth, warnings };
   } catch {
-    return { ...missing, installed: true, warnings: [...warnings, 'status_check_failed'] };
+    return {
+      ...missing,
+      installed: true,
+      warnings: [...warnings, 'status_check_failed'],
+    };
   }
 }
 
 /** @param {string} path */
 async function canExecute(path) {
   try {
-    await access(path, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
+    await access(
+      path,
+      process.platform === 'win32' ? constants.F_OK : constants.X_OK
+    );
     return true;
   } catch {
     return false;

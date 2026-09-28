@@ -1,15 +1,37 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AIError, type ExtractionRequest, type WireExtraction } from '@/lib/ai/types';
+import {
+  AIError,
+  type ExtractionRequest,
+  type WireExtraction,
+} from '@/lib/ai/types';
 import type { BridgeClient } from './client';
 import { createCliProvider, isWireExtraction } from './provider';
 import type { BridgeAnalyzeResult, BridgeStatus, CliTarget } from './protocol';
 
 const WIRE: WireExtraction = {
-  booth: { number: '東ホ-12a', circle: '星屑工房', event: null, zone: null, mailOrder: false },
+  booth: {
+    number: '東ホ-12a',
+    circle: '星屑工房',
+    event: null,
+    zone: null,
+    mailOrder: false,
+  },
   currency: 'JPY',
   items: [
-    { name: '아크릴 스탠드', orig: 'アクリルスタンド', price: 1500, cat: 'stand', opts: [] },
-    { name: '캔뱃지', orig: '缶バッジ', price: 400, cat: 'badge', opts: ['A', 'B'] },
+    {
+      name: '아크릴 스탠드',
+      orig: 'アクリルスタンド',
+      price: 1500,
+      cat: 'stand',
+      opts: [],
+    },
+    {
+      name: '캔뱃지',
+      orig: '缶バッジ',
+      price: 400,
+      cat: 'badge',
+      opts: ['A', 'B'],
+    },
   ],
 };
 
@@ -31,7 +53,9 @@ const REQ: ExtractionRequest = {
 
 const SCHEMA = { type: 'object', title: 'wire' };
 
-function status(claude: Partial<BridgeStatus['targets']['claude']>): BridgeStatus {
+function status(
+  claude: Partial<BridgeStatus['targets']['claude']>
+): BridgeStatus {
   const base = {
     installed: true,
     loggedIn: true,
@@ -42,11 +66,17 @@ function status(claude: Partial<BridgeStatus['targets']['claude']>): BridgeStatu
   return {
     protocol: 1,
     platform: 'darwin',
-    targets: { claude: { ...base, ...claude }, codex: { ...base, installed: false } },
+    targets: {
+      claude: { ...base, ...claude },
+      codex: { ...base, installed: false },
+    },
   };
 }
 
-function setup(target: CliTarget = 'claude', result?: Partial<BridgeAnalyzeResult>) {
+function setup(
+  target: CliTarget = 'claude',
+  result?: Partial<BridgeAnalyzeResult>
+) {
   const client = {
     analyze: vi.fn<BridgeClient['analyze']>().mockResolvedValue({
       output: WIRE as unknown as Record<string, unknown>,
@@ -106,47 +136,71 @@ describe('createCliProvider', () => {
   it('falls back to the default model and the request signal', async () => {
     const { provider, client } = setup('codex', { model: null, usage: null });
     const controller = new AbortController();
-    const raw = await provider.extract({ ...REQ, signal: controller.signal }, {
-      apiKey: '',
+    const raw = await provider.extract(
+      { ...REQ, signal: controller.signal },
+      {
+        apiKey: '',
+        model: '',
+      }
+    );
+    expect(client.analyze.mock.calls[0]?.[0]).toMatchObject({
+      target: 'codex',
       model: '',
     });
-    expect(client.analyze.mock.calls[0]?.[0]).toMatchObject({ target: 'codex', model: '' });
     expect(client.analyze.mock.calls[0]?.[1]).toBe(controller.signal);
     expect(raw).toEqual({ wire: WIRE, model: 'codex-default' });
   });
 
   it('rejects output that does not match WireExtraction', async () => {
     const { provider } = setup('claude', { output: { items: 'none' } });
-    const error = await provider.extract(REQ, { apiKey: '', model: '' }).catch((e: unknown) => e);
+    const error = await provider
+      .extract(REQ, { apiKey: '', model: '' })
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AIError);
-    expect(error).toMatchObject({ code: 'bad_response', message: 'cli_bad_output', provider: 'cli' });
+    expect(error).toMatchObject({
+      code: 'bad_response',
+      message: 'cli_bad_output',
+      provider: 'cli',
+    });
   });
 
   it('propagates bridge errors unchanged', async () => {
     const { provider, client } = setup();
     const failure = new AIError('auth', 'cli_not_logged_in', 'cli');
     client.analyze.mockRejectedValue(failure);
-    await expect(provider.extract(REQ, { apiKey: '', model: '' })).rejects.toBe(failure);
+    await expect(provider.extract(REQ, { apiKey: '', model: '' })).rejects.toBe(
+      failure
+    );
   });
 
   it('testConnection checks the selected CLI is installed and logged in', async () => {
     const { provider, client } = setup();
-    await expect(provider.testConnection({ apiKey: '', model: '' })).resolves.toBeUndefined();
+    await expect(
+      provider.testConnection({ apiKey: '', model: '' })
+    ).resolves.toBeUndefined();
 
     client.status.mockResolvedValue(status({ loggedIn: false }));
-    await expect(provider.testConnection({ apiKey: '', model: '' })).rejects.toMatchObject({
+    await expect(
+      provider.testConnection({ apiKey: '', model: '' })
+    ).rejects.toMatchObject({
       code: 'auth',
       message: 'cli_not_logged_in',
     });
 
-    client.status.mockResolvedValue(status({ installed: false, loggedIn: false }));
-    await expect(provider.testConnection({ apiKey: '', model: '' })).rejects.toMatchObject({
+    client.status.mockResolvedValue(
+      status({ installed: false, loggedIn: false })
+    );
+    await expect(
+      provider.testConnection({ apiKey: '', model: '' })
+    ).rejects.toMatchObject({
       code: 'not_configured',
       message: 'cli_not_installed',
     });
 
     const codex = setup('codex');
-    await expect(codex.provider.testConnection({ apiKey: '', model: '' })).rejects.toMatchObject({
+    await expect(
+      codex.provider.testConnection({ apiKey: '', model: '' })
+    ).rejects.toMatchObject({
       message: 'cli_not_installed',
     });
   });

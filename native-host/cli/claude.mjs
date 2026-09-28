@@ -15,8 +15,10 @@ import { isRecord } from '../lib/validate.mjs';
 /** Structured output needs a tool round-trip, so allow a few turns. */
 export const CLAUDE_MAX_TURNS = 3;
 
-const AUTH_FAILURE = /\b401\b|authentication_error|invalid api key|please run \/login|not logged in|oauth token/i;
-const RATE_LIMITED = /\b429\b|rate_limit|rate limit|usage limit|hit your limit/i;
+const AUTH_FAILURE =
+  /\b401\b|authentication_error|invalid api key|please run \/login|not logged in|oauth token/i;
+const RATE_LIMITED =
+  /\b429\b|rate_limit|rate limit|usage limit|hit your limit/i;
 
 /**
  * @typedef {import('../lib/validate.mjs').AnalyzeRequest} AnalyzeRequest
@@ -80,7 +82,11 @@ export function buildClaudeInput({ text, images }) {
   const content = [
     ...images.map((image) => ({
       type: 'image',
-      source: { type: 'base64', media_type: image.mimeType, data: image.base64 },
+      source: {
+        type: 'base64',
+        media_type: image.mimeType,
+        data: image.base64,
+      },
     })),
     ...(text ? [{ type: 'text', text }] : []),
   ];
@@ -158,11 +164,17 @@ export function interpretClaudeResult(result, { exitCode, stderrTail }) {
   if (!result) {
     const detail = stderrTail.trim();
     if (AUTH_FAILURE.test(detail)) {
-      throw new HostError('not_logged_in', 'Claude Code is not logged in; run `claude` and log in');
+      throw new HostError(
+        'not_logged_in',
+        'Claude Code is not logged in; run `claude` and log in'
+      );
     }
     throw new HostError(
       'cli_failed',
-      truncate(`claude exited with code ${exitCode} without a result${detail ? `: ${detail}` : ''}`, 1000)
+      truncate(
+        `claude exited with code ${exitCode} without a result${detail ? `: ${detail}` : ''}`,
+        1000
+      )
     );
   }
 
@@ -170,28 +182,52 @@ export function interpretClaudeResult(result, { exitCode, stderrTail }) {
   const isError = result.is_error === true;
   if (subtype === 'success' && !isError) {
     if (isRecord(result.structured_output)) {
-      return { output: result.structured_output, usage: readUsage(result.usage) };
+      return {
+        output: result.structured_output,
+        usage: readUsage(result.usage),
+      };
     }
-    throw new HostError('bad_output', 'claude finished without structured_output');
+    throw new HostError(
+      'bad_output',
+      'claude finished without structured_output'
+    );
   }
   if (subtype === 'error_max_structured_output_retries') {
-    throw new HostError('bad_output', 'claude could not produce output matching the schema');
+    throw new HostError(
+      'bad_output',
+      'claude could not produce output matching the schema'
+    );
   }
   if (subtype === 'error_max_turns') {
-    throw new HostError('bad_output', `claude hit the ${CLAUDE_MAX_TURNS}-turn limit`);
+    throw new HostError(
+      'bad_output',
+      `claude hit the ${CLAUDE_MAX_TURNS}-turn limit`
+    );
   }
 
   const detail = typeof result.result === 'string' ? result.result : '';
-  const apiStatus = typeof result.api_error_status === 'number' ? result.api_error_status : null;
+  const apiStatus =
+    typeof result.api_error_status === 'number'
+      ? result.api_error_status
+      : null;
   if (apiStatus === 401 || AUTH_FAILURE.test(detail)) {
-    throw new HostError('not_logged_in', 'Claude Code login is missing or expired; run `claude` and log in');
+    throw new HostError(
+      'not_logged_in',
+      'Claude Code login is missing or expired; run `claude` and log in'
+    );
   }
   if (apiStatus === 429 || RATE_LIMITED.test(detail)) {
-    throw new HostError('rate_limited', truncate(detail || 'Claude usage limit reached', 500));
+    throw new HostError(
+      'rate_limited',
+      truncate(detail || 'Claude usage limit reached', 500)
+    );
   }
   throw new HostError(
     'cli_failed',
-    truncate(`claude reported ${String(subtype)}${detail ? `: ${detail}` : ''}`, 1000)
+    truncate(
+      `claude reported ${String(subtype)}${detail ? `: ${detail}` : ''}`,
+      1000
+    )
   );
 }
 
@@ -203,7 +239,8 @@ export function interpretClaudeResult(result, { exitCode, stderrTail }) {
 function readUsage(usage) {
   if (!isRecord(usage)) return null;
   /** @param {unknown} value */
-  const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  const num = (value) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : 0;
   const input =
     num(usage.input_tokens) +
     num(usage.cache_creation_input_tokens) +
@@ -211,7 +248,8 @@ function readUsage(usage) {
   /** @type {Usage} */
   const out = {};
   if (input > 0) out.inputTokens = input;
-  if (typeof usage.output_tokens === 'number') out.outputTokens = usage.output_tokens;
+  if (typeof usage.output_tokens === 'number')
+    out.outputTokens = usage.output_tokens;
   return out;
 }
 
@@ -233,9 +271,12 @@ export function parseClaudeAuthStatus(stdout, exitCode) {
   const status = isRecord(parsed) ? parsed : {};
   return {
     loggedIn: exitCode === 0 && status.loggedIn !== false,
-    authMethod: typeof status.authMethod === 'string' ? status.authMethod : null,
+    authMethod:
+      typeof status.authMethod === 'string' ? status.authMethod : null,
     subscriptionType:
-      typeof status.subscriptionType === 'string' ? status.subscriptionType : null,
+      typeof status.subscriptionType === 'string'
+        ? status.subscriptionType
+        : null,
   };
 }
 
@@ -256,7 +297,15 @@ export const CLAUDE_STATUS_ARGS = ['auth', 'status'];
  * @param {CliJobContext} context
  * @returns {Promise<CliOutput>}
  */
-export async function runClaude({ cliPath, request, jobDir, env, signal, run, debug }) {
+export async function runClaude({
+  cliPath,
+  request,
+  jobDir,
+  env,
+  signal,
+  run,
+  debug,
+}) {
   const parser = new ClaudeStreamParser(debug);
   const outcome = await run({
     command: cliPath,

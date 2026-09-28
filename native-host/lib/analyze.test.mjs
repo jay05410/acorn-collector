@@ -30,9 +30,17 @@ afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
 
-const deps = (run, cliPaths = { claude: '/Users/me/.local/bin/claude', codex: null }) => ({
+const deps = (
+  run,
+  cliPaths = { claude: '/Users/me/.local/bin/claude', codex: null }
+) => ({
   cliPaths,
-  env: { HOME: '/Users/me', PATH: '/usr/bin', ANTHROPIC_API_KEY: 'sk-ant-x', CLAUDECODE: '1' },
+  env: {
+    HOME: '/Users/me',
+    PATH: '/usr/bin',
+    ANTHROPIC_API_KEY: 'sk-ant-x',
+    CLAUDECODE: '1',
+  },
   platform: 'darwin',
   run,
   tmpRoot,
@@ -47,7 +55,11 @@ describe('runAnalyzeJob', () => {
       options.onStdout(Buffer.from(`${RESULT_LINE}\n`));
       return { exitCode: 0, stdout: '', stderrTail: '' };
     });
-    const result = await runAnalyzeJob(request, new AbortController().signal, deps(run));
+    const result = await runAnalyzeJob(
+      request,
+      new AbortController().signal,
+      deps(run)
+    );
 
     expect(result.output).toEqual({ items: [] });
     const { env, command } = run.mock.calls[0][0];
@@ -60,7 +72,11 @@ describe('runAnalyzeJob', () => {
   });
 
   it('removes the job dir when the CLI fails', async () => {
-    const run = vi.fn(async () => ({ exitCode: 1, stdout: '', stderrTail: 'boom' }));
+    const run = vi.fn(async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderrTail: 'boom',
+    }));
     await expect(
       runAnalyzeJob(request, new AbortController().signal, deps(run))
     ).rejects.toMatchObject({ code: 'cli_failed' });
@@ -70,7 +86,11 @@ describe('runAnalyzeJob', () => {
   it('reports a CLI that was not found at install time', async () => {
     const run = vi.fn();
     await expect(
-      runAnalyzeJob({ ...request, target: 'codex' }, new AbortController().signal, deps(run))
+      runAnalyzeJob(
+        { ...request, target: 'codex' },
+        new AbortController().signal,
+        deps(run)
+      )
     ).rejects.toMatchObject({ code: 'cli_not_found' });
     expect(run).not.toHaveBeenCalled();
   });

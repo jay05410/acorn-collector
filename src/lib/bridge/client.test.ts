@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AIError } from '@/lib/ai/types';
-import { BridgeClient, type BridgePort, type NativeMessagingRuntime } from './client';
-import type { BridgeAnalyzeRequest, BridgeRequest, BridgeStatus } from './protocol';
+import {
+  BridgeClient,
+  type BridgePort,
+  type NativeMessagingRuntime,
+} from './client';
+import type {
+  BridgeAnalyzeRequest,
+  BridgeRequest,
+  BridgeStatus,
+} from './protocol';
 
 class FakePort implements BridgePort {
   posted: BridgeRequest[] = [];
@@ -13,14 +21,20 @@ class FakePort implements BridgePort {
   constructor(private runtime: FakeRuntime) {}
 
   postMessage(message: BridgeRequest): void {
-    if (this.throwOnPost) throw new Error('Attempting to use a disconnected port object');
+    if (this.throwOnPost)
+      throw new Error('Attempting to use a disconnected port object');
     this.posted.push(message);
   }
   disconnect(): void {
     this.disconnected = true;
   }
-  onMessage = { addListener: (cb: (message: unknown) => void) => this.#messageListeners.push(cb) };
-  onDisconnect = { addListener: (cb: () => void) => this.#disconnectListeners.push(cb) };
+  onMessage = {
+    addListener: (cb: (message: unknown) => void) =>
+      this.#messageListeners.push(cb),
+  };
+  onDisconnect = {
+    addListener: (cb: () => void) => this.#disconnectListeners.push(cb),
+  };
 
   /** Simulate a frame from the host. */
   reply(message: unknown): void {
@@ -42,7 +56,8 @@ class FakePort implements BridgePort {
 class FakeRuntime implements NativeMessagingRuntime {
   ports: FakePort[] = [];
   lastError: { message?: string } | undefined;
-  sendNativeMessage = vi.fn<(application: string, message: BridgeRequest) => Promise<unknown>>();
+  sendNativeMessage =
+    vi.fn<(application: string, message: BridgeRequest) => Promise<unknown>>();
 
   connectNative(application: string): FakePort {
     expect(application).toBe('com.acorn_collector.bridge');
@@ -140,7 +155,11 @@ describe('BridgeClient.analyze', () => {
     const [a, b] = runtime.port.posted;
     expect(a?.id).not.toBe(b?.id);
 
-    runtime.port.reply({ id: b?.id, status: 'ok', result: { ...RESULT, model: null } });
+    runtime.port.reply({
+      id: b?.id,
+      status: 'ok',
+      result: { ...RESULT, model: null },
+    });
     runtime.port.reply({ id: a?.id, status: 'ok', result: RESULT });
     await expect(first).resolves.toEqual(RESULT);
     await expect(second).resolves.toMatchObject({ model: null });
@@ -195,13 +214,19 @@ describe('BridgeClient.analyze', () => {
 
     const next = client.analyze(REQUEST);
     expect(runtime.ports).toHaveLength(2);
-    runtime.port.reply({ id: runtime.port.lastPosted.id, status: 'ok', result: RESULT });
+    runtime.port.reply({
+      id: runtime.port.lastPosted.id,
+      status: 'ok',
+      result: RESULT,
+    });
     await expect(next).resolves.toEqual(RESULT);
   });
 
   it('distinguishes a forbidden origin and a host that exited', async () => {
     const forbidden = rejection(client.analyze(REQUEST));
-    runtime.port.drop('Access to the specified native messaging host is forbidden.');
+    runtime.port.drop(
+      'Access to the specified native messaging host is forbidden.'
+    );
     expect((await forbidden).message).toBe('bridge_forbidden');
 
     const exited = rejection(client.analyze(REQUEST));
@@ -216,7 +241,11 @@ describe('BridgeClient.analyze', () => {
     controller.abort();
     const error = await pending;
     expect(error.code).toBe('cancelled');
-    expect(runtime.port.lastPosted).toEqual({ id: `c${id}`, op: 'cancel', targetId: id });
+    expect(runtime.port.lastPosted).toEqual({
+      id: `c${id}`,
+      op: 'cancel',
+      targetId: id,
+    });
     // A late result for the cancelled id is ignored.
     runtime.port.reply({ id, status: 'ok', result: RESULT });
   });
@@ -229,7 +258,11 @@ describe('BridgeClient.analyze', () => {
 
   it('rejects a malformed result as a bad response', async () => {
     const pending = rejection(client.analyze(REQUEST));
-    runtime.port.reply({ id: runtime.port.lastPosted.id, status: 'ok', result: { output: 'x' } });
+    runtime.port.reply({
+      id: runtime.port.lastPosted.id,
+      status: 'ok',
+      result: { output: 'x' },
+    });
     const error = await pending;
     expect(error.code).toBe('bad_response');
     expect(error.message).toBe('bridge_protocol_error');
@@ -257,7 +290,11 @@ describe('BridgeClient.analyze', () => {
 
   it('closes an idle port and dispose rejects pending requests', async () => {
     const first = client.analyze(REQUEST);
-    runtime.port.reply({ id: runtime.port.lastPosted.id, status: 'ok', result: RESULT });
+    runtime.port.reply({
+      id: runtime.port.lastPosted.id,
+      status: 'ok',
+      result: RESULT,
+    });
     await first;
     await vi.advanceTimersByTimeAsync(29_000);
     expect(runtime.port.disconnected).toBe(false);
@@ -279,12 +316,19 @@ describe('BridgeClient.analyze', () => {
 
 describe('BridgeClient.status', () => {
   it('uses a one-shot native message and returns the status', async () => {
-    runtime.sendNativeMessage.mockResolvedValue({ id: 'status', status: 'ok', result: STATUS });
-    await expect(client.status()).resolves.toEqual(STATUS);
-    expect(runtime.sendNativeMessage).toHaveBeenCalledWith('com.acorn_collector.bridge', {
+    runtime.sendNativeMessage.mockResolvedValue({
       id: 'status',
-      op: 'status',
+      status: 'ok',
+      result: STATUS,
     });
+    await expect(client.status()).resolves.toEqual(STATUS);
+    expect(runtime.sendNativeMessage).toHaveBeenCalledWith(
+      'com.acorn_collector.bridge',
+      {
+        id: 'status',
+        op: 'status',
+      }
+    );
     expect(runtime.ports).toHaveLength(0);
   });
 
@@ -304,8 +348,14 @@ describe('BridgeClient.status', () => {
     });
     expect((await rejection(client.status())).message).toBe('bridge_internal');
 
-    runtime.sendNativeMessage.mockResolvedValue({ id: 'status', status: 'ok', result: {} });
-    expect((await rejection(client.status())).message).toBe('bridge_protocol_error');
+    runtime.sendNativeMessage.mockResolvedValue({
+      id: 'status',
+      status: 'ok',
+      result: {},
+    });
+    expect((await rejection(client.status())).message).toBe(
+      'bridge_protocol_error'
+    );
   });
 
   it('flags a host speaking another protocol version', async () => {

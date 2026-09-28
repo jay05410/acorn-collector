@@ -129,11 +129,15 @@ describe('JobQueue', () => {
   it('rejects duplicate ids and a full queue', async () => {
     const queue = new JobQueue({ onState: () => {}, maxJobs: 2 });
     void queue.enqueue('a', controllableTask().task);
-    await expect(queue.enqueue('a', controllableTask().task)).rejects.toMatchObject({
+    await expect(
+      queue.enqueue('a', controllableTask().task)
+    ).rejects.toMatchObject({
       code: 'bad_request',
     });
     void queue.enqueue('b', controllableTask().task);
-    await expect(queue.enqueue('c', controllableTask().task)).rejects.toMatchObject({
+    await expect(
+      queue.enqueue('c', controllableTask().task)
+    ).rejects.toMatchObject({
       code: 'busy',
     });
   });
@@ -149,7 +153,9 @@ describe('JobQueue', () => {
     const queue = new JobQueue({ onState: () => {} });
     const a = controllableTask();
     const first = queue.enqueue('a', a.task).catch((error) => error);
-    const second = queue.enqueue('b', controllableTask().task).catch((error) => error);
+    const second = queue
+      .enqueue('b', controllableTask().task)
+      .catch((error) => error);
     await flush();
 
     queue.cancelAll();
