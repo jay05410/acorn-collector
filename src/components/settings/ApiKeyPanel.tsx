@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyRound, PlugZap } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { showToast } from '@/components/ui/toast-store';
@@ -23,16 +23,36 @@ interface ApiKeyPanelProps {
   provider: KeyProvider;
   settings: AppSettings;
   update: UpdateSettings;
+  /** The provider rejected (true) or accepted (false) the saved key. */
+  onKeyRejected?: (rejected: boolean) => void;
 }
 
 /** OpenAI / Anthropic: paste, save, test and remove the user's own key. */
-export function ApiKeyPanel({ provider, settings, update }: ApiKeyPanelProps) {
+export function ApiKeyPanel({
+  provider,
+  settings,
+  update,
+  onKeyRejected,
+}: ApiKeyPanelProps) {
   useLanguage();
   const name = providerName(provider);
   const saved = settings.ai[provider].apiKey.trim();
   const [editing, setEditing] = useState(false);
   const test = useConnectionTest(provider);
   const showForm = editing || saved === '';
+  const testState = test.state;
+
+  useEffect(() => {
+    if (testState.status === 'ok') onKeyRejected?.(false);
+    else if (testState.status === 'error' && testState.code === 'auth') {
+      onKeyRejected?.(true);
+    }
+  }, [testState, onKeyRejected]);
+
+  // A different (or no) key has not been rejected yet.
+  useEffect(() => {
+    onKeyRejected?.(false);
+  }, [saved, onKeyRejected]);
   const label = tp('aiConnect', 'keyLabel', { provider: name });
   const hint = tp('aiConnect', 'keyHint', { provider: name });
 

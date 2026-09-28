@@ -49,6 +49,17 @@ describe('providerReadiness', () => {
     expect(providerReadiness(blank, 'anthropic')).toBe('needs-key');
   });
 
+  it('flags a saved key the provider rejected', () => {
+    const settings = ai({ openai: { apiKey: 'sk-old', model: null } });
+    expect(providerReadiness(settings, 'openai', EMPTY_CLI_CHECK, new Set(['openai']))).toBe(
+      'key-rejected'
+    );
+    // No key at all is still "needs a key", rejected or not.
+    expect(providerReadiness(ai(), 'openai', EMPTY_CLI_CHECK, new Set(['openai']))).toBe(
+      'needs-key'
+    );
+  });
+
   it('delegates the CLI to the bridge check', () => {
     expect(providerReadiness(ai(), 'cli')).toBe('unknown');
     expect(providerReadiness(ai(), 'cli', check({ status: status(target()) }))).toBe(

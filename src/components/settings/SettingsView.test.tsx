@@ -184,6 +184,10 @@ describe('SettingsView', () => {
     await settle();
     expect(text()).toContain('Connection failed');
     expect(text()).toContain('The key was rejected');
+    // The summary and the card badge no longer claim the provider is ready.
+    expect(text()).toContain('Anthropic did not accept the saved key');
+    expect(text()).toContain('Check key');
+    expect(text()).not.toContain('Ready. Analysis uses Anthropic.');
     expect(text()).not.toContain('sk-ant-9999');
   });
 

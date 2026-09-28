@@ -61,20 +61,32 @@ function providerNotes(id: ProviderId, tier: ModelTier): ProviderNote[] {
   }
 }
 
+/**
+ * "Ready" for any configured provider; for the active one, also what is
+ * missing. Unused, unconfigured providers get no badge (less noise).
+ */
 export function ReadinessBadge({
   readiness,
+  active,
 }: {
   readiness: ProviderReadiness;
+  active: boolean;
 }) {
   useLanguage();
   if (readiness === 'ready') {
     return <Badge tone="success">{t('aiConnect', 'statusReady')}</Badge>;
   }
-  if (readiness === 'needs-key') {
-    return <Badge>{t('aiConnect', 'statusNotConnected')}</Badge>;
+  if (readiness === 'key-rejected') {
+    return <Badge tone="warning">{t('aiConnect', 'statusCheckKey')}</Badge>;
   }
-  if (readiness === 'unknown') return null;
-  return <Badge tone="warning">{t('aiConnect', 'statusSetup')}</Badge>;
+  if (!active || readiness === 'unknown') return null;
+  return (
+    <Badge tone="warning">
+      {readiness === 'needs-key'
+        ? t('aiConnect', 'statusNotConnected')
+        : t('aiConnect', 'statusSetup')}
+    </Badge>
+  );
 }
 
 interface ProviderPickerProps {
@@ -159,7 +171,7 @@ export function ProviderPicker({
                     )}
                     {id === 'cli' && <Badge>{t('aiConnect', 'advanced')}</Badge>}
                     <span className="ms-auto">
-                      <ReadinessBadge readiness={readiness(id)} />
+                      <ReadinessBadge readiness={readiness(id)} active={checked} />
                     </span>
                   </span>
                   <span id={descriptionId} className="block">

@@ -1,6 +1,7 @@
 /** Connection test for the API-key providers (see connection.tsx for the UI). */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toAIError } from '@/lib/ai/errors';
+import type { AIErrorCode } from '@/lib/ai/types';
 import type { ApiProviderId } from '@/lib/ai/models';
 import { getProvider } from '@/lib/ai/providers';
 import { connectionErrorMessage, providerName } from './providers';
@@ -12,7 +13,7 @@ export type ConnectionTestState =
   | { status: 'idle' }
   | { status: 'testing' }
   | { status: 'ok' }
-  | { status: 'error'; message: string };
+  | { status: 'error'; message: string; code: AIErrorCode };
 
 type Tester = (apiKey: string, signal: AbortSignal) => Promise<unknown>;
 
@@ -59,7 +60,11 @@ export function useConnectionTest(
         if (current.current !== controller) return;
         const aiError = toAIError(error, provider, controller.signal);
         const message = connectionErrorMessage(aiError, providerName(provider));
-        setState(message ? { status: 'error', message } : { status: 'idle' });
+        setState(
+          message
+            ? { status: 'error', message, code: aiError.code }
+            : { status: 'idle' }
+        );
       } finally {
         clearTimeout(timer);
       }

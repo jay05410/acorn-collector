@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import {
   Check,
   CircleCheck,
@@ -273,8 +273,16 @@ function CommandBox({ command }: { command: string }) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start gap-1 rounded-lg bg-surface-sunken py-1 ps-3 pe-1 ring-1 ring-line ring-inset">
-        <code className="min-w-0 flex-1 py-1.5 font-mono text-xs leading-5 break-all text-fg select-all">
-          {command}
+        <code className="min-w-0 flex-1 py-1.5 font-mono text-xs leading-5 [overflow-wrap:anywhere] text-fg select-all">
+          {/* Flags never break across lines; only the long ID may. */}
+          {command.split(' ').map((part, index) => (
+            <Fragment key={index}>
+              {index > 0 && ' '}
+              <span className={part.startsWith('-') ? 'whitespace-nowrap' : undefined}>
+                {part}
+              </span>
+            </Fragment>
+          ))}
         </code>
         <IconButton
           label={

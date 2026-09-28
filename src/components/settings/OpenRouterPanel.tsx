@@ -49,6 +49,8 @@ type KeyInfoState =
 interface OpenRouterPanelProps {
   settings: AppSettings;
   update: UpdateSettings;
+  /** OpenRouter rejected (true) or accepted (false) the saved key. */
+  onKeyRejected?: (rejected: boolean) => void;
 }
 
 /**
@@ -56,10 +58,18 @@ interface OpenRouterPanelProps {
  * that survives a panel reload, or a pasted key. Once connected it shows the
  * key's credit details.
  */
-export function OpenRouterPanel({ settings, update }: OpenRouterPanelProps) {
+export function OpenRouterPanel({
+  settings,
+  update,
+  onKeyRejected,
+}: OpenRouterPanelProps) {
   useLanguage();
   const { apiKey, connectedVia } = settings.ai.openrouter;
   const connected = apiKey.trim() !== '';
+
+  useEffect(() => {
+    onKeyRejected?.(false);
+  }, [apiKey, onKeyRejected]);
 
   const connect = async (
     key: string,
@@ -82,6 +92,7 @@ export function OpenRouterPanel({ settings, update }: OpenRouterPanelProps) {
       <ConnectedView
         apiKey={apiKey.trim()}
         connectedVia={connectedVia}
+        onKeyRejected={onKeyRejected}
         onDisconnect={async () => {
           const previous = { apiKey, connectedVia };
           const ok = await update({
@@ -342,10 +353,12 @@ function credits(value: number | null): string {
 function ConnectedView({
   apiKey,
   connectedVia,
+  onKeyRejected,
   onDisconnect,
 }: {
   apiKey: string;
   connectedVia: OpenRouterSettings['connectedVia'];
+  onKeyRejected?: (rejected: boolean) => void;
   onDisconnect: () => Promise<void>;
 }) {
   useLanguage();
@@ -366,6 +379,11 @@ function ConnectedView({
       });
     return () => controller.abort();
   }, [apiKey, reload]);
+
+  useEffect(() => {
+    if (state.status === 'ok') onKeyRejected?.(false);
+    else if (state.status === 'error' && state.invalidKey) onKeyRejected?.(true);
+  }, [state, onKeyRejected]);
 
   return (
     <div className="flex flex-col gap-3">

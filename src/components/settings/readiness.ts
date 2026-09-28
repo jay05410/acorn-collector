@@ -12,6 +12,8 @@ import type { AISettings } from '@/lib/settings-types';
 export type ProviderReadiness =
   | 'ready'
   | 'needs-key'
+  /** A key is saved but the provider's last check rejected it. */
+  | 'key-rejected'
   | 'needs-permission'
   | 'needs-install'
   | 'cli-missing'
@@ -68,9 +70,14 @@ export function cliReadiness(
 export function providerReadiness(
   ai: AISettings,
   id: ProviderId,
-  cli: CliCheck = EMPTY_CLI_CHECK
+  cli: CliCheck = EMPTY_CLI_CHECK,
+  /** Providers whose saved key was rejected by their last check. */
+  rejectedKeys: ReadonlySet<ProviderId> = new Set()
 ): ProviderReadiness {
-  if (isApiProvider(id)) return hasApiKey(ai, id) ? 'ready' : 'needs-key';
+  if (isApiProvider(id)) {
+    if (!hasApiKey(ai, id)) return 'needs-key';
+    return rejectedKeys.has(id) ? 'key-rejected' : 'ready';
+  }
   return cliReadiness(ai, cli);
 }
 

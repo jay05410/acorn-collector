@@ -1,3 +1,4 @@
+import { useCallback, useMemo, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Banner } from '@/components/ui/Banner';
 import { t, tp, useLanguage } from '@/i18n';
@@ -43,7 +44,9 @@ function Summary({
   if (readiness === 'unknown') return null;
   return (
     <Banner tone="warning">
-      {tp('aiConnect', 'summaryNotReady', { provider: name })}
+      {readiness === 'key-rejected'
+        ? tp('aiConnect', 'summaryKeyRejected', { provider: name })
+        : tp('aiConnect', 'summaryNotReady', { provider: name })}
     </Banner>
   );
 }
@@ -56,12 +59,41 @@ export function AiConnectionSection({
   useLanguage();
   const { provider } = settings.ai;
   const cli = useCliCheck(provider === 'cli', cliDeps);
+  // Keys a provider rejected in this session (connection test, key info).
+  const [rejected, setRejected] = useState<ReadonlySet<ProviderId>>(new Set());
+  const markRejected = useCallback((id: ProviderId, value: boolean) => {
+    setRejected((current) => {
+      if (current.has(id) === value) return current;
+      const next = new Set(current);
+      if (value) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  const onOpenRouterKey = useCallback(
+    (value: boolean) => markRejected('openrouter', value),
+    [markRejected]
+  );
+  const onApiKey = useMemo(
+    () => ({
+      openai: (value: boolean) => markRejected('openai', value),
+      anthropic: (value: boolean) => markRejected('anthropic', value),
+    }),
+    [markRejected]
+  );
+
   const readinessOf = (id: ProviderId) =>
-    providerReadiness(settings.ai, id, cli.check);
+    providerReadiness(settings.ai, id, cli.check, rejected);
 
   let panel = null;
   if (provider === 'openrouter') {
-    panel = <OpenRouterPanel settings={settings} update={update} />;
+    panel = (
+      <OpenRouterPanel
+        settings={settings}
+        update={update}
+        onKeyRejected={onOpenRouterKey}
+      />
+    );
   } else if (provider === 'openai' || provider === 'anthropic') {
     panel = (
       <ApiKeyPanel
@@ -69,6 +101,7 @@ export function AiConnectionSection({
         provider={provider}
         settings={settings}
         update={update}
+        onKeyRejected={onApiKey[provider]}
       />
     );
   } else if (provider === 'cli') {

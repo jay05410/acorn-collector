@@ -14,6 +14,7 @@ export default defineMessages({
     statusReady: 'Ready',
     statusNotConnected: 'Not connected',
     statusSetup: 'Setup needed',
+    statusCheckKey: 'Check key',
     descOpenrouter:
       'Sign in with one click. Pay-as-you-go credits for many models.',
     descOpenai: 'Use your own OpenAI API key.',
@@ -33,6 +34,8 @@ export default defineMessages({
     summaryReady: 'Ready. Analysis uses {provider}.',
     summaryNotReady:
       '{provider} is not set up yet. Finish the steps below to analyze images.',
+    summaryKeyRejected:
+      '{provider} did not accept the saved key. Check or replace it below.',
     keyLabel: '{provider} API key',
     keyHint: 'Stored only in this browser and sent only to {provider}.',
     keySaved: 'Saved key ending in {last4}',
@@ -106,6 +109,7 @@ export default defineMessages({
     statusReady: '사용 가능',
     statusNotConnected: '연결 안 됨',
     statusSetup: '설정 필요',
+    statusCheckKey: '키 확인 필요',
     descOpenrouter:
       '클릭 한 번으로 로그인합니다. 여러 모델을 쓴 만큼만 크레딧으로 결제합니다.',
     descOpenai: '내 OpenAI API 키를 사용합니다.',
@@ -125,6 +129,8 @@ export default defineMessages({
     summaryReady: '준비됐습니다. 분석은 {provider}에서 실행됩니다.',
     summaryNotReady:
       '{provider} 설정이 끝나지 않았습니다. 아래 단계를 마치면 이미지를 분석할 수 있습니다.',
+    summaryKeyRejected:
+      '{provider}에서 저장된 키를 받아들이지 않았습니다. 아래에서 키를 확인하거나 바꿔 주세요.',
     keyLabel: '{provider} API 키',
     keyHint: '이 브라우저에만 저장되며 {provider}에만 전송됩니다.',
     keySaved: '저장된 키 (끝자리 {last4})',
@@ -198,6 +204,7 @@ export default defineMessages({
     statusReady: '利用可能',
     statusNotConnected: '未接続',
     statusSetup: '要設定',
+    statusCheckKey: 'キーを確認',
     descOpenrouter:
       'ワンクリックでサインイン。多数のモデルを使った分だけクレジットで支払えます。',
     descOpenai: 'ご自身のOpenAI APIキーを使います。',
@@ -217,6 +224,8 @@ export default defineMessages({
     summaryReady: '準備完了です。{provider} で分析します。',
     summaryNotReady:
       '{provider} の設定が完了していません。下の手順を済ませると画像を分析できます。',
+    summaryKeyRejected:
+      '{provider} が保存済みのキーを受け付けませんでした。下でキーを確認するか、差し替えてください。',
     keyLabel: '{provider} APIキー',
     keyHint: 'このブラウザ内にのみ保存され、{provider} にだけ送信されます。',
     keySaved: '保存済みのキー (末尾 {last4})',
@@ -294,6 +303,7 @@ export default defineMessages({
     statusReady: '可用',
     statusNotConnected: '未连接',
     statusSetup: '需要设置',
+    statusCheckKey: '请检查密钥',
     descOpenrouter: '一键登录。多种模型按量使用积分付费。',
     descOpenai: '使用你自己的 OpenAI API 密钥。',
     descAnthropic: '使用你自己的 Anthropic API 密钥来调用 Claude。',
@@ -309,6 +319,7 @@ export default defineMessages({
     summaryNone: '尚未连接 AI 服务。你仍可手动添加展位和商品。',
     summaryReady: '已就绪。使用 {provider} 进行分析。',
     summaryNotReady: '{provider} 尚未设置完成。完成下方步骤后即可分析图片。',
+    summaryKeyRejected: '{provider} 未接受已保存的密钥。请在下方检查或更换密钥。',
     keyLabel: '{provider} API 密钥',
     keyHint: '仅保存在此浏览器中，并且只会发送给 {provider}。',
     keySaved: '已保存的密钥（末尾 {last4}）',
@@ -376,6 +387,7 @@ export default defineMessages({
     statusReady: '可使用',
     statusNotConnected: '未連線',
     statusSetup: '需要設定',
+    statusCheckKey: '請檢查金鑰',
     descOpenrouter: '一鍵登入。多種模型依用量以點數付費。',
     descOpenai: '使用你自己的 OpenAI API 金鑰。',
     descAnthropic: '使用你自己的 Anthropic API 金鑰來呼叫 Claude。',
@@ -391,6 +403,7 @@ export default defineMessages({
     summaryNone: '尚未連結 AI 服務。你仍可手動新增攤位和商品。',
     summaryReady: '已就緒。使用 {provider} 進行分析。',
     summaryNotReady: '{provider} 尚未設定完成。完成下方步驟後即可分析圖片。',
+    summaryKeyRejected: '{provider} 未接受已儲存的金鑰。請在下方檢查或更換金鑰。',
     keyLabel: '{provider} API 金鑰',
     keyHint: '只儲存在這個瀏覽器中，且只會傳送給 {provider}。',
     keySaved: '已儲存的金鑰（末四碼 {last4}）',
