@@ -50,6 +50,10 @@ export interface PrepareImageOptions<T extends DecodedImage = DecodedImage> exte
   codec?: ImageCodec<T>;
 }
 
+export function toDataUrl(image: ImageInput): string {
+  return `data:${image.mimeType};base64,${image.base64}`;
+}
+
 /** Identifies JPEG/PNG/WebP by magic bytes; Blob.type is often missing. */
 export function sniffImageType(bytes: Uint8Array): ImageMime | null {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
