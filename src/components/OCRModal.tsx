@@ -76,7 +76,7 @@ export function OCRModal({
   const [apiKeyFailed, setApiKeyFailed] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
 
-  const { credits, isAuthenticated, deductCredits } = useAuthStore();
+  const { credits, deductCredits } = useAuthStore();
 
   useEffect(() => {
     if (isOpen && imageUrls.length > 0 && status === 'idle') {
@@ -108,8 +108,9 @@ export function OCRModal({
       return;
     }
 
-    if (capability.methods.length === 1) {
-      startAnalysis(capability.methods[0]);
+    const [onlyMethod] = capability.methods;
+    if (capability.methods.length === 1 && onlyMethod) {
+      startAnalysis(onlyMethod);
       return;
     }
 
