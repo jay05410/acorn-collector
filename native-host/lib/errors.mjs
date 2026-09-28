@@ -13,6 +13,7 @@ export const HOST_ERROR_CODES = /** @type {const} */ ([
   'rate_limited',
   'cli_failed',
   'bad_output',
+  'origin_not_allowed',
   'internal',
 ]);
 

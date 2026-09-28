@@ -5,10 +5,11 @@ import {
   type BridgePort,
   type NativeMessagingRuntime,
 } from './client';
-import type {
-  BridgeAnalyzeRequest,
-  BridgeRequest,
-  BridgeStatus,
+import {
+  BRIDGE_MAX_PAYLOAD_BYTES,
+  type BridgeAnalyzeRequest,
+  type BridgeRequest,
+  type BridgeStatus,
 } from './protocol';
 
 class FakePort implements BridgePort {
@@ -204,13 +205,13 @@ describe('BridgeClient.analyze', () => {
     expect(error.cause).toBe('Claude Code is not logged in');
   });
 
-  it('reports a missing host as unavailable / bridge_not_installed, then reconnects', async () => {
+  it('reports a missing host as a non-retryable bridge_not_installed, then reconnects', async () => {
     const pending = rejection(client.analyze(REQUEST));
     runtime.port.drop('Specified native messaging host not found.');
     const error = await pending;
-    expect(error.code).toBe('unavailable');
+    expect(error.code).toBe('not_configured');
     expect(error.message).toBe('bridge_not_installed');
-    expect(error.retryable).toBe(true);
+    expect(error.retryable).toBe(false);
 
     const next = client.analyze(REQUEST);
     expect(runtime.ports).toHaveLength(2);
@@ -227,11 +228,63 @@ describe('BridgeClient.analyze', () => {
     runtime.port.drop(
       'Access to the specified native messaging host is forbidden.'
     );
-    expect((await forbidden).message).toBe('bridge_forbidden');
+    expect(await forbidden).toMatchObject({
+      code: 'not_configured',
+      message: 'bridge_forbidden',
+      retryable: false,
+    });
 
     const exited = rejection(client.analyze(REQUEST));
     runtime.port.drop('Native host has exited.');
-    expect((await exited).message).toBe('bridge_disconnected');
+    expect(await exited).toMatchObject({
+      code: 'unavailable',
+      message: 'bridge_disconnected',
+      retryable: true,
+    });
+  });
+
+  it('fails every pending request when the host refuses this extension', async () => {
+    const first = rejection(client.analyze(REQUEST));
+    const second = rejection(client.analyze(REQUEST));
+    const port = runtime.port;
+    // The host writes this, then exits (Chrome then reports "has exited").
+    port.reply({
+      id: null,
+      status: 'error',
+      error: { code: 'origin_not_allowed', message: 'not allowed' },
+    });
+    for (const error of [await first, await second]) {
+      expect(error).toMatchObject({
+        code: 'not_configured',
+        message: 'bridge_forbidden',
+        retryable: false,
+        cause: 'not allowed',
+      });
+    }
+    expect(port.disconnected).toBe(true);
+    port.drop('Native host has exited.');
+
+    void client.analyze(REQUEST).catch(() => {});
+    expect(runtime.ports).toHaveLength(2);
+  });
+
+  it('rejects a request over the payload budget without contacting the host', async () => {
+    const huge = {
+      ...REQUEST,
+      images: [
+        {
+          mimeType: 'image/jpeg' as const,
+          base64: 'A'.repeat(BRIDGE_MAX_PAYLOAD_BYTES),
+        },
+      ],
+    };
+    const error = await rejection(client.analyze(huge));
+    expect(error).toMatchObject({
+      code: 'unknown',
+      message: 'bridge_bad_request',
+      retryable: false,
+    });
+    expect(runtime.ports).toHaveLength(0);
   });
 
   it('cancels on abort: rejects immediately and asks the host to stop', async () => {
@@ -338,6 +391,20 @@ describe('BridgeClient.status', () => {
     );
     const error = await rejection(client.status());
     expect(error.message).toBe('bridge_not_installed');
+    expect(error.code).toBe('not_configured');
+  });
+
+  it('maps a host that refuses this extension', async () => {
+    runtime.sendNativeMessage.mockResolvedValue({
+      id: null,
+      status: 'error',
+      error: { code: 'origin_not_allowed', message: 'not allowed' },
+    });
+    const error = await rejection(client.status());
+    expect(error).toMatchObject({
+      code: 'not_configured',
+      message: 'bridge_forbidden',
+    });
   });
 
   it('maps host errors and malformed replies', async () => {
@@ -365,8 +432,9 @@ describe('BridgeClient.status', () => {
       result: { ...STATUS, protocol: 2 },
     });
     const error = await rejection(client.status());
-    expect(error.code).toBe('unavailable');
+    expect(error.code).toBe('not_configured');
     expect(error.message).toBe('bridge_outdated');
+    expect(error.retryable).toBe(false);
   });
 
   it('times out when the host never answers', async () => {

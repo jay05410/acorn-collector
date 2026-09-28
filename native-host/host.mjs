@@ -12,15 +12,23 @@ import { fileURLToPath } from 'node:url';
 import { format } from 'node:util';
 import { runAnalyzeJob } from './lib/analyze.mjs';
 import { configPath, isAllowedOrigin, loadConfig } from './lib/config.mjs';
-import { runCli } from './lib/process.mjs';
+import { runCli, stopAllNow } from './lib/process.mjs';
 import { createBridgeServer } from './lib/server.mjs';
 import { collectStatus } from './lib/status.mjs';
-import { sweepStaleJobDirs } from './lib/tempdir.mjs';
-import { FrameDecoder, FrameError, encodeFrame } from './protocol.mjs';
+import { removeJobDirsSync, sweepStaleJobDirs } from './lib/tempdir.mjs';
+import {
+  FrameDecoder,
+  FrameError,
+  encodeFrame,
+  flushStream,
+} from './protocol.mjs';
 
 const HOST_DIR = dirname(fileURLToPath(import.meta.url));
-/** Longest wait for CLI children to exit when the browser disconnects. */
-const SHUTDOWN_GRACE_MS = 11_000;
+/**
+ * Longest shutdown. CLI process groups get SIGTERM at once and SIGKILL after
+ * 500 ms, so the host exits within about a second of the port closing.
+ */
+const EXIT_DEADLINE_MS = 1000;
 /** Set to 1 to copy raw Claude Code output lines to stderr. */
 const DEBUG = process.env.ACORN_BRIDGE_DEBUG === '1';
 
@@ -48,22 +56,27 @@ function send(message) {
   process.stdout.write(frame);
 }
 
-/** Resolves once queued frames have been handed to the OS. */
-function drainStdout() {
-  return new Promise((resolve) => {
-    if (process.stdout.writableLength === 0) resolve(undefined);
-    else process.stdout.once('drain', () => resolve(undefined));
-  });
-}
-
 async function main() {
   const origin = process.argv[2] ?? '';
   const config = await loadConfig(configPath(process.env, HOST_DIR));
   if (!isAllowedOrigin(origin, config)) {
     log('refusing caller origin', JSON.stringify(origin));
+    // Tell the extension this is permanent (not a crash worth retrying).
+    // The process exits once the frame is flushed.
+    send({
+      id: null,
+      status: 'error',
+      error: {
+        code: 'origin_not_allowed',
+        message:
+          'this extension is not allowed to use the bridge; re-run install.mjs with its --extension-id',
+      },
+    });
     process.exitCode = 1;
     return;
   }
+  // Last resort if the process exits through another path.
+  process.on('exit', () => removeJobDirsSync());
 
   sweepStaleJobDirs().then(
     (removed) => removed > 0 && log(`removed ${removed} stale job dir(s)`),
@@ -93,15 +106,28 @@ async function main() {
   });
 
   let closing = false;
-  /** @param {number} code */
-  const shutdown = async (code) => {
+  /**
+   * The browser may kill the host soon after the port closes, and CLI
+   * children run in their own process groups, so nothing here waits for a
+   * graceful CLI exit: stop every CLI group now, drop queued jobs, delete job
+   * dirs synchronously, then exit within EXIT_DEADLINE_MS.
+   * @param {number} code
+   */
+  const shutdown = (code) => {
     if (closing) return;
     closing = true;
-    await Promise.race([
-      server.shutdown().then(drainStdout),
-      new Promise((resolve) => setTimeout(resolve, SHUTDOWN_GRACE_MS)),
-    ]);
-    process.exit(code);
+    const stopped = stopAllNow();
+    // Cancels every job; their final 'cancelled' frames are flushed below.
+    const idle = server.shutdown().then(() => flushStream(process.stdout));
+    removeJobDirsSync();
+    void Promise.race([
+      Promise.all([stopped, idle]),
+      new Promise((resolve) => setTimeout(resolve, EXIT_DEADLINE_MS)),
+    ]).then(() => {
+      // Dirs created while CLIs were stopping (a job between mkdtemp and spawn).
+      removeJobDirsSync();
+      process.exit(code);
+    });
   };
 
   const decoder = new FrameDecoder();
@@ -112,17 +138,17 @@ async function main() {
       messages = decoder.push(chunk);
     } catch (error) {
       log('protocol error:', error instanceof Error ? error.message : error);
-      void shutdown(1);
+      shutdown(1);
       return;
     }
     for (const message of messages) void server.handle(message);
   });
   // The browser closes stdin when the port disconnects or after a one-shot
   // sendNativeMessage reply.
-  process.stdin.on('end', () => void shutdown(0));
-  process.stdout.on('error', () => void shutdown(0));
-  process.on('SIGTERM', () => void shutdown(0));
-  process.on('SIGINT', () => void shutdown(0));
+  process.stdin.on('end', () => shutdown(0));
+  process.stdout.on('error', () => shutdown(0));
+  process.on('SIGTERM', () => shutdown(0));
+  process.on('SIGINT', () => shutdown(0));
 }
 
 main().catch((error) => {

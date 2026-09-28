@@ -1,3 +1,4 @@
+import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
   FrameDecoder,
@@ -5,6 +6,7 @@ import {
   HEADER_BYTES,
   MAX_OUTGOING_BYTES,
   encodeFrame,
+  flushStream,
 } from './protocol.mjs';
 
 describe('encodeFrame', () => {
@@ -98,5 +100,46 @@ describe('FrameDecoder', () => {
       out.push(...decoder.push(frame.subarray(i, i + 65536)));
     }
     expect(out).toEqual([payload]);
+  });
+});
+
+describe('flushStream', () => {
+  /** A writable whose writes complete `delayMs` later. */
+  function slowStream(delayMs) {
+    const written = [];
+    const stream = new Writable({
+      highWaterMark: 1024 * 1024,
+      write(chunk, _encoding, callback) {
+        setTimeout(() => {
+          written.push(chunk.toString());
+          callback();
+        }, delayMs);
+      },
+    });
+    return { stream, written };
+  }
+
+  it('waits for a small backlog that never triggers drain', async () => {
+    const { stream, written } = slowStream(30);
+    expect(stream.write('frame')).toBe(true);
+    // Below the high-water mark: 'drain' will not be emitted for this write.
+    expect(stream.writableLength).toBeGreaterThan(0);
+    expect(stream.writableNeedDrain).toBe(false);
+    let drained = false;
+    stream.once('drain', () => (drained = true));
+
+    await flushStream(stream);
+    expect(written[0]).toBe('frame');
+    expect(stream.writableLength).toBe(0);
+    expect(drained).toBe(false);
+  });
+
+  it('resolves at once when nothing is pending or the stream is gone', async () => {
+    const { stream } = slowStream(0);
+    await expect(flushStream(stream)).resolves.toBeUndefined();
+    const broken = slowStream(10_000).stream;
+    broken.write('stuck');
+    broken.destroy();
+    await expect(flushStream(broken)).resolves.toBeUndefined();
   });
 });

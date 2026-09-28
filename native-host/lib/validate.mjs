@@ -7,11 +7,26 @@ import { HostError } from './errors.mjs';
 
 export const CLI_TARGETS = /** @type {const} */ (['claude', 'codex']);
 export const MAX_IMAGES = 6;
-export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+/**
+ * Base64 length of one image: 5 MiB, i.e. 3.75 MiB decoded. This is the
+ * strictest documented Anthropic per-image limit (5 MB base64 on Bedrock and
+ * Vertex; 10 MB on the direct API) and matches what the extension's image
+ * preparation sends (originals up to 3.75 MiB, larger ones re-encoded).
+ */
+export const MAX_IMAGE_BASE64_CHARS = 5 * 1024 * 1024;
+/**
+ * Encoded size of one analyze request (see payloadBytes). Keeps the Claude
+ * request under the API's 32 MB request limit with room for Claude Code's
+ * own prompt, and every accepted request far below the 64 MiB frame limit,
+ * so nothing the validator accepts can fail at the framing layer.
+ * Mirrored by BRIDGE_MAX_PAYLOAD_BYTES in src/lib/bridge/protocol.ts.
+ */
+export const MAX_PAYLOAD_BYTES = 28 * 1024 * 1024;
 export const MAX_TEXT_CHARS = 100_000;
 /**
- * System prompt and schema travel on the command line; together they must
- * stay under Windows' 32,767-character limit.
+ * System prompt and schema travel on the command line. These caps keep
+ * typical requests under Windows' 32,767-character limit; the exact quoted
+ * length is checked before spawning (lib/process.mjs).
  */
 export const MAX_SYSTEM_CHARS = 12_000;
 export const MAX_SCHEMA_CHARS = 16_000;
@@ -27,8 +42,7 @@ const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
  * @property {'image/jpeg' | 'image/png' | 'image/webp'} mimeType Sniffed from
  *   the bytes; the extension's declared type is ignored.
  * @property {'jpg' | 'png' | 'webp'} extension
- * @property {string} base64
- * @property {Buffer} bytes
+ * @property {string} base64 The only copy of the image; decode on demand.
  */
 
 /**
@@ -118,6 +132,13 @@ function parseAnalyze(id, raw) {
     throw badRequest(`schema exceeds ${MAX_SCHEMA_CHARS} characters`);
   }
 
+  const size = payloadBytes({ system, text, images, schema });
+  if (size > MAX_PAYLOAD_BYTES) {
+    throw badRequest(
+      `request payload of ${size} bytes exceeds ${MAX_PAYLOAD_BYTES} bytes; send fewer or smaller images`
+    );
+  }
+
   return {
     id,
     op: 'analyze',
@@ -131,6 +152,27 @@ function parseAnalyze(id, raw) {
 }
 
 /**
+ * Encoded size of an analyze request: the base64 of every image plus the
+ * UTF-8 JSON encoding of system, text and schema. Mirrored by
+ * analyzePayloadBytes() in src/lib/bridge/protocol.ts.
+ * @param {{ system: string, text: string, images: { base64: string }[], schema: Record<string, unknown> }} request
+ * @returns {number}
+ */
+export function payloadBytes({ system, text, images, schema }) {
+  let size = 0;
+  for (const image of images) size += image.base64.length;
+  for (const value of [system, text, schema]) {
+    size += Buffer.byteLength(JSON.stringify(value), 'utf8');
+  }
+  return size;
+}
+
+/** Base64 characters needed to sniff every supported format (12 bytes). */
+const SNIFF_BASE64_CHARS = 16;
+
+/**
+ * Validate one image without decoding it: only the first bytes are decoded
+ * to check the format, so the request holds a single copy of the image.
  * @param {unknown} raw
  * @param {number} index
  * @returns {ImageFile}
@@ -141,6 +183,11 @@ export function decodeImage(raw, index) {
     throw badRequest(`${label} must be an object with a base64 string`);
   }
   const base64 = raw.base64;
+  if (base64.length > MAX_IMAGE_BASE64_CHARS) {
+    throw badRequest(
+      `${label} exceeds ${MAX_IMAGE_BASE64_CHARS} base64 characters`
+    );
+  }
   if (
     base64.length === 0 ||
     base64.length % 4 !== 0 ||
@@ -148,14 +195,10 @@ export function decodeImage(raw, index) {
   ) {
     throw badRequest(`${label} is not valid base64`);
   }
-  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
-  if ((base64.length / 4) * 3 - padding > MAX_IMAGE_BYTES) {
-    throw badRequest(`${label} exceeds ${MAX_IMAGE_BYTES} bytes`);
-  }
-  const bytes = Buffer.from(base64, 'base64');
-  const kind = sniffImage(bytes);
+  const header = Buffer.from(base64.slice(0, SNIFF_BASE64_CHARS), 'base64');
+  const kind = sniffImage(header);
   if (!kind) throw badRequest(`${label} is not a JPEG, PNG or WebP image`);
-  return { ...kind, base64, bytes };
+  return { ...kind, base64 };
 }
 
 /**

@@ -9,7 +9,9 @@ import { AIError } from '@/lib/ai/types';
 import { bridgeError, fromHostError, fromRuntimeError } from './errors';
 import {
   BRIDGE_HOST_NAME,
+  BRIDGE_MAX_PAYLOAD_BYTES,
   BRIDGE_PROTOCOL_VERSION,
+  analyzePayloadBytes,
   isBridgeAnalyzeResult,
   isBridgeResponse,
   isBridgeStatus,
@@ -98,6 +100,16 @@ export class BridgeClient {
     request: BridgeAnalyzeRequest,
     signal?: AbortSignal
   ): Promise<BridgeAnalyzeResult> {
+    // Rejected here rather than by the host: this request alone fails, and an
+    // oversized message never reaches the native messaging frame limit.
+    const size = analyzePayloadBytes(request);
+    if (size > BRIDGE_MAX_PAYLOAD_BYTES) {
+      throw bridgeError(
+        'unknown',
+        'bridge_bad_request',
+        `request payload of ${size} bytes exceeds ${BRIDGE_MAX_PAYLOAD_BYTES} bytes`
+      );
+    }
     const result = await this.#request(request, signal);
     if (!isBridgeAnalyzeResult(result)) {
       throw bridgeError(
@@ -153,8 +165,9 @@ export class BridgeClient {
       );
     }
     if (response.result.protocol !== BRIDGE_PROTOCOL_VERSION) {
+      // Permanent until the bridge is reinstalled or the extension updated.
       throw bridgeError(
-        'unavailable',
+        'not_configured',
         'bridge_outdated',
         `host protocol ${response.result.protocol}, extension ${BRIDGE_PROTOCOL_VERSION}`
       );
@@ -219,7 +232,14 @@ export class BridgeClient {
   }
 
   #onMessage(message: unknown): void {
-    if (!isBridgeResponse(message) || message.id === null) return;
+    if (!isBridgeResponse(message)) return;
+    if (message.id === null) {
+      // An error the host cannot attach to a request concerns the connection
+      // itself (e.g. it refused this extension's origin and is exiting).
+      if (message.status === 'error')
+        this.#teardown(fromHostError(message.error));
+      return;
+    }
     const entry = this.#pending.get(message.id);
     if (!entry) return;
     switch (message.status) {

@@ -40,6 +40,36 @@ process.stdin.on('data', (c) => (input += c)).on('end', () => {
 });
 `;
 
+/**
+ * Stands in for a `claude` run that is still working when the browser
+ * disconnects: ignores SIGINT, records its pid, never finishes.
+ * @param {string} pidFile
+ */
+const hangingClaude = (pidFile) => `#!/usr/bin/env node
+process.on('SIGINT', () => {});
+require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+setInterval(() => {}, 1000);
+`;
+
+/** @param {number} pid */
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** @param {() => boolean | Promise<boolean>} check */
+async function waitFor(check, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await check())) {
+    if (Date.now() > deadline) throw new Error('condition not met in time');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 let dir;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'acorn-host-test-'));
@@ -62,6 +92,8 @@ function startHost(origin, configFile) {
     env: {
       PATH: process.env.PATH ?? '',
       HOME: process.env.HOME ?? tmpdir(),
+      // Job dirs land in the test dir, so leftovers can be checked.
+      TMPDIR: dir,
       ACORN_BRIDGE_CONFIG: configFile,
       ANTHROPIC_API_KEY: 'sk-ant-must-not-leak',
     },
@@ -110,14 +142,61 @@ describe('host.mjs', () => {
     expect(await host.exited).toBe(0);
   });
 
-  it('refuses an origin that is not allowlisted, writing nothing to stdout', async () => {
+  it('refuses an origin that is not allowlisted with one permanent error and exits', async () => {
     const host = startHost(
       `chrome-extension://${'a'.repeat(32)}/`,
       await writeConfig()
     );
     host.send({ id: 'p1', op: 'ping' });
     expect(await host.exited).toBe(1);
-    expect(host.messages).toEqual([]);
+    expect(host.messages).toEqual([
+      {
+        id: null,
+        status: 'error',
+        error: { code: 'origin_not_allowed', message: expect.any(String) },
+      },
+    ]);
+  });
+
+  it('on disconnect stops a running CLI at once and removes its job dir', async () => {
+    if (process.platform === 'win32') return;
+    const pidFile = join(dir, 'cli.pid');
+    const fake = join(dir, 'claude');
+    await writeFile(fake, hangingClaude(pidFile));
+    await chmod(fake, 0o755);
+    const host = startHost(
+      ORIGIN,
+      await writeConfig({ claude: fake, codex: null })
+    );
+    host.send({
+      id: 'a1',
+      op: 'analyze',
+      target: 'claude',
+      model: 'sonnet',
+      system: 'S',
+      text: 'T',
+      images: [],
+      schema: { type: 'object' },
+    });
+    await waitFor(async () => {
+      try {
+        return (await readFile(pidFile, 'utf8')) !== '';
+      } catch {
+        return false;
+      }
+    });
+    const pid = Number(await readFile(pidFile, 'utf8'));
+    const jobDirs = async () =>
+      (await readdir(dir)).filter((name) => name.startsWith('acorn-bridge-'));
+    expect(await jobDirs()).toHaveLength(1);
+
+    const t0 = Date.now();
+    host.child.stdin.end();
+    expect(await host.exited).toBe(0);
+    // The CLI ignores SIGINT; the old 5 s SIGINT grace would show up here.
+    expect(Date.now() - t0).toBeLessThan(3000);
+    await waitFor(() => !isAlive(pid), 2000);
+    expect(await jobDirs()).toEqual([]);
   });
 
   it('runs an analyze job on the configured CLI without leaking API keys', async () => {

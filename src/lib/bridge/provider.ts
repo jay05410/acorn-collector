@@ -24,6 +24,29 @@ export const CLI_DEFAULT_MODELS: Record<CliTarget, string> = {
   codex: '',
 };
 
+/**
+ * Model names each CLI plausibly accepts: Claude Code aliases or claude-*
+ * IDs (with an optional [1m] suffix); OpenAI gpt-* or o-series IDs.
+ */
+const CLI_MODEL_PATTERNS: Record<CliTarget, RegExp> = {
+  claude: /^(?:sonnet|opus|haiku|fable|claude-[a-z0-9.-]+)(?:\[1m\])?$/i,
+  codex: /^(?:gpt-|o\d)/i,
+};
+
+/**
+ * AISettings.cli.model is shared by both targets, so a model picked for one
+ * CLI can reach the other after the target changes. Such a model is replaced
+ * by the target's default instead of failing the run.
+ */
+export function resolveCliModel(
+  target: CliTarget,
+  model: string
+): { model: string; replaced: boolean } {
+  if (!model) return { model: CLI_DEFAULT_MODELS[target], replaced: false };
+  if (CLI_MODEL_PATTERNS[target].test(model)) return { model, replaced: false };
+  return { model: CLI_DEFAULT_MODELS[target], replaced: true };
+}
+
 export interface CliPrompt {
   /** Instructions (Claude Code system prompt; prepended for Codex). */
   system: string;
@@ -51,7 +74,12 @@ export function createCliProvider(config: CliProviderConfig): AIProvider {
 
     async extract(req, opts): Promise<ProviderRawResult> {
       const target = config.getTarget();
-      const model = opts.model || CLI_DEFAULT_MODELS[target];
+      const { model, replaced } = resolveCliModel(target, opts.model);
+      if (replaced) {
+        console.warn(
+          `[cli] model "${opts.model}" is not a ${target} model; using the ${target} default`
+        );
+      }
       const { system, text } = config.buildPrompt(req);
       const result = await client().analyze(
         {
@@ -90,6 +118,14 @@ export function createCliProvider(config: CliProviderConfig): AIProvider {
       const target = status.targets[config.getTarget()];
       if (!target.installed)
         throw bridgeError('not_configured', 'cli_not_installed');
+      // loggedIn is false when the check itself failed; that is not a
+      // login problem, so report it separately.
+      if (target.warnings.includes('status_check_failed'))
+        throw bridgeError(
+          'unavailable',
+          'cli_status_check_failed',
+          'status_check_failed'
+        );
       if (!target.loggedIn) throw bridgeError('auth', 'cli_not_logged_in');
     },
   };

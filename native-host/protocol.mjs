@@ -57,6 +57,24 @@ export function encodeFrame(message, options = {}) {
 }
 
 /**
+ * Resolves once everything already written to `stream` has been handed to
+ * the OS, or the stream has failed. A zero-length write completes after all
+ * earlier writes; 'drain' would not do, because it only fires after a write
+ * returned false, so a small backlog could leave it pending forever.
+ * @param {import('node:stream').Writable} stream
+ * @returns {Promise<void>}
+ */
+export function flushStream(stream) {
+  return new Promise((resolve) => {
+    if (stream.destroyed || stream.writableLength === 0) {
+      resolve();
+      return;
+    }
+    stream.write('', () => resolve());
+  });
+}
+
+/**
  * Incremental decoder: feed arbitrary chunks (a frame may be split anywhere,
  * including inside the header) and get back every completed message. Chunks
  * are joined once per frame, so large frames are copied O(n) times total.

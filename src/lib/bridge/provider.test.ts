@@ -5,7 +5,11 @@ import {
   type WireExtraction,
 } from '@/lib/ai/types';
 import type { BridgeClient } from './client';
-import { createCliProvider, isWireExtraction } from './provider';
+import {
+  createCliProvider,
+  isWireExtraction,
+  resolveCliModel,
+} from './provider';
 import type { BridgeAnalyzeResult, BridgeStatus, CliTarget } from './protocol';
 
 const WIRE: WireExtraction = {
@@ -151,6 +155,22 @@ describe('createCliProvider', () => {
     expect(raw).toEqual({ wire: WIRE, model: 'codex-default' });
   });
 
+  it('never forwards a model picked for the other CLI', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const codex = setup('codex');
+    await codex.provider.extract(REQ, { apiKey: '', model: 'sonnet' });
+    expect(codex.client.analyze.mock.calls[0]?.[0].model).toBe('');
+
+    const claude = setup('claude');
+    await claude.provider.extract(REQ, { apiKey: '', model: 'gpt-6-luna' });
+    expect(claude.client.analyze.mock.calls[0]?.[0].model).toBe('sonnet');
+
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(
+      /"sonnet" is not a codex model/
+    );
+  });
+
   it('rejects output that does not match WireExtraction', async () => {
     const { provider } = setup('claude', { output: { items: 'none' } });
     const error = await provider
@@ -202,6 +222,74 @@ describe('createCliProvider', () => {
       codex.provider.testConnection({ apiKey: '', model: '' })
     ).rejects.toMatchObject({
       message: 'cli_not_installed',
+    });
+  });
+
+  it('testConnection reports a failed status check, not a missing login', async () => {
+    const { provider, client } = setup();
+    client.status.mockResolvedValue(
+      status({ loggedIn: false, warnings: ['status_check_failed'] })
+    );
+    await expect(
+      provider.testConnection({ apiKey: '', model: '' })
+    ).rejects.toMatchObject({
+      code: 'unavailable',
+      message: 'cli_status_check_failed',
+    });
+  });
+});
+
+describe('resolveCliModel', () => {
+  it('keeps models that belong to the target CLI', () => {
+    for (const model of [
+      'sonnet',
+      'opus',
+      'haiku',
+      'fable',
+      'opus[1m]',
+      'claude-opus-5-5',
+      'claude-opus-5-5[1m]',
+    ]) {
+      expect(resolveCliModel('claude', model)).toEqual({
+        model,
+        replaced: false,
+      });
+    }
+    for (const model of ['gpt-6-luna', 'gpt-6-sol', 'o3', 'o4-mini']) {
+      expect(resolveCliModel('codex', model)).toEqual({
+        model,
+        replaced: false,
+      });
+    }
+  });
+
+  it('replaces the other CLI’s models with the target default', () => {
+    expect(resolveCliModel('codex', 'opus')).toEqual({
+      model: '',
+      replaced: true,
+    });
+    expect(resolveCliModel('codex', 'claude-sonnet-5')).toEqual({
+      model: '',
+      replaced: true,
+    });
+    expect(resolveCliModel('claude', 'gpt-6-sol')).toEqual({
+      model: 'sonnet',
+      replaced: true,
+    });
+    expect(resolveCliModel('claude', 'o3')).toEqual({
+      model: 'sonnet',
+      replaced: true,
+    });
+  });
+
+  it('uses the default for an empty model without flagging it', () => {
+    expect(resolveCliModel('claude', '')).toEqual({
+      model: 'sonnet',
+      replaced: false,
+    });
+    expect(resolveCliModel('codex', '')).toEqual({
+      model: '',
+      replaced: false,
     });
   });
 });

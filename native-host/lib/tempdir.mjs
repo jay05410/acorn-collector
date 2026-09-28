@@ -1,9 +1,11 @@
 // @ts-check
 /**
  * One private temp directory per job (images, schema and output files for
- * the CLI), removed when the job ends. A sweep at startup removes leftovers
- * from a host that was killed mid-job.
+ * the CLI), removed when the job ends, or synchronously when the host shuts
+ * down. A sweep at startup removes leftovers from a host that was killed
+ * mid-job.
  */
+import { rmSync } from 'node:fs';
 import { chmod, lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,11 +14,18 @@ export const JOB_DIR_PREFIX = 'acorn-bridge-';
 export const STALE_JOB_DIR_MS = 60 * 60 * 1000;
 
 /**
+ * Job directories created and not yet removed by this process.
+ * @type {Set<string>}
+ */
+const liveJobDirs = new Set();
+
+/**
  * @param {string} [root]
  * @returns {Promise<string>} Absolute path of a new 0700 directory.
  */
 export async function createJobDir(root = tmpdir()) {
   const dir = await mkdtemp(join(root, JOB_DIR_PREFIX));
+  liveJobDirs.add(dir);
   await chmod(dir, 0o700);
   return dir;
 }
@@ -24,6 +33,26 @@ export async function createJobDir(root = tmpdir()) {
 /** @param {string} dir */
 export async function removeJobDir(dir) {
   await rm(dir, { recursive: true, force: true });
+  liveJobDirs.delete(dir);
+}
+
+/**
+ * Remove every job directory this process still has, synchronously, so it
+ * completes even if the host is killed right after (host shutdown).
+ * @returns {number} Number of directories removed.
+ */
+export function removeJobDirsSync() {
+  let removed = 0;
+  for (const dir of liveJobDirs) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      removed += 1;
+    } catch {
+      // Left for the startup sweep.
+    }
+    liveJobDirs.delete(dir);
+  }
+  return removed;
 }
 
 /**

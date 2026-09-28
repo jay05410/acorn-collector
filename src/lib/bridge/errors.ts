@@ -3,6 +3,10 @@
  * UI's generic message; `message` is a stable code (BridgeMessage) the UI can
  * use for bridge-specific help, e.g. install instructions for
  * 'bridge_not_installed'. Host diagnostics go to `cause`, never to `message`.
+ *
+ * Failures that an automatic retry cannot fix (host not installed or not
+ * allowed, a CLI run that failed) use non-retryable codes; only a host that
+ * exited or stopped answering is 'unavailable'.
  */
 import { AIError, type AIErrorCode } from '@/lib/ai/types';
 import type { BridgeHostErrorCode } from './protocol';
@@ -25,6 +29,7 @@ export const BRIDGE_MESSAGES = [
   'cli_timeout',
   'cli_failed',
   'cli_bad_output',
+  'cli_status_check_failed',
 ] as const;
 
 export type BridgeMessage = (typeof BRIDGE_MESSAGES)[number];
@@ -47,8 +52,11 @@ const HOST_ERRORS: Record<BridgeHostErrorCode, [AIErrorCode, BridgeMessage]> = {
   cli_not_found: ['not_configured', 'cli_not_installed'],
   not_logged_in: ['auth', 'cli_not_logged_in'],
   rate_limited: ['rate_limit', 'cli_rate_limited'],
-  cli_failed: ['unavailable', 'cli_failed'],
+  // Not a login, usage-limit or timeout failure (those have their own codes):
+  // e.g. a bad flag, an unknown model or a crash, which a rerun repeats.
+  cli_failed: ['unknown', 'cli_failed'],
   bad_output: ['bad_response', 'cli_bad_output'],
+  origin_not_allowed: ['not_configured', 'bridge_forbidden'],
   internal: ['unknown', 'bridge_internal'],
 };
 
@@ -68,10 +76,11 @@ export function fromHostError(error: {
 export function fromRuntimeError(message: string | undefined): AIError {
   const text = message ?? '';
   if (/not found/i.test(text)) {
-    return bridgeError('unavailable', 'bridge_not_installed', text);
+    return bridgeError('not_configured', 'bridge_not_installed', text);
   }
   if (/forbidden/i.test(text)) {
-    return bridgeError('unavailable', 'bridge_forbidden', text);
+    // The host manifest does not list this extension: re-run the installer.
+    return bridgeError('not_configured', 'bridge_forbidden', text);
   }
   return bridgeError('unavailable', 'bridge_disconnected', text || undefined);
 }

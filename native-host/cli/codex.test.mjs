@@ -135,8 +135,7 @@ describe('runCodex', () => {
       {
         mimeType: 'image/png',
         extension: 'png',
-        base64: 'AA==',
-        bytes: Buffer.from([1, 2]),
+        base64: Buffer.from([1, 2]).toString('base64'),
       },
     ],
     schema: { type: 'object' },

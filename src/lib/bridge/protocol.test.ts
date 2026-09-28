@@ -4,7 +4,9 @@ import { BRIDGE_MESSAGES, fromHostError, fromRuntimeError } from './errors';
 import {
   BRIDGE_HOST_ERROR_CODES,
   BRIDGE_HOST_NAME,
+  BRIDGE_MAX_PAYLOAD_BYTES,
   BRIDGE_PROTOCOL_VERSION,
+  analyzePayloadBytes,
   isBridgeAnalyzeResult,
   isBridgeResponse,
   isBridgeStatus,
@@ -33,6 +35,24 @@ describe('protocol parity with the native host', () => {
     );
     expect(BRIDGE_HOST_NAME).toBe(HOST_NAME);
     expect(BRIDGE_PROTOCOL_VERSION).toBe(PROTOCOL_VERSION);
+  });
+
+  it('measures and caps the analyze payload like the host validator', async () => {
+    const { MAX_PAYLOAD_BYTES, payloadBytes } = await hostModule<{
+      MAX_PAYLOAD_BYTES: number;
+      payloadBytes: (request: unknown) => number;
+    }>('lib/validate.mjs');
+    expect(BRIDGE_MAX_PAYLOAD_BYTES).toBe(MAX_PAYLOAD_BYTES);
+    const request = {
+      system: 'Rules: "quote" \\ back\nslash',
+      text: '東ホ-12a 新刊 1500円 🐿️ \u0001',
+      images: [
+        { mimeType: 'image/jpeg' as const, base64: '/9j/AAAA' },
+        { mimeType: 'image/png' as const, base64: 'iVBORw0KGgo=' },
+      ],
+      schema: { type: 'object', description: 'booth ブース' },
+    };
+    expect(analyzePayloadBytes(request)).toBe(payloadBytes(request));
   });
 });
 
@@ -138,19 +158,41 @@ describe('error mapping', () => {
     expect(fromHostError({ code: 'bad_output', message: '' }).code).toBe(
       'bad_response'
     );
+    expect(
+      fromHostError({ code: 'origin_not_allowed', message: '' })
+    ).toMatchObject({ code: 'not_configured', message: 'bridge_forbidden' });
+  });
+
+  it('marks only transient host failures as retryable', () => {
+    const retryable = BRIDGE_HOST_ERROR_CODES.filter(
+      (code) => fromHostError({ code, message: '' }).retryable
+    );
+    expect(retryable.sort()).toEqual(['busy', 'rate_limited', 'timeout']);
+    expect(fromHostError({ code: 'cli_failed', message: '' }).code).toBe(
+      'unknown'
+    );
   });
 
   it('maps chrome.runtime.lastError messages', () => {
     expect(
-      fromRuntimeError('Specified native messaging host not found.').message
-    ).toBe('bridge_not_installed');
+      fromRuntimeError('Specified native messaging host not found.')
+    ).toMatchObject({
+      code: 'not_configured',
+      message: 'bridge_not_installed',
+      retryable: false,
+    });
     expect(
       fromRuntimeError(
         'Access to the specified native messaging host is forbidden.'
-      ).message
-    ).toBe('bridge_forbidden');
+      )
+    ).toMatchObject({
+      code: 'not_configured',
+      message: 'bridge_forbidden',
+      retryable: false,
+    });
     const exited = fromRuntimeError('Native host has exited.');
     expect(exited.code).toBe('unavailable');
+    expect(exited.retryable).toBe(true);
     expect(exited.message).toBe('bridge_disconnected');
     expect(fromRuntimeError(undefined).cause).toBeUndefined();
   });

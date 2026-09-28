@@ -137,13 +137,16 @@ export async function runCodex({ cliPath, request, jobDir, env, signal, run }) {
   const schemaFile = join(jobDir, SCHEMA_FILE);
   const outputFile = join(jobDir, OUTPUT_FILE);
   await writeFile(schemaFile, JSON.stringify(request.schema), { mode: 0o600 });
-  const imageFiles = await Promise.all(
-    request.images.map(async (image, index) => {
-      const name = `image-${index + 1}.${image.extension}`;
-      await writeFile(join(jobDir, name), image.bytes, { mode: 0o600 });
-      return name;
-    })
-  );
+  /** @type {string[]} */
+  const imageFiles = [];
+  // One image is decoded at a time, so at most one decoded copy is alive.
+  for (const [index, image] of request.images.entries()) {
+    const name = `image-${index + 1}.${image.extension}`;
+    await writeFile(join(jobDir, name), Buffer.from(image.base64, 'base64'), {
+      mode: 0o600,
+    });
+    imageFiles.push(name);
+  }
 
   const outcome = await run({
     command: cliPath,

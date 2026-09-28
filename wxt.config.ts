@@ -39,6 +39,16 @@ export default defineConfig({
     default_locale: 'en',
     version: '1.0.0',
     permissions: ['storage', 'contextMenus', 'activeTab', 'sidePanel', 'identity'],
+    // Requested at runtime when the user turns on the local CLI bridge.
+    optional_permissions: ['nativeMessaging'],
+    // Development builds get a fixed extension ID (elmococmlnkhkpegnjnoflakfnakhcdn)
+    // so the native host's allowlist can name it; see
+    // native-host/scripts/gen-dev-key.mjs. Production builds keep the store ID.
+    ...(mode === 'development'
+      ? {
+          key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp5Y7OQMVgKhjfv7Uf4MwXyI/WBrZ2xlmzp71ITa9KupudsbbZx8iSfPSnYVQZjSO43NhocvVydF8oPa2gZnR6V0PkHOlmPGvc80d5D7RTTj9fl+iurH2Up1H0iVzdLrHxkU0O1COOrZkSitqhuTUKVofGnERgHHOGeGgCzi6GDz7x1MXpPohFd3nzlpMuTr7NkoHJJsatgteaEvVQMv9m3re9ALzre3n+SpU0r7den9faKjFbrTyrlAoHgPwSFQ4WITRs+aHcbaE1WBtOA8R7Ek7V1smaKi/dMZsRQnA1fVsZsuAVYlblO90/yNxnawxHzrkyxmF0tKrNJL7A4dyhwIDAQAB',
+        }
+      : {}),
     host_permissions: ['<all_urls>'],
     action: {
       default_icon: {

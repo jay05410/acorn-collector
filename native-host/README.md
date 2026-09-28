@@ -50,8 +50,8 @@ CLI를 새로 설치하거나 위치가 바뀌면 설치 명령을 다시 실행
 - 브라우저가 넘겨준 호출자 origin이 `config.json`의 허용 목록과 정확히 일치할 때만 동작합니다.
 - CLI는 셸 없이 절대 경로로 실행하고, 작업 폴더는 빈 임시 폴더, 환경 변수는 허용 목록에 있는 것만 넘깁니다.
 - Claude Code는 `--safe-mode --permission-mode dontAsk --tools StructuredOutput`으로 실행해 셸·파일·웹 도구를 모델에 제공하지 않습니다. Codex는 `--sandbox read-only`로 실행합니다.
-- 한 번에 한 작업만 실행하며, 180초 제한을 넘으면 프로세스 그룹에 SIGINT → SIGTERM → SIGKILL(Windows는 `taskkill /T /F`)을 보냅니다.
-- 이미지는 최대 6장, 장당 8 MB, JPEG·PNG·WebP만 받습니다(파일 시그니처로 판별).
+- 한 번에 한 작업만 실행하며, 180초 제한을 넘거나 취소되면 프로세스 그룹에 SIGINT → SIGTERM → SIGKILL(Windows는 `taskkill /T /F`)을 보냅니다. 브라우저 연결이 끊기면 기다리지 않고 바로 SIGTERM(0.5초 뒤 SIGKILL)을 보내고 임시 폴더를 지운 뒤 종료합니다.
+- 이미지는 최대 6장, 장당 base64 5 MiB(원본 3.75 MiB), 요청 전체 28 MiB 이하이며 JPEG·PNG·WebP만 받습니다(파일 시그니처로 판별).
 
 ---
 
@@ -101,8 +101,8 @@ The bridge runs a CLI that you installed and logged into yourself, on your own m
 - Works only when the caller origin passed by the browser exactly matches the allowlist in `config.json`.
 - CLIs run by absolute path without a shell, in an empty temp folder, with an allowlisted environment.
 - Claude Code runs with `--safe-mode --permission-mode dontAsk --tools StructuredOutput`, so the model is offered no shell, file or web tools. Codex runs with `--sandbox read-only`.
-- One job at a time; after 180 s the process group gets SIGINT → SIGTERM → SIGKILL (`taskkill /T /F` on Windows).
-- At most 6 images of 8 MB each, JPEG/PNG/WebP only (detected by file signature).
+- One job at a time; after 180 s or on cancel the process group gets SIGINT → SIGTERM → SIGKILL (`taskkill /T /F` on Windows). When the browser disconnects, the host sends SIGTERM at once (SIGKILL 0.5 s later), deletes job folders and exits.
+- At most 6 images of 5 MiB base64 (3.75 MiB decoded) each and 28 MiB per request, JPEG/PNG/WebP only (detected by file signature).
 
 ### Protocol (for developers)
 
@@ -115,7 +115,7 @@ Messages are UTF-8 JSON with a 4-byte native-endian length prefix (host → exte
 | `{id, op:'analyze', target, model, system, text, images:[{mimeType, base64}], schema}` | `{id, status:'queued'\|'running'}` heartbeats every 5 s, then `{id, status:'ok', result:{output, model, usage}}` |
 | `{id, op:'cancel', targetId}`                                                          | `{id, status:'ok', result:{cancelled}}`; the cancelled job ends with error `cancelled`                           |
 
-Errors: `{id, status:'error', error:{code, message}}` with `code` one of `bad_request`, `busy`, `cancelled`, `timeout`, `cli_not_found`, `not_logged_in`, `rate_limited`, `cli_failed`, `bad_output`, `internal`.
+Errors: `{id, status:'error', error:{code, message}}` with `code` one of `bad_request`, `busy`, `cancelled`, `timeout`, `cli_not_found`, `not_logged_in`, `rate_limited`, `cli_failed`, `bad_output`, `origin_not_allowed`, `internal`. `origin_not_allowed` comes with `id: null`, as the only frame of a host that refuses the caller before exiting.
 
 ### Development
 

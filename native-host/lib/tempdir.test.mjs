@@ -7,6 +7,7 @@ import {
   utimes,
   writeFile,
 } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -15,6 +16,7 @@ import {
   STALE_JOB_DIR_MS,
   createJobDir,
   removeJobDir,
+  removeJobDirsSync,
   sweepStaleJobDirs,
 } from './tempdir.mjs';
 
@@ -36,6 +38,20 @@ describe('createJobDir / removeJobDir', () => {
     await writeFile(join(dir, 'image-1.jpg'), 'x');
     await removeJobDir(dir);
     expect(await readdir(root)).toEqual([]);
+  });
+
+  it('removes the dirs of unfinished jobs synchronously on shutdown', async () => {
+    const done = await createJobDir(root);
+    await removeJobDir(done);
+    const first = await createJobDir(root);
+    const second = await createJobDir(root);
+    await writeFile(join(first, 'image-1.jpg'), 'x');
+
+    expect(removeJobDirsSync()).toBe(2);
+    // Already gone when the call returns, with no await in between.
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(second)).toBe(false);
+    expect(removeJobDirsSync()).toBe(0);
   });
 });
 

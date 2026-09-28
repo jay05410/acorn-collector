@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_INCOMING_BYTES, encodeFrame } from '../protocol.mjs';
 import { HostError } from './errors.mjs';
 import {
   MAX_IMAGES,
-  MAX_IMAGE_BYTES,
+  MAX_IMAGE_BASE64_CHARS,
+  MAX_PAYLOAD_BYTES,
   MAX_SCHEMA_CHARS,
+  MAX_SYSTEM_CHARS,
+  MAX_TEXT_CHARS,
   decodeImage,
   parseRequest,
+  payloadBytes,
   requestIdOf,
   sniffImage,
 } from './validate.mjs';
@@ -100,11 +105,11 @@ describe('parseRequest analyze', () => {
       text: 'アクスタ 1500円',
       schema: { type: 'object' },
     });
-    expect(request.images[0]).toMatchObject({
+    expect(request.images[0]).toEqual({
       mimeType: 'image/png',
       extension: 'png',
+      base64: PNG.toString('base64'),
     });
-    expect(request.images[0].bytes.equals(PNG)).toBe(true);
   });
 
   it('defaults optional strings and allows the CLI default model', () => {
@@ -168,6 +173,77 @@ describe('parseRequest analyze', () => {
   });
 });
 
+/** A JPEG-signed base64 string of exactly `chars` characters. */
+const jpegBase64 = (chars) => `/9j/${'A'.repeat(chars - 4)}`;
+
+describe('request payload budget', () => {
+  it('measures image base64 plus the UTF-8 JSON of text fields and schema', () => {
+    expect(
+      payloadBytes({
+        system: 'S',
+        text: '가',
+        images: [{ base64: 'AAAA' }],
+        schema: {},
+      })
+    ).toBe(4 + '"S"'.length + 5 + '{}'.length);
+  });
+
+  it('stays well inside the native messaging frame limit', () => {
+    expect(MAX_PAYLOAD_BYTES).toBeLessThanOrEqual(MAX_INCOMING_BYTES / 2);
+  });
+
+  it('rejects images that fit one by one but not together', () => {
+    const full = {
+      mimeType: 'image/jpeg',
+      base64: jpegBase64(MAX_IMAGE_BASE64_CHARS),
+    };
+    const images = Array.from({ length: MAX_IMAGES }, () => full);
+    expect(badRequest(() => parseRequest(analyze({ images })))).toMatch(
+      /payload of \d+ bytes exceeds/
+    );
+  });
+
+  it('accepts a request at the budget, which then fits in one frame', () => {
+    const full = {
+      mimeType: 'image/jpeg',
+      base64: jpegBase64(MAX_IMAGE_BASE64_CHARS),
+    };
+    // Worst-case JSON escaping for the text fields.
+    const fields = {
+      system: '"'.repeat(MAX_SYSTEM_CHARS),
+      text: '\u0001'.repeat(MAX_TEXT_CHARS),
+      schema: { type: 'object' },
+    };
+    const fixed = payloadBytes({
+      ...fields,
+      images: [full, full, full, full, full],
+    });
+    const rest = MAX_PAYLOAD_BYTES - fixed;
+    const last = {
+      mimeType: 'image/jpeg',
+      base64: jpegBase64(rest - (rest % 4)),
+    };
+    const request = analyze({
+      ...fields,
+      images: [full, full, full, full, full, last],
+    });
+
+    expect(parseRequest(request).images).toHaveLength(6);
+    const frame = encodeFrame(request, { maxBytes: MAX_INCOMING_BYTES });
+    expect(frame.length).toBeLessThan(MAX_PAYLOAD_BYTES + 4096);
+
+    const over = {
+      mimeType: 'image/jpeg',
+      base64: jpegBase64(rest - (rest % 4) + 4),
+    };
+    badRequest(() =>
+      parseRequest(
+        analyze({ ...fields, images: [full, full, full, full, full, over] })
+      )
+    );
+  });
+});
+
 describe('decodeImage', () => {
   it('rejects invalid base64', () => {
     badRequest(() => decodeImage({ base64: 'not base64!' }, 0));
@@ -176,11 +252,24 @@ describe('decodeImage', () => {
     badRequest(() => decodeImage({}, 0));
   });
 
-  it('rejects images over the size limit before decoding', () => {
-    const base64 = 'A'.repeat(Math.ceil((MAX_IMAGE_BYTES + 3) / 3) * 4);
+  it('caps each image at 5 MiB of base64 (3.75 MiB decoded)', () => {
+    expect(MAX_IMAGE_BASE64_CHARS).toBe(5 * 1024 * 1024);
+    expect(
+      decodeImage({ base64: jpegBase64(MAX_IMAGE_BASE64_CHARS) }, 0).mimeType
+    ).toBe('image/jpeg');
+    const base64 = jpegBase64(MAX_IMAGE_BASE64_CHARS + 4);
     expect(badRequest(() => decodeImage({ base64 }, 2))).toMatch(
       /images\[2\] exceeds/
     );
+  });
+
+  it('keeps only the base64 and sniffs the format from the first bytes', () => {
+    const webp = decodeImage({ base64: WEBP.toString('base64') }, 0);
+    expect(webp).toEqual({
+      mimeType: 'image/webp',
+      extension: 'webp',
+      base64: WEBP.toString('base64'),
+    });
   });
 
   it('rejects formats other than JPEG, PNG and WebP', () => {

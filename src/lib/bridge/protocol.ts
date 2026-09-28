@@ -7,6 +7,11 @@ import type { CliBridgeSettings } from '@/lib/settings-types';
 
 export const BRIDGE_HOST_NAME = 'com.acorn_collector.bridge';
 export const BRIDGE_PROTOCOL_VERSION = 1;
+/**
+ * Largest analyze payload the host accepts (MAX_PAYLOAD_BYTES in
+ * native-host/lib/validate.mjs), measured by analyzePayloadBytes().
+ */
+export const BRIDGE_MAX_PAYLOAD_BYTES = 28 * 1024 * 1024;
 
 export type CliTarget = CliBridgeSettings['target'];
 
@@ -28,6 +33,24 @@ export interface BridgeAnalyzeRequest {
   schema: Record<string, unknown>;
 }
 
+const utf8 = new TextEncoder();
+
+/**
+ * Encoded size of an analyze request: image base64 plus the UTF-8 JSON of
+ * system, text and schema. Same measure as payloadBytes() in
+ * native-host/lib/validate.mjs.
+ */
+export function analyzePayloadBytes(
+  request: Pick<BridgeAnalyzeRequest, 'system' | 'text' | 'images' | 'schema'>
+): number {
+  let size = 0;
+  for (const image of request.images) size += image.base64.length;
+  for (const value of [request.system, request.text, request.schema]) {
+    size += utf8.encode(JSON.stringify(value)).length;
+  }
+  return size;
+}
+
 export type BridgeRequest =
   | { id: string; op: 'ping' }
   | { id: string; op: 'status' }
@@ -44,6 +67,7 @@ export const BRIDGE_HOST_ERROR_CODES = [
   'rate_limited',
   'cli_failed',
   'bad_output',
+  'origin_not_allowed',
   'internal',
 ] as const;
 
