@@ -1,27 +1,66 @@
-import { forwardRef, type InputHTMLAttributes } from 'react';
+import {
+  forwardRef,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from 'react';
 import { cn } from '@/lib/utils';
+import { controlClassName, useFieldControl } from './field-context';
 
-export type InputProps = InputHTMLAttributes<HTMLInputElement>;
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  /** Short non-interactive suffix inside the field, e.g. a currency code. */
+  trailing?: ReactNode;
+}
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
-    return (
+  ({ className, trailing, ...props }, ref) => {
+    const fieldProps = useFieldControl(props);
+    const input = (
       <input
-        type={type}
         ref={ref}
+        {...props}
+        {...fieldProps}
         className={cn(
-          'flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600',
-          'bg-white dark:bg-gray-700 px-3 py-2 text-sm',
-          'text-gray-900 dark:text-white',
-          'placeholder:text-gray-400 dark:placeholder:text-gray-500',
-          'focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent',
-          'disabled:cursor-not-allowed disabled:opacity-50',
+          controlClassName,
+          'h-11 px-3',
+          trailing ? 'pr-12' : undefined,
           className
         )}
-        {...props}
       />
+    );
+    if (!trailing) return input;
+    return (
+      <div className="relative">
+        {input}
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-fg-subtle">
+          {trailing}
+        </span>
+      </div>
     );
   }
 );
 
 Input.displayName = 'Input';
+
+export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>;
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, rows = 3, ...props }, ref) => {
+    const fieldProps = useFieldControl(props);
+    return (
+      <textarea
+        ref={ref}
+        rows={rows}
+        {...props}
+        {...fieldProps}
+        className={cn(
+          controlClassName,
+          'min-h-20 resize-y px-3 py-2.5 leading-relaxed',
+          className
+        )}
+      />
+    );
+  }
+);
+
+Textarea.displayName = 'Textarea';

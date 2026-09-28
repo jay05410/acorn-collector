@@ -1,9 +1,17 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type FocusEvent,
+  type KeyboardEvent,
+} from 'react';
 import { DayPicker, type DayPickerLocale } from 'react-day-picker';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDate, parseIsoDate, t, toIsoDate, useLanguage } from '@/i18n';
 import type { AppLanguage } from '@/i18n/languages';
+import { controlClassName, useFieldControl } from './field-context';
 
 type LocaleLanguage = Exclude<AppLanguage, 'en'>;
 
@@ -54,6 +62,9 @@ function useDayPickerLocale(
   return loadedLocales.get(language);
 }
 
+const NAV_BUTTON =
+  'inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-hover hover:text-fg';
+
 interface DatePickerProps {
   /** "YYYY-MM-DD" or empty. */
   value: string;
@@ -70,8 +81,10 @@ export function DatePicker({
 }: DatePickerProps) {
   const language = useLanguage();
   const locale = useDayPickerLocale(language);
+  const fieldProps = useFieldControl({});
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const openedByFocus = useRef(false);
 
   const selectedDate = value ? parseIsoDate(value) : undefined;
@@ -94,6 +107,7 @@ export function DatePicker({
     (date: Date | undefined) => {
       onChange(date ? toIsoDate(date) : '');
       setIsOpen(false);
+      triggerRef.current?.focus();
     },
     [onChange]
   );
@@ -113,22 +127,48 @@ export function DatePicker({
     }
   }, [isOpen]);
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Escape' || !isOpen) return;
+    // Consumed here so an enclosing dialog stays open.
+    event.stopPropagation();
+    setIsOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!containerRef.current?.contains(event.relatedTarget as Node | null)) {
+      openedByFocus.current = false;
+      setIsOpen(false);
+    }
+  };
+
   return (
-    <div ref={containerRef} className="relative">
+    <div
+      ref={containerRef}
+      className="relative"
+      onKeyDown={handleKeyDown}
+      onBlur={handleBlur}
+    >
       <button
+        ref={triggerRef}
         type="button"
+        {...fieldProps}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
         onClick={handleButtonClick}
         onFocus={handleButtonFocus}
         className={cn(
-          'flex items-center gap-2 w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-left focus:outline-none focus:ring-2 focus:ring-primary',
-          value
-            ? 'text-gray-900 dark:text-white'
-            : 'text-gray-500 dark:text-gray-400',
+          controlClassName,
+          'flex h-11 cursor-pointer items-center gap-2 px-3 text-left',
+          value ? 'text-fg' : 'text-fg-subtle',
           className
         )}
       >
-        <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-        <span className="flex-1">
+        <Calendar
+          aria-hidden="true"
+          className="size-4 shrink-0 text-fg-subtle"
+        />
+        <span className="min-w-0 flex-1 truncate tabular-nums">
           {value
             ? formatDate(value)
             : (placeholder ?? t('events', 'selectDate'))}
@@ -137,8 +177,10 @@ export function DatePicker({
 
       {isOpen && (
         <div
-          className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4"
-          onKeyDown={(e) => e.key === 'Escape' && setIsOpen(false)}
+          role="dialog"
+          aria-label={t('events', 'selectDate')}
+          tabIndex={-1}
+          className="absolute top-full left-0 z-(--z-popover) mt-1.5 animate-pop-in rounded-xl border border-line bg-surface-raised p-3 shadow-lg outline-none"
         >
           <DayPicker
             mode="single"
@@ -151,43 +193,39 @@ export function DatePicker({
             components={{
               Chevron: ({ orientation }) =>
                 orientation === 'left' ? (
-                  <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  <ChevronLeft aria-hidden="true" className="size-4" />
                 ) : (
-                  <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  <ChevronRight aria-hidden="true" className="size-4" />
                 ),
             }}
             classNames={{
               months: 'flex flex-col',
-              month: 'space-y-3',
-              month_caption: 'flex justify-center relative items-center h-10',
-              caption_label:
-                'text-sm font-semibold text-gray-900 dark:text-white',
-              nav: 'absolute inset-x-0 flex justify-between items-center',
-              button_previous:
-                'h-8 w-8 bg-transparent p-0 hover:bg-gray-100 dark:hover:bg-gray-700 inline-flex items-center justify-center rounded-md transition-colors',
-              button_next:
-                'h-8 w-8 bg-transparent p-0 hover:bg-gray-100 dark:hover:bg-gray-700 inline-flex items-center justify-center rounded-md transition-colors',
+              month: 'space-y-2',
+              month_caption: 'flex h-8 items-center justify-center',
+              caption_label: 'text-sm font-semibold text-fg',
+              nav: 'absolute inset-x-3 top-3 flex items-center justify-between',
+              button_previous: NAV_BUTTON,
+              button_next: NAV_BUTTON,
               month_grid: 'w-full border-collapse',
               weekdays: 'flex',
-              weekday:
-                'text-gray-500 dark:text-gray-400 w-9 font-medium text-xs text-center',
-              week: 'flex w-full mt-1',
-              day: 'text-center text-sm relative p-0.5 focus-within:relative focus-within:z-20',
+              weekday: 'w-9 text-center text-xs font-medium text-fg-subtle',
+              week: 'mt-0.5 flex w-full',
+              day: 'relative p-0 text-center text-sm',
               day_button:
-                'h-9 w-9 p-0 font-normal rounded-md text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 inline-flex items-center justify-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary',
+                'inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-fg tabular-nums transition-colors hover:bg-hover',
               selected:
-                'bg-primary text-white hover:bg-primary-dark dark:bg-primary dark:hover:bg-primary-dark font-semibold',
+                'font-semibold [&>button]:bg-primary-strong [&>button]:text-on-primary [&>button]:hover:bg-primary-strong-hover',
               today:
-                'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 font-semibold',
-              outside: 'text-gray-300 dark:text-gray-600',
-              disabled: 'text-gray-300 dark:text-gray-600 cursor-not-allowed',
+                'font-semibold [&>button]:text-primary-strong [&>button]:ring-1 [&>button]:ring-primary [&>button]:ring-inset',
+              outside: '[&>button]:text-fg-subtle/60',
+              disabled: 'opacity-40 [&>button]:cursor-not-allowed',
             }}
           />
           {value && (
             <button
               type="button"
               onClick={() => handleSelect(undefined)}
-              className="w-full mt-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+              className="mt-2 flex h-9 w-full cursor-pointer items-center justify-center rounded-lg text-sm font-medium text-fg-muted transition-colors hover:bg-danger-soft hover:text-danger"
             >
               {t('events', 'clearDate')}
             </button>
