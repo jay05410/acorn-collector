@@ -8,7 +8,7 @@
 | 전제 | 확인된 사실 | 결론 |
 |---|---|---|
 | "Gemini가 느리다" | 기존 코드는 `gemini-2.5-flash`에 thinking 설정을 하지 않아 동적 thinking이 켜진 상태였다 ([Google thinking 문서](https://ai.google.dev/gemini-api/docs/generate-content/thinking)). 실측 1패스 약 8.1초, 호출당 thinking 토큰 626~747개. 서버 경로는 순차 2회 호출이었다. 측정 시점에 503 과부하·429 할당량 초과도 발생. | 느림의 상당 부분은 설정 문제였다. 다만 소유자 결정에 따라 Gemini는 전면 제외한다 (온디바이스 Gemini Nano 포함). |
-| "jev로 영역을 가져온다" | Jev는 TypeSafe AI의 텍스트 전용 판단(decision) 모델이다 (2026-09-15 공개, [docs.typesafe.ai](https://docs.typesafe.ai/models.md)). 페이지를 가져오거나 이미지를 읽지 못한다. | 페이지 캡처는 확장 내부 DOM 추출로 한다. Jev는 소유자가 말한 "정적 판단" 단계에만 선택 기능으로 둔다 (ACORN-11). |
+| "jev로 영역을 가져온다" | Jev는 TypeSafe AI의 텍스트 전용 판단(decision) 모델이다 (2026-09-15 공개, [docs.typesafe.ai](https://docs.typesafe.ai/models.md)). 페이지를 가져오거나 이미지를 읽지 못한다. | 페이지 캡처는 확장 내부 DOM 추출로 한다. "정적 판단" 단계는 Jev 대신 로컬 결정적 판단기로 구현한다(ACORN-11): 비용 0, 지연 약 5ms, 오프라인, CJK 지원. Jev는 소유자 운영 프록시가 필요하고(키를 확장에 넣을 수 없음), 텍스트 전용이며 CJK 정확도가 낮다고 공식 문서가 밝히고, 가입 상태가 2026-09-22 중단 후 불확실하다. |
 | "crawl4ai 같은 오픈소스" | crawl4ai 0.9.4는 Python + Playwright 서버 도구다. 로그인이 필요한 X 게시글은 서버에 사용자 세션을 두어야 읽을 수 있다 ([docs](https://docs.crawl4ai.com/advanced/identity-based-crawling/)). Jina Reader는 2026-09-29 x.com 요청에 403을 반환했다. | 서버 무저장 원칙과 X 약관에 맞지 않아 채택하지 않는다. 사용자가 보고 있는 탭의 렌더링된 DOM에서 구조화 스냅샷을 만든다. 일반 페이지 정제에는 defuddle(MIT, 브라우저 동작)을 필요 시 주입한다. |
 | "OpenAI·Claude를 OAuth로 붙인다" | Anthropic은 제3자 앱의 Claude.ai 로그인 제공과 토큰 중개를 명시적으로 금지한다 ([legal-and-compliance](https://code.claude.com/docs/en/legal-and-compliance.md)). OpenAI는 제3자용 ChatGPT OAuth 프로그램 문서가 없다. | 허용 경로 세 가지만 구현: ① OpenRouter OAuth PKCE(사용자 소유 키 발급) ② OpenAI·Anthropic API 키 직접 입력 ③ 사용자가 직접 로그인한 로컬 CLI(Claude Code·Codex)를 Native Messaging으로 호출하는 선택 기능(정책 회색지대, 옵트인). |
 | "광고는 무조건" | AdSense는 브라우저 확장 게재를 명시적으로 금지한다 ([AdSense 정책](https://support.google.com/adsense/answer/1346295)). MV3는 원격 스크립트를 금지하지만 원격 JSON 데이터는 허용한다 ([Chrome 정책](https://developer.chrome.com/docs/webstore/program-policies/policies)). | 번들 코드가 원격 JSON 스폰서 매니페스트를 렌더링하는 방식. "광고" 표기, 개인화 없음. |
@@ -24,6 +24,10 @@
 | gpt-6-luna, reasoning none | 2.2~4.2초 | 1.00 | 1.00 | 6/6 |
 | gpt-6-luna, reasoning low | 4.3~7.9초 | 0.97 | 0.97 | 6/6 |
 | gpt-6-sol, reasoning none | 4.1~5.2초 | 1.00 | 1.00 | 6/6 |
+
+다중 이미지(3장) 실측: 한 번에 보내기 4.6~5.2초, 이미지별 병렬 호출 2.7~3.4초(정확도 동일) → 병렬 채택.
+해상도 1024px 축소: 입력 토큰 3386→1480, 지연 차이는 서버 편차 수준, 정확도 동일 → 프로바이더 최대 해상도 유지.
+로컬 CLI(Claude Code, 구독) 경로: 이미지당 9.8~13.3초(CLI 기동 + 적응형 thinking). API 비용이 없는 대신 느리다.
 
 한계: 합성 이미지라 실제 사진(반사, 기울어짐, 손글씨)보다 쉽다. Anthropic·OpenRouter 키가 없어 이들 경로는 실측하지 못했다(CLI 브리지로 Claude 경로만 확인).
 

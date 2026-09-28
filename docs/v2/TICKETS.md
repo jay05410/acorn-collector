@@ -22,23 +22,23 @@
 - 범위: 기존 타입 오류 2건 수정, pnpm 버전 고정(corepack 호환), Vitest 설정과 첫 테스트, GitHub Actions CI(typecheck·lint·test·build), lint 대상에서 빌드 산출물 제외, 작업 보드 작성.
 - 완료 조건: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` 통과.
 
-### ACORN-2 서버·크레딧·로그인 제거 — `IN REVIEW`
+### ACORN-2 서버·크레딧·로그인 제거 — `DONE`
 - 범위: `api/` Cloudflare Worker(D1 사용자·크레딧·분석 세션·이미지 URL 저장, 결제, OAuth 로그인) 삭제. 확장 쪽 로그인·크레딧·결제 UI와 `api-client`, `auth`, `useAuthStore`, `oauth-callback.html` 삭제. 미사용 의존성(`@google/genai`, `tesseract.js`) 제거.
 - 완료 조건: 서버로 사용자 데이터를 보내는 코드 경로 0개. 번들 크기 감소 수치 기록.
 
-### ACORN-3 데이터 계층 v5 + i18n 코어 + 계약 정의 — `TODO`
+### ACORN-3 데이터 계층 v5 + i18n 코어 + 계약 정의 — `IN REVIEW`
 - 범위: Dexie v5 마이그레이션(행사 통화, 상품 통화·원문명·카테고리·옵션, 로컬 분석 캐시 테이블). 반응형 i18n 코어(언어 변경 즉시 반영, 네임스페이스별 메시지 파일, 영어 폴백). 통화·날짜 현지화 유틸. AI·캡처 공용 타입 계약.
 - 완료 조건: v4→v5 마이그레이션 테스트, i18n 키 완전성 테스트.
 
-### ACORN-4 AI 엔진 + 사용자 계정 기반 프로바이더 — `TODO`
+### ACORN-4 AI 엔진 + 사용자 계정 기반 프로바이더 — `IN REVIEW`
 - 범위: 프로바이더 어댑터(OpenAI, Anthropic, OpenRouter OAuth PKCE), 이미지 전처리(축소·재인코딩·해시), 단일 호출 구조화 출력(JSON Schema), 스트리밍 부분 결과, 로컬 캐시, 오류 분류. Gemini 미사용.
 - 완료 조건: 벤치마크 픽스처에서 기존 대비 지연·정확도 수치 비교. 요청 빌더·파서 단위 테스트.
 
-### ACORN-5 페이지 캡처 v2 — `TODO`
+### ACORN-5 페이지 캡처 v2 — `IN REVIEW`
 - 범위: 콘텐츠 스크립트가 현재 렌더링된 DOM을 구조화 스냅샷(본문·작성자·이미지·링크·메타데이터)으로 반환. 사이트별 추출기(X, Bluesky, 일반 페이지). 우클릭 대상 기억, 이미지 우클릭, 단축키, 사이드패널 캡처 버튼. `chrome.storage.session` 핸드오프(디스크에 흔적 없음).
 - 완료 조건: DOM 픽스처 기반 추출 테스트.
 
-### ACORN-6 로컬 CLI 브리지 (Claude Code / Codex) — `TODO`
+### ACORN-6 로컬 CLI 브리지 (Claude Code / Codex) — `IN REVIEW`
 - 범위: Native Messaging 호스트(Node, 무의존성), 설치 스크립트(macOS·Linux·Windows), 확장 쪽 클라이언트와 연결 테스트.
 - 완료 조건: 프로토콜 단위 테스트, 로컬 Claude Code 실호출 검증.
 
@@ -57,8 +57,9 @@
 ### ACORN-10 디자인 리프레시 — `TODO`
 - 범위: 디자인 토큰, 공용 컴포넌트(Sheet·Toast·Segmented 등), 접근성(포커스 트랩·aria), 다크모드 정비.
 
-### ACORN-11 (선택) 공개 페이지용 호스티드 추출기 어댑터 — `TODO`
-- 범위: 조사 결과에 따라 결정. 로그인이 필요한 X 게시글에는 쓸 수 없으므로 공개 페이지 전용 선택 기능으로만 둔다.
+### ACORN-11 정적 판단 v2 (로컬 결정적 파서) — `IN REVIEW`
+- 결정: 조사 결과 Jev는 텍스트 전용 판단 모델이라 페이지 캡처를 대체할 수 없고, 호스티드 추출기(Jina·Firecrawl·crawl4ai)는 로그인이 필요한 X 게시글을 읽지 못한다. 그래서 "정적 판단"을 로컬 파서로 고도화했다.
+- 범위: 다국어 부스 번호(코미케 스페이스 표기 포함), 통판 플래그 분리(기존 오인식 버그 수정), 행사 사전 확대와 기존 행사 매칭, 서클명 정제, 주문폼 링크 분류, 필드별 신뢰도.
 
 ### ACORN-12 검증·스크린샷·보고서 — `TODO`
 - 범위: 실제 확장 로드 E2E, 개선 전후 스크린샷, 벤치마크 표, README·아키텍처 문서, 결과 보고서.
@@ -68,4 +69,5 @@
 | 티켓 | 브랜치 | 리뷰 결과 | 머지 |
 |---|---|---|---|
 | ACORN-1 | feat/ACORN-1-tooling-baseline | PR #1. 리뷰 인라인 1건(High): 깨끗한 체크아웃에서 `.wxt` 타입이 없어 CI 타입체크 실패 → `postinstall: wxt prepare`로 수정, 재현 후 검증 | 머지 완료 (a7fd11d) |
-| ACORN-2 | feat/ACORN-2-remove-server-credits | 진행 중 | — |
+| ACORN-2 | feat/ACORN-2-remove-server-credits | PR #2. 인라인 2건(Low): 미사용 identity 권한, 기존 로그인 데이터 잔존 → 둘 다 수정 | 머지 완료 (ff140b6) |
+| ACORN-3 | feat/ACORN-3-foundation | 진행 중 | — |

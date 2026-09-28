@@ -43,5 +43,5 @@
 - 빌드 산출물에 원격 스크립트·`eval`·`new Function`이 있으면 안 된다(ACORN-8에서 CI 가드 추가).
 
 ## Git
-- 브랜치 `feat/ACORN-<n>-<slug>`, 커밋 메시지 `type(ACORN-n): 요약` + 본문, 마지막 줄 `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- 브랜치 `feat/ACORN-<n>-<slug>`, 커밋 메시지 `type(ACORN-n): 요약` + 본문, 마지막 줄에 커밋을 실제로 작성한 모델의 `Co-Authored-By` 서명(하네스가 지정한 값)을 넣는다.
 - 사용자의 미추적 파일(`.github/workflows/deploy.yml`, `codedocs.config.ts`, `analysis-result.json`, `docs-output/`, `api/`)은 절대 스테이징하지 않는다. `git add -A` 금지, 경로를 명시해 추가.
