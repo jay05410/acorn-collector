@@ -5,9 +5,7 @@ import { Header } from '@/components/Header';
 import { AddBoothModal } from '@/components/AddBoothModal';
 import { SettingsModal } from '@/components/SettingsModal';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
-import { CreditPurchaseModal } from '@/components/CreditPurchaseModal';
 import { useUIStore } from '@/stores/useUIStore';
-import { useAuthStore } from '@/stores/useAuthStore';
 import {
   appStorage,
   type PendingAddData,
@@ -39,7 +37,6 @@ export default function App() {
   const [pendingData, setPendingData] = useState<PendingAddData | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [showCreditPurchase, setShowCreditPurchase] = useState(false);
   const [exportEventId, setExportEventId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -49,12 +46,6 @@ export default function App() {
     setSelectedEventId,
     setSelectedBoothId,
   } = useUIStore();
-
-  const { init: initAuth } = useAuthStore();
-
-  useEffect(() => {
-    initAuth();
-  }, [initAuth]);
 
   useEffect(() => {
     const applySettings = (colorTheme: ColorTheme) => {
@@ -161,7 +152,6 @@ export default function App() {
         showBack={currentView !== 'events'}
         onAddClick={handleOpenAddModal}
         onSettingsClick={() => setShowSettings(true)}
-        onCreditClick={() => setShowCreditPurchase(true)}
       />
       <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
         {currentView === 'events' && (
@@ -192,11 +182,6 @@ export default function App() {
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-      />
-
-      <CreditPurchaseModal
-        isOpen={showCreditPurchase}
-        onClose={() => setShowCreditPurchase(false)}
       />
 
       {showExport && exportEventId && (

@@ -1,7 +1,11 @@
 export default defineBackground(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-  chrome.runtime.onInstalled.addListener(() => {
+  chrome.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'update') {
+      // v1 stored account data for the removed credit system; drop it.
+      chrome.storage.local.remove(['auth_state', 'auth_token']).catch(() => {});
+    }
     chrome.contextMenus.remove('add-to-acorn-collector').catch(() => {});
     chrome.contextMenus.create({
       id: 'add-to-acorn-collector',
