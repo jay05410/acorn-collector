@@ -6,6 +6,7 @@ import aiErrors from './messages/aiErrors';
 import analysis from './messages/analysis';
 import badges from './messages/badges';
 import booths from './messages/booths';
+import capture from './messages/capture';
 import categories from './messages/categories';
 import common from './messages/common';
 import currency from './messages/currency';
@@ -24,6 +25,7 @@ export const namespaces = {
   analysis,
   badges,
   booths,
+  capture,
   categories,
   common,
   currency,

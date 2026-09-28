@@ -1,20 +1,33 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { EventList } from '@/components/EventList';
 import { BoothDetail } from '@/components/BoothDetail';
 import { Header } from '@/components/Header';
-import { AddBoothModal } from '@/components/AddBoothModal';
+import {
+  CaptureReviewSheet,
+  type ReviewSource,
+  type SavedBooth,
+} from '@/components/capture/CaptureReviewSheet';
 import { SettingsModal } from '@/components/SettingsModal';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
+import { SponsorSlot } from '@/components/support/SponsorSlot';
 import { ToastViewport } from '@/components/ui/ToastViewport';
+import { showToast } from '@/components/ui/toast-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { getSettings, watchSettings } from '@/lib/storage';
-import { useCaptureHandoff } from '@/lib/capture/client';
-import { prefillFromHandoff, type AddBoothPrefill } from '@/lib/capture/prefill';
+import { ensureAIRuntime, setRuntimeAISettings } from '@/lib/ai/runtime';
+import { requestCapture, useCaptureHandoff } from '@/lib/capture/client';
+import type { CaptureRequestFailure } from '@/lib/capture/messages';
 import type { AppSettings, ColorTheme } from '@/lib/settings-types';
 import { LANGUAGE_INFO } from '@/i18n/languages';
-import { setLanguage, t, useLanguage } from '@/i18n';
+import { setLanguage, t, tp, useLanguage, type MessageKey } from '@/i18n';
 
 type View = 'events' | 'booth-detail';
+
+const CAPTURE_FAILURES: Record<CaptureRequestFailure, MessageKey<'capture'>> = {
+  'no-tab': 'captureNoTab',
+  'unsupported-page': 'captureUnsupported',
+  superseded: 'captureSuperseded',
+};
 
 function getSystemPrefersDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -40,12 +53,15 @@ interface AppProps {
 export default function App({ initialSettings }: AppProps) {
   const language = useLanguage();
   const [currentView, setCurrentView] = useState<View>('events');
-  const [isDark, setIsDark] = useState(() => getSystemPrefersDark());
-  const [prefill, setPrefill] = useState<AddBoothPrefill | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(
+    initialSettings ?? null
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [exportEventId, setExportEventId] = useState<string | null>(null);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [reviewSource, setReviewSource] = useState<ReviewSource | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const manualCount = useRef(0);
 
   const {
     selectedEventId,
@@ -60,12 +76,16 @@ export default function App({ initialSettings }: AppProps) {
   }, [language]);
 
   useEffect(() => {
-    const applySettings = (settings: AppSettings) => {
-      applyColorTheme(settings.colorTheme);
-      setLanguage(settings.language);
-      const dark = getSystemPrefersDark();
-      setIsDark(dark);
-      applyDarkMode(dark);
+    ensureAIRuntime();
+  }, []);
+
+  useEffect(() => {
+    const applySettings = (next: AppSettings) => {
+      applyColorTheme(next.colorTheme);
+      setLanguage(next.language);
+      setRuntimeAISettings(next.ai);
+      setSettings(next);
+      applyDarkMode(getSystemPrefersDark());
     };
 
     if (initialSettings) {
@@ -82,7 +102,6 @@ export default function App({ initialSettings }: AppProps) {
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemChange = (e: MediaQueryListEvent) => {
-      setIsDark(e.matches);
       applyDarkMode(e.matches);
     };
     mediaQuery.addEventListener('change', handleSystemChange);
@@ -95,32 +114,82 @@ export default function App({ initialSettings }: AppProps) {
 
   const { handoff, consume } = useCaptureHandoff();
 
-  // Minimal capture adapter until the review UI (ACORN-7): open the add form
-  // prefilled from this window's capture, then clear the handoff so it is
-  // not shown again.
+  // A capture for this window opens the review sheet (a newer capture
+  // replaces the one on screen). The handoff stays in session storage until
+  // the booth is saved or the sheet is dismissed, so reopening the panel
+  // shows it again.
   useEffect(() => {
-    if (!handoff) return;
-    setPrefill(prefillFromHandoff(handoff));
-    setIsAddModalOpen(true);
-    consume().catch((error: unknown) => {
-      console.warn('[acorn] could not clear capture handoff', error);
-    });
-  }, [handoff, consume]);
+    if (handoff) setReviewSource({ kind: 'capture', handoff });
+  }, [handoff]);
 
-  const handleSelectBooth = (boothId: string, eventId: string) => {
-    setSelectedEventId(eventId);
-    setSelectedBoothId(boothId);
-    setCurrentView('booth-detail');
-  };
+  const releaseReview = useCallback(
+    (source: ReviewSource | null) => {
+      setReviewSource(null);
+      if (source?.kind !== 'capture') return;
+      consume().catch((error: unknown) => {
+        console.warn('[acorn] could not clear capture handoff', error);
+      });
+    },
+    [consume]
+  );
+
+  const handleSelectBooth = useCallback(
+    (boothId: string, eventId: string) => {
+      setSelectedEventId(eventId);
+      setSelectedBoothId(boothId);
+      setCurrentView('booth-detail');
+    },
+    [setSelectedEventId, setSelectedBoothId]
+  );
+
+  const handleSaved = useCallback(
+    (booth: SavedBooth) => {
+      releaseReview(reviewSource);
+      showToast({
+        message: tp('capture', 'savedToast', { name: booth.circleName }),
+        tone: 'success',
+        action: {
+          label: t('capture', 'view'),
+          onClick: () => handleSelectBooth(booth.boothId, booth.eventId),
+        },
+      });
+    },
+    [releaseReview, reviewSource, handleSelectBooth]
+  );
+
+  const handleCapture = useCallback(async () => {
+    setCapturing(true);
+    try {
+      const response = await requestCapture();
+      if (!response.ok) {
+        showToast({
+          message: t('capture', CAPTURE_FAILURES[response.code]),
+          tone: 'error',
+        });
+      }
+    } catch (error) {
+      console.warn('[acorn] capture request failed', error);
+      showToast({ message: t('capture', 'captureFailed'), tone: 'error' });
+    } finally {
+      setCapturing(false);
+    }
+  }, []);
+
+  const onOpenSettings = useCallback(() => setShowSettings(true), []);
 
   const handleExportEvent = (eventId: string) => {
     setExportEventId(eventId);
     setShowExport(true);
   };
 
+  const openManualReview = useCallback((eventId: string | null) => {
+    manualCount.current += 1;
+    setReviewSource({ kind: 'manual', id: manualCount.current, eventId });
+  }, []);
+
   const handleAddBoothToEvent = (eventId: string) => {
     setSelectedEventId(eventId);
-    setIsAddModalOpen(true);
+    openManualReview(eventId);
   };
 
   const handleBack = () => {
@@ -128,28 +197,20 @@ export default function App({ initialSettings }: AppProps) {
     setCurrentView('events');
   };
 
-  const handleOpenAddModal = useCallback(() => {
-    setPrefill(null);
-    setIsAddModalOpen(true);
-  }, []);
-
-  const handleCloseAddModal = useCallback(() => {
-    setIsAddModalOpen(false);
-    setPrefill(null);
-  }, []);
+  const adsEnabled = settings?.noticeAcceptedAt != null;
 
   return (
-    <div
-      className={`flex flex-col h-full ${isDark ? 'dark bg-gray-900' : 'bg-white'}`}
-    >
+    <div className="flex h-full flex-col bg-canvas">
       <Header
         currentView={currentView}
         onBack={handleBack}
         showBack={currentView !== 'events'}
-        onAddClick={handleOpenAddModal}
-        onSettingsClick={() => setShowSettings(true)}
+        onAddClick={() => openManualReview(null)}
+        onSettingsClick={onOpenSettings}
+        onCaptureClick={() => void handleCapture()}
+        capturing={capturing}
       />
-      <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
+      <main className="flex-1 overflow-y-auto bg-canvas">
         {currentView === 'events' && (
           <EventList
             onSelectBooth={handleSelectBooth}
@@ -160,20 +221,26 @@ export default function App({ initialSettings }: AppProps) {
         {currentView === 'booth-detail' && selectedBoothId && (
           <BoothDetail
             boothId={selectedBoothId}
-            onOpenSettings={() => setShowSettings(true)}
+            settings={settings}
+            onOpenSettings={onOpenSettings}
           />
         )}
       </main>
+      {adsEnabled && <SponsorSlot placement="footer" />}
 
-      <AddBoothModal
-        isOpen={isAddModalOpen}
-        onClose={handleCloseAddModal}
-        initialText={prefill?.text}
-        sourceUrl={prefill?.url}
-        author={prefill?.author}
-        imageUrls={prefill?.imageUrls}
-        defaultEventId={selectedEventId}
-      />
+      {/* Settings open on top of the review: the sheet steps aside and
+          comes back fresh (so a newly connected AI starts analyzing). */}
+      {!showSettings && (
+        <CaptureReviewSheet
+          source={reviewSource}
+          settings={settings}
+          adsEnabled={adsEnabled}
+          fallbackEventId={selectedEventId}
+          onDismiss={() => releaseReview(reviewSource)}
+          onSaved={handleSaved}
+          onOpenSettings={onOpenSettings}
+        />
+      )}
 
       <SettingsModal
         isOpen={showSettings}

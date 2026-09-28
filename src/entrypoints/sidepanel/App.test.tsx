@@ -89,14 +89,28 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('side panel capture adapter', () => {
-  it("opens the add form prefilled from this window's capture and consumes it", async () => {
+function dialog(): HTMLElement | null {
+  return document.querySelector('[role="dialog"]');
+}
+
+describe('side panel capture review', () => {
+  it("opens the review sheet prefilled from this window's capture and keeps the handoff until dismissed", async () => {
     await emit(handoff(3));
     await vi.waitFor(() => expect(inputValues()).toContain('A-12'));
-    expect(inputValues()).toEqual(
-      expect.arrayContaining(['A-12', 'Circle Acorn', 'https://forms.example.org/f1'])
-    );
+    expect(inputValues()).toEqual(expect.arrayContaining(['A-12', 'Circle Acorn']));
+    expect(dialog()?.textContent).toContain('forms.example.org');
+    // Opening does not consume the capture: reopening the panel shows it again.
+    expect(sessionRemove).not.toHaveBeenCalled();
+
+    const close = dialog()?.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+    await act(async () => close?.click());
     await vi.waitFor(() => expect(sessionRemove).toHaveBeenCalledWith(CAPTURE_HANDOFF_KEY));
+    expect(dialog()).toBeNull();
+  });
+
+  it('asks the user to connect AI when no provider is set up', async () => {
+    await emit(handoff(3));
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain('Connect AI'));
   });
 
   it("ignores another window's capture", async () => {

@@ -32,7 +32,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Stepper } from '@/components/ui/Stepper';
 import { showToast } from '@/components/ui/toast-store';
-import { OCRModal, type SelectedItem } from '@/components/OCRModal';
+import { AnalysisSheet } from '@/components/analysis/AnalysisSheet';
 import {
   cn,
   parsePriceInput,
@@ -41,13 +41,17 @@ import {
 } from '@/lib/utils';
 import { formatPrice, getBadgeLabel, t, tp, useLanguage } from '@/i18n';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
+import type { AppSettings } from '@/lib/settings-types';
 import type { Badge as BadgeRecord, Item } from '@/types';
 
 interface ItemChecklistProps {
   boothId: string;
   imageUrls?: string[] | null;
+  /** Captured post text, analyzed together with the images. */
+  sourceText?: string | null;
   /** The event's currency; items without their own currency use it. */
   currency: string | null;
+  settings?: AppSettings | null;
   onOpenSettings?: () => void;
 }
 
@@ -64,7 +68,9 @@ const MAX_QUANTITY = 999;
 export function ItemChecklist({
   boothId,
   imageUrls,
+  sourceText,
   currency,
+  settings = null,
   onOpenSettings,
 }: ItemChecklistProps) {
   useLanguage();
@@ -88,12 +94,13 @@ export function ItemChecklist({
   });
   const [isCreatingBadge, setIsCreatingBadge] = useState(false);
   const [newBadgeLabel, setNewBadgeLabel] = useState('');
-  const [isOCRModalOpen, setIsOCRModalOpen] = useState(false);
+  const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const headingId = useId();
   const formHeadingId = useId();
 
   const hasImages = Boolean(imageUrls && imageUrls.length > 0);
+  const canAnalyze = hasImages || Boolean(sourceText?.trim());
   // Same resolution as ChecklistReceipt, so both show the same currency.
   const eventCurrency = resolveEventCurrency(currency);
 
@@ -159,18 +166,6 @@ export function ItemChecklist({
         },
       },
     });
-  };
-
-  const handleOCRItemsSelected = async (selected: SelectedItem[]) => {
-    for (const item of selected) {
-      await createItem({
-        boothId,
-        name: item.name,
-        price: item.price,
-        badgeId: DEFAULT_BADGE_ID,
-        quantity: item.quantity,
-      });
-    }
   };
 
   if (isLoading) {
@@ -240,10 +235,10 @@ export function ItemChecklist({
         )}
       </div>
 
-      {hasImages && (
+      {canAnalyze && (
         <button
           type="button"
-          onClick={() => setIsOCRModalOpen(true)}
+          onClick={() => setIsAnalysisOpen(true)}
           className="flex w-full cursor-pointer items-center gap-3 rounded-xl border border-primary/25 bg-primary-soft p-3 text-left transition-colors duration-150 hover:bg-primary-soft-hover"
         >
           <span
@@ -256,9 +251,11 @@ export function ItemChecklist({
             <span className="block text-sm font-semibold text-primary-strong">
               {t('items', 'extractFromImage')}
             </span>
-            <span className="block truncate text-xs text-fg-muted">
-              {tp('ui', 'imagesAttached', { count: imageUrls?.length ?? 0 })}
-            </span>
+            {hasImages && (
+              <span className="block truncate text-xs text-fg-muted">
+                {tp('ui', 'imagesAttached', { count: imageUrls?.length ?? 0 })}
+              </span>
+            )}
           </span>
           <ChevronRight
             aria-hidden="true"
@@ -347,16 +344,14 @@ export function ItemChecklist({
         </Card>
       )}
 
-      {hasImages && imageUrls && (
-        <OCRModal
-          isOpen={isOCRModalOpen}
-          onClose={() => setIsOCRModalOpen(false)}
-          imageUrls={imageUrls}
-          currency={eventCurrency}
-          onItemsSelected={handleOCRItemsSelected}
-          onOpenSettings={onOpenSettings}
-        />
-      )}
+      <AnalysisSheet
+        open={isAnalysisOpen}
+        onClose={() => setIsAnalysisOpen(false)}
+        booth={{ id: boothId, imageUrls: imageUrls ?? null, sourceText: sourceText ?? null }}
+        eventCurrency={eventCurrency}
+        settings={settings}
+        onOpenSettings={onOpenSettings}
+      />
     </section>
   );
 }

@@ -17,7 +17,6 @@ export default defineMessages({
     boothCount_other: '{count} booths',
     selectDate: 'Select date',
     clearDate: 'Clear date',
-    chooseExisting: 'Choose an existing event',
   },
   ko: {
     title: '행사',
@@ -35,7 +34,6 @@ export default defineMessages({
     boothCount_other: '{count}개 부스',
     selectDate: '날짜 선택',
     clearDate: '날짜 지우기',
-    chooseExisting: '기존 행사 선택',
   },
   ja: {
     title: 'イベント',
@@ -53,7 +51,6 @@ export default defineMessages({
     boothCount_other: '{count}ブース',
     selectDate: '日付を選択',
     clearDate: '日付をクリア',
-    chooseExisting: '既存のイベントを選択',
   },
   'zh-CN': {
     title: '活动',
@@ -70,7 +67,6 @@ export default defineMessages({
     boothCount_other: '{count}个展位',
     selectDate: '选择日期',
     clearDate: '清除日期',
-    chooseExisting: '选择已有活动',
   },
   'zh-TW': {
     title: '活動',
@@ -87,6 +83,5 @@ export default defineMessages({
     boothCount_other: '{count} 個攤位',
     selectDate: '選擇日期',
     clearDate: '清除日期',
-    chooseExisting: '選擇現有活動',
   },
 });
