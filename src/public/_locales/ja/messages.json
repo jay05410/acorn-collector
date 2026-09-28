@@ -4,5 +4,17 @@
   },
   "appDescription": {
     "message": "同人イベントで訪問するブースと購入する商品を管理するチェックリスト"
+  },
+  "contextMenuAdd": {
+    "message": "どんぐりポケットに追加",
+    "description": "Context menu item on pages, selections and links"
+  },
+  "contextMenuAnalyzeImage": {
+    "message": "この画像を分析",
+    "description": "Context menu item on images"
+  },
+  "commandCapture": {
+    "message": "表示中のページを取り込む",
+    "description": "Keyboard shortcut description (chrome://extensions/shortcuts)"
   }
 }

@@ -4,5 +4,17 @@
   },
   "appDescription": {
     "message": "Checklist for managing booths and products at fan conventions and exhibitions"
+  },
+  "contextMenuAdd": {
+    "message": "Add to Acorn Collector",
+    "description": "Context menu item on pages, selections and links"
+  },
+  "contextMenuAnalyzeImage": {
+    "message": "Analyze this image",
+    "description": "Context menu item on images"
+  },
+  "commandCapture": {
+    "message": "Capture the current page",
+    "description": "Keyboard shortcut description (chrome://extensions/shortcuts)"
   }
 }

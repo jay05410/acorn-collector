@@ -1,80 +1,30 @@
+import { createCaptureController } from '@/lib/capture/controller';
+
 export default defineBackground(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error: unknown) => console.warn('[acorn] setPanelBehavior failed', error));
+
+  const capture = createCaptureController({
+    chrome,
+    fetch: (input, init) => fetch(input, init),
+  });
 
   chrome.runtime.onInstalled.addListener((details) => {
-    if (details.reason === 'update') {
-      // v1 stored account data for the removed credit system; drop it.
-      chrome.storage.local.remove(['auth_state', 'auth_token']).catch(() => {});
-    }
-    chrome.contextMenus.remove('add-to-acorn-collector').catch(() => {});
-    chrome.contextMenus.create({
-      id: 'add-to-acorn-collector',
-      title: '도토리주머니에 담기',
-      contexts: ['selection', 'page', 'link'],
+    capture.onInstalled(details).catch((error: unknown) => {
+      console.warn('[acorn] context menu setup failed', error);
     });
   });
 
+  // Listeners must stay synchronous up to sidePanel.open (user gesture);
+  // the controller opens the panel before its first await.
   chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (
-      info.menuItemId === 'add-to-acorn-collector' &&
-      tab?.id &&
-      tab?.windowId
-    ) {
-      const windowId = tab.windowId;
-      const pageUrl = tab.url || '';
-
-      chrome.sidePanel
-        .open({ windowId })
-        .then(() => {
-          let text = info.selectionText || '';
-          let url = info.linkUrl || pageUrl;
-          let author: string | undefined;
-
-          chrome.storage.local.get('lastContextTweet').then((stored) => {
-            let imageUrls: string[] | undefined;
-
-            if (stored.lastContextTweet) {
-              const tweetInfo = stored.lastContextTweet as {
-                text: string;
-                url: string;
-                author?: string;
-                imageUrls?: string[];
-              };
-
-              if (!text && tweetInfo.text) {
-                text = tweetInfo.text;
-              }
-
-              if (tweetInfo.url && tweetInfo.url !== pageUrl) {
-                url = tweetInfo.url;
-              }
-
-              if (tweetInfo.author) {
-                author = tweetInfo.author;
-              }
-
-              if (tweetInfo.imageUrls) {
-                imageUrls = tweetInfo.imageUrls;
-              }
-
-              chrome.storage.local.remove('lastContextTweet');
-            }
-
-            const pendingData = {
-              text,
-              url,
-              pageUrl,
-              author,
-              imageUrls,
-              timestamp: Date.now(),
-            };
-
-            chrome.storage.local.set({ pendingAdd: pendingData });
-          });
-        })
-        .catch((e) => {
-          console.error('Failed to open side panel:', e);
-        });
-    }
+    void capture.onContextMenuClick(info, tab);
   });
+
+  chrome.commands.onCommand.addListener((command, tab) => {
+    void capture.onCommand(command, tab);
+  });
+
+  chrome.runtime.onMessage.addListener(capture.onRuntimeMessage);
 });

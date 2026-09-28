@@ -4,5 +4,17 @@
   },
   "appDescription": {
     "message": "管理同人展会中要访问的摊位和要购买的商品的清单"
+  },
+  "contextMenuAdd": {
+    "message": "添加到橡果收集器",
+    "description": "Context menu item on pages, selections and links"
+  },
+  "contextMenuAnalyzeImage": {
+    "message": "分析此图片",
+    "description": "Context menu item on images"
+  },
+  "commandCapture": {
+    "message": "采集当前页面",
+    "description": "Keyboard shortcut description (chrome://extensions/shortcuts)"
   }
 }

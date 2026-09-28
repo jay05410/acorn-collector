@@ -1,119 +1,27 @@
-interface ContentMessage {
-  type: 'GET_SELECTION' | 'GET_PAGE_TEXT' | 'GET_TWEET_INFO';
-}
+import {
+  createContextTargetTracker,
+  isCaptureRequest,
+  respondToCapture,
+} from '@/lib/capture/content-handler';
 
-interface TweetInfo {
-  text: string;
-  url: string;
-  author?: string;
-  imageUrls?: string[];
-}
-
-function findClosestTweet(element: Element | null): TweetInfo | null {
-  if (!element) return null;
-
-  const article = element.closest('article');
-  if (!article) return null;
-
-  const tweetText =
-    article.querySelector('[data-testid="tweetText"]')?.textContent || '';
-
-  const timeLink = article.querySelector('time')?.closest('a');
-  const tweetUrl = timeLink?.href || window.location.href;
-
-  const userNameContainer = article.querySelector('[data-testid="User-Name"]');
-  let author = '';
-
-  if (userNameContainer) {
-    const links = userNameContainer.querySelectorAll('a');
-    const displayName = links[0]?.textContent?.trim() || '';
-    const handleLink = Array.from(links).find((a) =>
-      a.textContent?.startsWith('@')
-    );
-    const handle = handleLink?.textContent?.trim() || '';
-
-    if (displayName && handle) {
-      author = `${displayName} ${handle}`;
-    } else {
-      author = displayName || handle;
-    }
-  }
-
-  const imageUrls: string[] = [];
-  const imageElements = article.querySelectorAll(
-    'img[src*="pbs.twimg.com/media"]'
-  );
-  imageElements.forEach((img) => {
-    const src = img.getAttribute('src');
-    if (src) {
-      const highResSrc = src.replace(/&name=\w+$/, '&name=large');
-      if (!imageUrls.includes(highResSrc)) {
-        imageUrls.push(highResSrc);
-      }
-    }
-  });
-
-  return {
-    text: tweetText,
-    url: tweetUrl,
-    author,
-    imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-  };
-}
-
+/**
+ * Always-on and deliberately small: it only remembers the last right-clicked
+ * element (in memory) and builds a snapshot when the background asks. The
+ * heavy readability extractor is injected separately, on demand.
+ */
 export default defineContentScript({
   matches: ['<all_urls>'],
   main() {
-    chrome.runtime.onMessage.addListener(
-      (
-        message: ContentMessage,
-        _sender: chrome.runtime.MessageSender,
-        sendResponse: (response: unknown) => void
-      ) => {
-        if (message.type === 'GET_SELECTION') {
-          const selection = window.getSelection();
-          const selectedText = selection?.toString() || '';
+    const tracker = createContextTargetTracker();
+    document.addEventListener('contextmenu', tracker.record, {
+      capture: true,
+      passive: true,
+    });
 
-          let contextUrl = window.location.href;
-          const focusNode = selection?.focusNode;
-          if (focusNode) {
-            const tweetInfo = findClosestTweet(
-              focusNode.nodeType === Node.ELEMENT_NODE
-                ? (focusNode as Element)
-                : focusNode.parentElement
-            );
-            if (tweetInfo) {
-              contextUrl = tweetInfo.url;
-            }
-          }
-
-          sendResponse({ text: selectedText, url: contextUrl });
-        }
-
-        if (message.type === 'GET_PAGE_TEXT') {
-          const pageText = document.body.innerText || '';
-          sendResponse({ text: pageText, url: window.location.href });
-        }
-
-        if (message.type === 'GET_TWEET_INFO') {
-          const activeElement = document.activeElement;
-          const tweetInfo = findClosestTweet(activeElement);
-          sendResponse(tweetInfo || { text: '', url: window.location.href });
-        }
-
-        return true;
-      }
-    );
-
-    document.addEventListener('contextmenu', (e) => {
-      const target = e.target as Element;
-      const tweetInfo = findClosestTweet(target);
-
-      if (tweetInfo) {
-        chrome.storage.local.set({ lastContextTweet: tweetInfo });
-      } else {
-        chrome.storage.local.remove('lastContextTweet');
-      }
+    chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+      if (!isCaptureRequest(message)) return false;
+      sendResponse(respondToCapture(message, { window, tracker, now: Date.now }));
+      return false;
     });
   },
 });
