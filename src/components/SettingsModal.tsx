@@ -13,7 +13,7 @@ import {
   LANGUAGE_INFO,
   type AppLanguage,
 } from '@/i18n/languages';
-import { setLanguage, t, tp, useLanguage } from '@/i18n';
+import { getLanguage, setLanguage, t, tp, useLanguage } from '@/i18n';
 import { exportDataAsJson, importDataFromJson } from '@/lib/export';
 
 const COLOR_THEMES: {
@@ -45,7 +45,11 @@ async function persist(patch: SettingsPatch): Promise<void> {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   useLanguage();
-  const [settings, setSettings] = useState<AppSettings>(createDefaultSettings);
+  // Until storage answers, show the language the UI is already using.
+  const [settings, setSettings] = useState<AppSettings>(() => ({
+    ...createDefaultSettings(),
+    language: getLanguage(),
+  }));
   const [backupStatus, setBackupStatus] = useState<BackupStatus>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
