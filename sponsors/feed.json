@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-29T00:00:00Z",
+  "creatives": [
+    {
+      "id": "advertise-ko",
+      "placements": ["analysis"],
+      "locales": ["ko"],
+      "sponsorName": "도토리 주머니",
+      "title": "이 자리에서 팬들을 만나 보세요",
+      "body": "행사 쇼핑을 준비하는 팬들에게 브랜드를 알려 보세요. 추적 없이 표시 언어로만 노출됩니다.",
+      "cta": "광고 문의",
+      "clickUrl": "https://github.com/jay05410/acorn-collector/issues/new?title=Sponsorship%20inquiry",
+      "weight": 1
+    },
+    {
+      "id": "advertise-ja",
+      "placements": ["analysis"],
+      "locales": ["ja"],
+      "sponsorName": "どんぐりポケット",
+      "title": "この枠でファンに届けませんか",
+      "body": "イベントの買い物を準備中のファンにアピールできます。トラッキングなし、表示言語だけで配信します。",
+      "cta": "広告のお問い合わせ",
+      "clickUrl": "https://github.com/jay05410/acorn-collector/issues/new?title=Sponsorship%20inquiry",
+      "weight": 1
+    },
+    {
+      "id": "advertise-en",
+      "placements": ["analysis"],
+      "locales": ["en", "th", "id", "vi", "es", "fr", "de", "pt-BR"],
+      "sponsorName": "Acorn Collector",
+      "title": "Reach fans right here",
+      "body": "Put your brand in front of fans planning their event shopping. No tracking, language targeting only.",
+      "cta": "Advertise",
+      "clickUrl": "https://github.com/jay05410/acorn-collector/issues/new?title=Sponsorship%20inquiry",
+      "weight": 1
+    }
+  ]
+}
