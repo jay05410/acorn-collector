@@ -12,7 +12,6 @@ import { SponsorSlot } from '@/components/support/SponsorSlot';
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog';
-import { Skeleton } from '@/components/ui/Skeleton';
 import { showToast } from '@/components/ui/toast-store';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import { useEvents } from '@/hooks/useEvents';
@@ -76,17 +75,9 @@ function ReviewSheet(props: CaptureReviewSheetProps & { source: ReviewSource }) 
   const title =
     props.source.kind === 'capture' ? t('capture', 'titleCapture') : t('booths', 'addBooth');
 
-  if (isLoading) {
-    return (
-      <Dialog open onClose={props.onDismiss} title={title}>
-        <div aria-busy="true" className="space-y-3 py-2">
-          <span className="sr-only">{t('common', 'loading')}</span>
-          <Skeleton className="h-24 w-full rounded-xl" />
-          <Skeleton className="h-40 w-full rounded-xl" />
-        </div>
-      </Dialog>
-    );
-  }
+  // The prefill needs the event list, which is local and arrives within a
+  // frame; opening only then avoids swapping one sheet for another.
+  if (isLoading) return null;
   return <ReviewSheetContent {...props} events={events} title={title} />;
 }
 
@@ -265,7 +256,7 @@ function ReviewSheetContent({
     }
   };
 
-  const showItems = snapshot !== null && (rows.length > 0 || running || state.status === 'done');
+  const showItems = snapshot !== null && (rows.length > 0 || running);
 
   return (
     <>
