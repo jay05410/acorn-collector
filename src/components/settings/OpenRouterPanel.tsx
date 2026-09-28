@@ -13,6 +13,7 @@ import {
   connectWithRedirect,
   createHeadlessFlow,
   parseAuthCode,
+  type HeadlessFlow,
 } from '@/lib/ai/openrouter-oauth';
 import {
   getOpenRouterKeyInfo,
@@ -79,6 +80,8 @@ export function OpenRouterPanel({
       ai: { provider: 'openrouter', openrouter: { apiKey: key, connectedVia: via } },
     });
     if (ok) {
+      // Whichever way the key came, a code flow started earlier is over.
+      void clearPendingFlow().catch(() => undefined);
       showToast({
         tone: 'success',
         message: tp('aiConnect', 'connectedToast', { provider: NAME }),
@@ -126,6 +129,11 @@ function ConnectFlows({
   const [pending, setPending] = useState<PendingHeadlessFlow | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [redirectFailed, setRedirectFailed] = useState(false);
+  const [codeStartFailed, setCodeStartFailed] = useState(false);
+  // A key OpenRouter issued that could not be saved. Its code or sign-in is
+  // used up, so it is kept (in memory only) for "Retry save".
+  const [unsavedKey, setUnsavedKey] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   // A code flow started before a panel reload continues where it was.
   useEffect(() => {
@@ -142,14 +150,32 @@ function ConnectFlows({
     };
   }, []);
 
+  /** Saves a key OpenRouter just issued; keeps it for a retry if that fails. */
+  const saveIssuedKey = async (key: string): Promise<boolean> => {
+    const ok = await onConnect(key, 'oauth');
+    if (!ok) setUnsavedKey(key);
+    return ok;
+  };
+
+  const retrySave = async () => {
+    if (unsavedKey === null) return;
+    setRetrying(true);
+    try {
+      if (await onConnect(unsavedKey, 'oauth')) setUnsavedKey(null);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const handleRedirect = async () => {
     setRedirecting(true);
     setRedirectFailed(false);
+    setCodeStartFailed(false);
     try {
       const credentials = await connectWithRedirect({
         keyLabel: OPENROUTER_KEY_LABEL,
       });
-      await onConnect(credentials.key, 'oauth');
+      await saveIssuedKey(credentials.key);
     } catch (error) {
       if (toAIError(error, 'openrouter').code !== 'cancelled') {
         setRedirectFailed(true);
@@ -161,7 +187,19 @@ function ConnectFlows({
 
   const startCodeFlow = async () => {
     setRedirectFailed(false);
-    const flow = await createHeadlessFlow(OPENROUTER_KEY_LABEL);
+    setCodeStartFailed(false);
+    let flow: HeadlessFlow;
+    try {
+      flow = await createHeadlessFlow(OPENROUTER_KEY_LABEL);
+    } catch (error) {
+      console.error('[settings] could not start the OpenRouter code flow', error);
+      // Also from "Start again": the flow on screen is over.
+      setPending(null);
+      setMode('start');
+      void clearPendingFlow().catch(() => undefined);
+      setCodeStartFailed(true);
+      return;
+    }
     const saved: PendingHeadlessFlow = {
       authUrl: flow.authUrl,
       verifier: flow.verifier,
@@ -180,6 +218,22 @@ function ConnectFlows({
     void clearPendingFlow().catch(() => undefined);
   };
 
+  if (unsavedKey !== null) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Banner tone="error">{t('aiConnect', 'orSaveFailed')}</Banner>
+        <Button
+          size="sm"
+          className="self-start"
+          loading={retrying}
+          onClick={() => void retrySave()}
+        >
+          {t('aiConnect', 'orRetrySave')}
+        </Button>
+      </div>
+    );
+  }
+
   if (mode === 'code' && pending) {
     return (
       <CodeFlow
@@ -187,9 +241,11 @@ function ConnectFlows({
         onRestart={() => void startCodeFlow()}
         onCancel={cancelCodeFlow}
         onConnected={async (key) => {
-          const ok = await onConnect(key, 'oauth');
-          if (ok) {
+          const ok = await saveIssuedKey(key);
+          if (!ok) {
+            // The code is used up: what is left to retry is the save.
             setPending(null);
+            setMode('start');
             void clearPendingFlow().catch(() => undefined);
           }
           return ok;
@@ -223,6 +279,17 @@ function ConnectFlows({
         <LogIn aria-hidden="true" />
         {t('aiConnect', 'orConnect')}
       </Button>
+      {codeStartFailed && (
+        <Banner
+          tone="error"
+          action={{
+            label: t('common', 'retry'),
+            onClick: () => void startCodeFlow(),
+          }}
+        >
+          {t('aiConnect', 'orCodeStartFailed')}
+        </Banner>
+      )}
       {redirectFailed && (
         <Banner
           tone="warning"

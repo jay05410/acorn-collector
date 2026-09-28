@@ -215,6 +215,13 @@ function ModelField({
   const [draft, setDraft] = useState(storedIsCustom ? stored : '');
   const selectValue = custom ? CUSTOM_MODEL : (stored ?? '');
 
+  // Follow the stored model: a failed save rolls it back, and another
+  // extension page can change it.
+  useEffect(() => {
+    setCustom(storedIsCustom);
+    setDraft(storedIsCustom ? (stored ?? '') : '');
+  }, [stored, storedIsCustom]);
+
   const commitCustom = () => {
     const value = draft.trim();
     if (value === (stored ?? '')) return;

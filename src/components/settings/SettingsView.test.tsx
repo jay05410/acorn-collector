@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { byText, cleanup, click, press, render } from '@/components/ui/test-utils';
 import { clearToasts, getToasts } from '@/components/ui/toast-store';
 import { setLanguage } from '@/i18n';
+import type { HeadlessFlow, OpenRouterCredentials } from '@/lib/ai/openrouter-oauth';
 import { bridgeError } from '@/lib/bridge/errors';
 import {
   applySettingsPatch,
@@ -15,16 +16,37 @@ import type { CliCheckDeps } from './cli-check';
 import { HEADLESS_FLOW_KEY } from './headless-session';
 import type { SettingsBackend } from './settings-controller';
 import { SettingsView } from './SettingsView';
+import { useSettings } from './useSettings';
 
 const EXTENSION_ID = 'abcdefghijklmnopabcdefghijklmnop';
 
+/** Per-test replacements for the OpenRouter sign-in helpers (else the real ones). */
+const oauth = vi.hoisted(() => ({
+  createHeadlessFlow: null as null | ((keyLabel: string) => Promise<HeadlessFlow>),
+  connectWithRedirect: null as null | (() => Promise<OpenRouterCredentials>),
+}));
+
+vi.mock('@/lib/ai/openrouter-oauth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ai/openrouter-oauth')>();
+  return {
+    ...actual,
+    createHeadlessFlow: (keyLabel: string) =>
+      (oauth.createHeadlessFlow ?? actual.createHeadlessFlow)(keyLabel),
+    connectWithRedirect: (options: Parameters<typeof actual.connectWithRedirect>[0]) =>
+      oauth.connectWithRedirect
+        ? oauth.connectWithRedirect()
+        : actual.connectWithRedirect(options),
+  };
+});
+
 function memoryBackend(initial: AppSettings, { failSaves = false } = {}) {
   let stored = initial;
+  let failing = failSaves;
   const listeners = new Set<(settings: AppSettings) => void>();
   const backend: SettingsBackend = {
     load: vi.fn(async () => stored),
     save: vi.fn(async (patch: SettingsPatch) => {
-      if (failSaves) throw new Error('storage unavailable');
+      if (failing) throw new Error('storage unavailable');
       stored = applySettingsPatch(stored, patch);
       for (const listener of listeners) listener(stored);
       return stored;
@@ -34,9 +56,20 @@ function memoryBackend(initial: AppSettings, { failSaves = false } = {}) {
       return () => listeners.delete(listener);
     },
   };
-  return { backend, get stored() {
-    return stored;
-  } };
+  return {
+    backend,
+    get stored() {
+      return stored;
+    },
+    setFailSaves(value: boolean) {
+      failing = value;
+    },
+    /** A change written by another extension page. */
+    external(patch: SettingsPatch) {
+      stored = applySettingsPatch(stored, patch);
+      for (const listener of listeners) listener(stored);
+    },
+  };
 }
 
 function settings(patch: SettingsPatch = {}): AppSettings {
@@ -65,16 +98,32 @@ async function settle() {
   });
 }
 
+/** App's part: one settings state, passed to the view. */
+function Harness({
+  backend,
+  onBack,
+  deps,
+}: {
+  backend: SettingsBackend;
+  onBack: () => void;
+  deps: CliCheckDeps;
+}) {
+  const { settings, update } = useSettings(backend);
+  return (
+    <SettingsView settings={settings} update={update} onBack={onBack} cliDeps={deps} />
+  );
+}
+
 async function renderView(
   initial: AppSettings,
   options: { failSaves?: boolean; deps?: CliCheckDeps; onBack?: () => void } = {}
 ) {
   const store = memoryBackend(initial, { failSaves: options.failSaves });
   render(
-    <SettingsView
-      onBack={options.onBack ?? (() => {})}
+    <Harness
       backend={store.backend}
-      cliDeps={options.deps ?? cliDeps()}
+      onBack={options.onBack ?? (() => {})}
+      deps={options.deps ?? cliDeps()}
     />
   );
   await settle();
@@ -138,7 +187,24 @@ afterEach(() => {
   cleanup();
   clearToasts();
   vi.unstubAllGlobals();
+  oauth.createHeadlessFlow = null;
+  oauth.connectWithRedirect = null;
 });
+
+function pendingFlow() {
+  return {
+    authUrl: 'https://openrouter.ai/auth?code_challenge=x&code_challenge_method=S256',
+    verifier: 'v'.repeat(43),
+    createdAt: Date.now(),
+  };
+}
+
+async function submit(input: HTMLInputElement | null) {
+  await act(async () => {
+    input?.form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  await settle();
+}
 
 describe('SettingsView', () => {
   it('shows every section and goes back', async () => {
@@ -161,6 +227,17 @@ describe('SettingsView', () => {
     expect(onBack).not.toHaveBeenCalled();
     press(document.querySelector('h1'), 'Escape');
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('goes back on Escape from radio options, which hold no typed text', async () => {
+    const onBack = vi.fn();
+    await renderView(settings({ ai: { provider: 'openai' } }), { onBack });
+    press(radio('OpenAI'), 'Escape');
+    expect(onBack).toHaveBeenCalledTimes(1);
+    press(radio('Lavender'), 'Escape');
+    expect(onBack).toHaveBeenCalledTimes(2);
+    press(document.querySelector('[role="switch"]'), 'Escape');
+    expect(onBack).toHaveBeenCalledTimes(3);
   });
 
   it('switches the active provider and saves a key', async () => {
@@ -211,6 +288,49 @@ describe('SettingsView', () => {
     expect(getToasts().map((toast) => toast.tone)).toContain('error');
   });
 
+  it('keeps the model field in step with the stored model', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const store = await renderView(
+      settings({ ai: { provider: 'openai', openai: { apiKey: 'sk-1', model: 'my-model' } } }),
+      { failSaves: true }
+    );
+    const modelSelect = () => {
+      const select = [...document.querySelectorAll('select')].find((el) =>
+        el.textContent?.includes('Custom model ID')
+      );
+      if (!select) throw new Error('no model select');
+      return select;
+    };
+    const customInput = () =>
+      [...document.querySelectorAll('input')].find((input) => input.value === 'my-model');
+    expect(modelSelect().value).toBe('__custom__');
+    expect(customInput()).toBeDefined();
+
+    // Another page picks a listed model: the field follows.
+    act(() => store.external({ ai: { openai: { model: 'gpt-6-sol' } } }));
+    expect(modelSelect().value).toBe('gpt-6-sol');
+    expect(customInput()).toBeUndefined();
+
+    // A custom ID that cannot be saved is rolled back, in the field too.
+    act(() => {
+      const select = modelSelect();
+      select.value = '__custom__';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const draft = [...document.querySelectorAll('input')].find(
+      (input) => input.value === 'gpt-6-sol'
+    );
+    typeInto(draft!, 'other-model');
+    await act(async () => draft!.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    await settle();
+    expect(store.backend.save).toHaveBeenCalledWith({
+      ai: { openai: { model: 'other-model' } },
+    });
+    expect(store.stored.ai.openai.model).toBe('gpt-6-sol');
+    expect(modelSelect().value).toBe('gpt-6-sol');
+    expect([...document.querySelectorAll('input')].some((i) => i.value === 'other-model')).toBe(false);
+  });
+
   it('resumes an OpenRouter code flow after a reload', async () => {
     session.set(HEADLESS_FLOW_KEY, {
       authUrl: 'https://openrouter.ai/auth?code_challenge=x&code_challenge_method=S256',
@@ -219,6 +339,82 @@ describe('SettingsView', () => {
     });
     await renderView(settings({ ai: { provider: 'openrouter' } }));
     expect(text()).toContain('Connect with a code');
+    expect(text()).toContain('Code from OpenRouter');
+  });
+
+  it('keeps an issued OpenRouter key whose save failed, and saves it on retry', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith('/auth/keys')
+        ? new Response('{"key":"sk-or-issued"}', { status: 200 })
+        : new Response('{"data":{}}', { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    session.set(HEADLESS_FLOW_KEY, pendingFlow());
+    const store = await renderView(settings({ ai: { provider: 'openrouter' } }), {
+      failSaves: true,
+    });
+    const code = [...document.querySelectorAll('input')].find(
+      (input) => input.closest('form') !== null && input.type !== 'password'
+    );
+    typeInto(code!, 'code-123');
+    await submit(code!);
+
+    const exchanges = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/keys')).length;
+    expect(exchanges()).toBe(1);
+    expect(text()).toContain("OpenRouter created your key, but it couldn't be saved");
+    expect(store.stored.ai.openrouter.apiKey).toBe('');
+    // The used-up code flow is not offered again.
+    expect(session.has(HEADLESS_FLOW_KEY)).toBe(false);
+    expect(text()).not.toContain('Code from OpenRouter');
+
+    store.setFailSaves(false);
+    await act(async () => button('Retry save').click());
+    await settle();
+    expect(store.stored.ai.openrouter).toMatchObject({
+      apiKey: 'sk-or-issued',
+      connectedVia: 'oauth',
+    });
+    expect(exchanges()).toBe(1);
+    expect(text()).toContain('Connected through OpenRouter sign-in');
+  });
+
+  it('clears a pending OpenRouter code flow however the key is connected', async () => {
+    oauth.connectWithRedirect = async () => ({ key: 'sk-or-signin', userId: null });
+    const store = await renderView(settings({ ai: { provider: 'openrouter' } }));
+    session.set(HEADLESS_FLOW_KEY, pendingFlow());
+    await act(async () => button('Connect with OpenRouter').click());
+    await settle();
+    expect(store.stored.ai.openrouter.apiKey).toBe('sk-or-signin');
+    expect(session.has(HEADLESS_FLOW_KEY)).toBe(false);
+
+    cleanup();
+    const pasted = await renderView(settings({ ai: { provider: 'openrouter' } }));
+    act(() => button('Paste an existing key').click());
+    session.set(HEADLESS_FLOW_KEY, pendingFlow());
+    const key = document.querySelector<HTMLInputElement>('input[type="password"]');
+    typeInto(key!, 'sk-or-pasted');
+    await submit(key);
+    expect(pasted.stored.ai.openrouter.apiKey).toBe('sk-or-pasted');
+    expect(session.has(HEADLESS_FLOW_KEY)).toBe(false);
+  });
+
+  it('reports a code flow that cannot start', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    oauth.createHeadlessFlow = async () => {
+      throw new Error('crypto.subtle unavailable');
+    };
+    await renderView(settings({ ai: { provider: 'openrouter' } }));
+    await act(async () => button('Use a code instead').click());
+    await settle();
+    expect(text()).toContain("Couldn't start connecting with a code");
+    expect(session.has(HEADLESS_FLOW_KEY)).toBe(false);
+
+    oauth.createHeadlessFlow = null;
+    await act(async () => button('Retry').click());
+    await settle();
+    expect(text()).not.toContain("Couldn't start connecting with a code");
     expect(text()).toContain('Code from OpenRouter');
   });
 
@@ -248,6 +444,18 @@ describe('SettingsView', () => {
     await renderView(settings({ ai: { provider: 'cli' } }), { deps });
     expect(deps.status).toHaveBeenCalled();
     expect(text()).toContain(`node install.mjs --extension-id ${EXTENSION_ID}`);
+    expect(text()).toContain('Allowed');
+    expect(text()).toContain("The helper isn't installed yet");
+  });
+
+  it('checks the CLI helper once when the permission is granted', async () => {
+    const deps = cliDeps();
+    await renderView(settings({ ai: { provider: 'cli' } }), { deps });
+    expect(deps.status).not.toHaveBeenCalled();
+    await act(async () => button('Allow').click());
+    await settle();
+    expect(deps.requestPermission).toHaveBeenCalledOnce();
+    expect(deps.status).toHaveBeenCalledOnce();
     expect(text()).toContain('Allowed');
     expect(text()).toContain("The helper isn't installed yet");
   });

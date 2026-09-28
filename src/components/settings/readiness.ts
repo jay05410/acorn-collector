@@ -80,13 +80,3 @@ export function providerReadiness(
   }
   return cliReadiness(ai, cli);
 }
-
-/**
- * True when an analysis can be attempted from settings alone: a provider is
- * chosen and, for API providers, has a key. The CLI is assumed usable; its
- * failures surface as bridge errors when it runs.
- */
-export function canAttemptAnalysis(ai: AISettings): boolean {
-  if (ai.provider === null) return false;
-  return isApiProvider(ai.provider) ? hasApiKey(ai, ai.provider) : true;
-}

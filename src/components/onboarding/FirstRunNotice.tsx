@@ -1,20 +1,24 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
 import { HardDrive, Megaphone, Sparkles } from 'lucide-react';
 import { OutboundLink } from '@/components/settings/connection';
 import { PRIVACY_POLICY_URL } from '@/components/settings/links';
-import type { SettingsBackend } from '@/components/settings/settings-controller';
-import { useSettings } from '@/components/settings/useSettings';
+import { SettingRow } from '@/components/settings/SettingsSection';
+import type { UpdateSettings } from '@/components/settings/useSettings';
 import { AboutAds } from '@/components/support/AboutAds';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { Switch } from '@/components/ui/Switch';
 import { t, tp, useLanguage } from '@/i18n';
+import type { AppSettings } from '@/lib/settings-types';
 import { adsNetworkNotice } from '@/lib/sponsor/disclosure';
 
 interface FirstRunNoticeProps {
+  /** The panel's settings state (see useSettings); null until loaded. */
+  settings: AppSettings | null;
+  update: UpdateSettings;
   /** "Connect AI now": the notice is accepted, then settings should open. */
   onConnectAi: () => void;
   /** Injected in tests. */
-  backend?: SettingsBackend;
   now?: () => number;
 }
 
@@ -46,17 +50,20 @@ function Point({
 }
 
 /**
- * First-run notice: what stays local, what goes to the AI service and when,
- * and how ads work. Shown until settings.noticeAcceptedAt is set; closing it
- * counts as accepting, since it only informs.
+ * First-run notice: what stays local, what goes to the AI service and when
+ * (with the automatic analysis switch, which is on by default), and how ads
+ * work. Shown until settings.noticeAcceptedAt is set; closing it counts as
+ * accepting, since it only informs.
  */
 export function FirstRunNotice({
+  settings,
+  update,
   onConnectAi,
-  backend,
   now = Date.now,
 }: FirstRunNoticeProps) {
   useLanguage();
-  const { settings, update } = useSettings(backend);
+  const autoId = useId();
+  const autoHintId = useId();
   const [aboutAdsOpen, setAboutAdsOpen] = useState(false);
   const startRef = useRef<HTMLButtonElement>(null);
   const open = settings !== null && settings.noticeAcceptedAt === null;
@@ -94,6 +101,30 @@ export function FirstRunNotice({
         </Point>
         <Point icon={<Sparkles />} title={t('onboarding', 'aiTitle')}>
           <p>{t('onboarding', 'aiBody')}</p>
+          {settings && (
+            <div className="mt-1.5 rounded-lg bg-surface-sunken px-3 py-2.5 ring-1 ring-line ring-inset">
+              <SettingRow
+                controlId={autoId}
+                label={t('settingsView', 'autoAnalyzeLabel')}
+                hint={
+                  settings.ai.autoAnalyze
+                    ? t('onboarding', 'autoOn')
+                    : t('onboarding', 'autoOff')
+                }
+                hintId={autoHintId}
+                control={
+                  <Switch
+                    id={autoId}
+                    aria-describedby={autoHintId}
+                    checked={settings.ai.autoAnalyze}
+                    onCheckedChange={(checked) =>
+                      void update({ ai: { autoAnalyze: checked } })
+                    }
+                  />
+                }
+              />
+            </div>
+          )}
         </Point>
         <Point icon={<Megaphone />} title={t('onboarding', 'adsTitle')}>
           <p>{t('onboarding', 'adsBody')}</p>

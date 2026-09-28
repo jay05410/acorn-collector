@@ -302,6 +302,42 @@ describe('side panel settings', () => {
   });
 });
 
+describe('side panel appearance', () => {
+  function option(value: string): HTMLInputElement {
+    const input = document.querySelector<HTMLInputElement>(
+      `input[type="radio"][value="${value}"]`
+    );
+    if (!input) throw new Error(`No option ${value}`);
+    return input;
+  }
+
+  async function settle() {
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  it('applies a language or theme before it is saved, and undoes one that cannot be saved', async () => {
+    await openSettingsFromHeader();
+
+    // Applied in the same update as the click, before storage answers.
+    act(() => option('sky').click());
+    expect(document.documentElement.getAttribute('data-theme')).toBe('sky');
+    act(() => option('ko').click());
+    expect(topTitle()).toBe('설정');
+    expect(document.documentElement.lang).toBe('ko-KR');
+    await settle();
+    expect(local.get('settings')).toMatchObject({ language: 'ko', colorTheme: 'sky' });
+
+    vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(new Error('quota'));
+    act(() => option('ja').click());
+    expect(topTitle()).toBe('設定');
+    await settle();
+    expect(topTitle()).toBe('설정');
+    expect(local.get('settings')).toMatchObject({ language: 'ko' });
+  });
+});
+
 describe('side panel first run', () => {
   it('shows the first-run notice until it is accepted', async () => {
     await act(async () => root.unmount());

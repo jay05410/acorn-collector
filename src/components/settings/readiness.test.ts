@@ -4,7 +4,6 @@ import { bridgeError } from '@/lib/bridge/errors';
 import type { BridgeStatus, BridgeTargetStatus } from '@/lib/bridge/protocol';
 import { DEFAULT_AI_SETTINGS, type AISettings } from '@/lib/settings-types';
 import {
-  canAttemptAnalysis,
   cliReadiness,
   EMPTY_CLI_CHECK,
   providerReadiness,
@@ -105,18 +104,5 @@ describe('cliReadiness', () => {
       target({ loggedIn: false, warnings: ['status_check_failed'] })
     );
     expect(cliReadiness(ai(), check({ status: failed }))).toBe('unknown');
-  });
-});
-
-describe('canAttemptAnalysis', () => {
-  it('needs a provider, and a key for API providers', () => {
-    expect(canAttemptAnalysis(ai())).toBe(false);
-    expect(canAttemptAnalysis(ai({ provider: 'openai' }))).toBe(false);
-    expect(
-      canAttemptAnalysis(
-        ai({ provider: 'openai', openai: { apiKey: 'sk-1', model: null } })
-      )
-    ).toBe(true);
-    expect(canAttemptAnalysis(ai({ provider: 'cli' }))).toBe(true);
   });
 });

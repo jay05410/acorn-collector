@@ -19,21 +19,37 @@ export interface UseSettingsResult {
   update: UpdateSettings;
 }
 
+/**
+ * The panel's settings state. App owns the one instance and passes it down,
+ * so the settings view, the first-run notice and what App applies (theme,
+ * language, AI runtime) always show the same optimistic state.
+ */
 export function useSettings(
-  backend: SettingsBackend = chromeSettingsBackend
+  backend: SettingsBackend = chromeSettingsBackend,
+  /** Settings already read (at bootstrap); loaded from `backend` if absent. */
+  initial?: AppSettings
 ): UseSettingsResult {
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(initial ?? null);
   const controllerRef = useRef<SettingsController | null>(null);
+  // The state a re-created controller (StrictMode, a new backend) starts from.
+  const latestRef = useRef<AppSettings | null>(initial ?? null);
 
   useEffect(() => {
-    const controller = createSettingsController(backend, {
-      onChange: setSettings,
-      onError: (error) => {
-        // Never log the patch: it can hold an API key.
-        console.error('[settings] could not save settings', error);
-        showToast({ tone: 'error', message: t('settingsView', 'saveFailed') });
+    const controller = createSettingsController(
+      backend,
+      {
+        onChange: (next) => {
+          latestRef.current = next;
+          setSettings(next);
+        },
+        onError: (error) => {
+          // Never log the patch: it can hold an API key.
+          console.error('[settings] could not save settings', error);
+          showToast({ tone: 'error', message: t('settingsView', 'saveFailed') });
+        },
       },
-    });
+      latestRef.current
+    );
     controllerRef.current = controller;
     return () => {
       controller.stop();

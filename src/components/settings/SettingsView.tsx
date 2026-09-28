@@ -4,7 +4,8 @@ import { SponsorSlot } from '@/components/support/SponsorSlot';
 import { SupportCard } from '@/components/support/SupportCard';
 import { IconButton } from '@/components/ui/IconButton';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { setLanguage, t, useLanguage } from '@/i18n';
+import { t, useLanguage } from '@/i18n';
+import type { AppSettings } from '@/lib/settings-types';
 import { AboutSection } from './AboutSection';
 import { AiConnectionSection } from './AiConnectionSection';
 import { AnalysisSection } from './AnalysisSection';
@@ -16,17 +17,25 @@ import {
   sectionHeadingId,
   type SettingsSectionId,
 } from './section-ids';
-import type { SettingsBackend } from './settings-controller';
-import { useSettings } from './useSettings';
+import type { UpdateSettings } from './useSettings';
 
 export interface SettingsViewProps {
+  /** The panel's settings state (see useSettings); null until loaded. */
+  settings: AppSettings | null;
+  update: UpdateSettings;
   onBack: () => void;
   /** Scrolls to and focuses this section once settings have loaded. */
   initialSection?: SettingsSectionId;
   /** Injected in tests. */
-  backend?: SettingsBackend;
   cliDeps?: CliCheckDeps;
 }
+
+/** Fields that hold typed text; Escape there must not leave the view. */
+const TEXT_FIELD = [
+  'textarea',
+  'select',
+  'input:not([type="radio"]):not([type="checkbox"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="range"]):not([type="color"]):not([type="file"])',
+].join(', ');
 
 /**
  * Escape goes back, except inside a dialog (which handles it) or a text
@@ -36,7 +45,7 @@ function keepsEscape(target: EventTarget): boolean {
   if (!(target instanceof Element)) return false;
   if (target.closest('dialog, [role="dialog"], [role="alertdialog"]')) return true;
   return (
-    target.matches('input, textarea, select') ||
+    target.matches(TEXT_FIELD) ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
 }
@@ -64,26 +73,15 @@ function SettingsSkeleton() {
  * once (optimistically, rolled back with a toast if storage fails).
  */
 export function SettingsView({
+  settings,
+  update,
   onBack,
   initialSection,
-  backend,
   cliDeps,
 }: SettingsViewProps) {
   useLanguage();
-  const { settings, update } = useSettings(backend);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const jumped = useRef(false);
-  const language = settings?.language;
-  const colorTheme = settings?.colorTheme;
-
-  // Optimistic language and theme, and their rollback when a save fails.
-  // (App also applies stored changes; applying twice is harmless.)
-  useEffect(() => {
-    if (language) setLanguage(language);
-  }, [language]);
-  useEffect(() => {
-    if (colorTheme) document.documentElement.setAttribute('data-theme', colorTheme);
-  }, [colorTheme]);
 
   useEffect(() => {
     headingRef.current?.focus();

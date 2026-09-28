@@ -1,6 +1,6 @@
 import { useId, useMemo } from 'react';
 import { Check, Palette } from 'lucide-react';
-import { setLanguage, t, useLanguage } from '@/i18n';
+import { t, useLanguage } from '@/i18n';
 import { LANGUAGE_INFO, type AppLanguage } from '@/i18n/languages';
 import type { AppSettings, ColorTheme } from '@/lib/settings-types';
 import { cn } from '@/lib/utils';
@@ -41,8 +41,8 @@ export function AppearanceSection({ settings, update }: AppearanceSectionProps) 
     void update({ colorTheme });
   };
 
+  // App applies the (optimistic) language, so the view switches at once.
   const handleLanguage = (language: AppLanguage) => {
-    setLanguage(language);
     void update({ language });
   };
 

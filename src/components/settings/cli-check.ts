@@ -50,6 +50,8 @@ export function useCliCheck(
   const [checking, setChecking] = useState(false);
   const [denied, setDenied] = useState(false);
   const autoChecked = useRef(false);
+  /** The status check in progress; a second request joins it. */
+  const inFlight = useRef<Promise<void> | null>(null);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -83,18 +85,25 @@ export function useCliCheck(
     };
   }, [readPermission]);
 
-  const refresh = useCallback(async () => {
-    setChecking(true);
-    try {
-      const status = await deps.status();
-      if (alive.current) setCheck((c) => ({ ...c, status, error: null }));
-    } catch (error) {
-      if (alive.current) {
-        setCheck((c) => ({ ...c, status: null, error: toAIError(error, 'cli') }));
+  // Each status() starts the native host, so never run two at once.
+  const refresh = useCallback(() => {
+    if (inFlight.current) return inFlight.current;
+    const run = async () => {
+      setChecking(true);
+      try {
+        const status = await deps.status();
+        if (alive.current) setCheck((c) => ({ ...c, status, error: null }));
+      } catch (error) {
+        if (alive.current) {
+          setCheck((c) => ({ ...c, status: null, error: toAIError(error, 'cli') }));
+        }
+      } finally {
+        inFlight.current = null;
+        if (alive.current) setChecking(false);
       }
-    } finally {
-      if (alive.current) setChecking(false);
-    }
+    };
+    inFlight.current = run();
+    return inFlight.current;
   }, [deps]);
 
   const requestPermission = useCallback(async () => {
@@ -106,6 +115,8 @@ export function useCliCheck(
     }
     if (!alive.current) return;
     setDenied(!granted);
+    // This check replaces the automatic one the new permission would start.
+    if (granted) autoChecked.current = true;
     setCheck((c) => ({ ...c, permission: granted, error: null }));
     if (granted) await refresh();
   }, [deps, refresh]);

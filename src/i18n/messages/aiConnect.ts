@@ -94,6 +94,11 @@ export default defineMessages({
     orFreeTier: 'Free tier',
     orKeyInfoFailed: "Couldn't load the key's credit details.",
     orKeyInvalid: 'This key no longer works. Disconnect, then connect again.',
+    orSaveFailed:
+      "OpenRouter created your key, but it couldn't be saved in this browser. Retry the save before you leave this page, or you'll need to connect again.",
+    orRetrySave: 'Retry save',
+    orCodeStartFailed:
+      "Couldn't start connecting with a code. Try again, or paste a key instead.",
     orManage: 'Manage keys on OpenRouter',
     refresh: 'Refresh',
     disconnect: 'Disconnect',
@@ -189,6 +194,11 @@ export default defineMessages({
     orFreeTier: '무료 등급',
     orKeyInfoFailed: '키의 크레딧 정보를 불러오지 못했습니다.',
     orKeyInvalid: '이 키는 더 이상 쓸 수 없습니다. 연결을 해제한 뒤 다시 연결하세요.',
+    orSaveFailed:
+      'OpenRouter에서 키를 만들었지만 이 브라우저에 저장하지 못했습니다. 이 페이지를 떠나기 전에 다시 저장하세요. 떠나면 다시 연결해야 합니다.',
+    orRetrySave: '다시 저장',
+    orCodeStartFailed:
+      '코드 연결을 시작하지 못했습니다. 다시 시도하거나 키를 붙여넣으세요.',
     orManage: 'OpenRouter에서 키 관리',
     refresh: '새로고침',
     disconnect: '연결 해제',
@@ -288,6 +298,11 @@ export default defineMessages({
     orKeyInfoFailed: 'キーのクレジット情報を読み込めませんでした。',
     orKeyInvalid:
       'このキーはもう使えません。接続を解除してから、もう一度接続してください。',
+    orSaveFailed:
+      'OpenRouterでキーが作成されましたが、このブラウザに保存できませんでした。このページを離れる前にもう一度保存してください。離れると接続し直す必要があります。',
+    orRetrySave: 'もう一度保存',
+    orCodeStartFailed:
+      'コードでの接続を開始できませんでした。もう一度試すか、キーを貼り付けてください。',
     orManage: 'OpenRouterでキーを管理',
     refresh: '更新',
     disconnect: '接続を解除',
@@ -373,6 +388,10 @@ export default defineMessages({
     orFreeTier: '免费额度',
     orKeyInfoFailed: '无法加载该密钥的积分信息。',
     orKeyInvalid: '此密钥已失效。请断开连接后重新连接。',
+    orSaveFailed:
+      'OpenRouter 已创建密钥，但无法保存到此浏览器。请在离开此页面前重新保存，否则需要重新连接。',
+    orRetrySave: '重新保存',
+    orCodeStartFailed: '无法开始使用代码连接。请重试，或改为粘贴密钥。',
     orManage: '在 OpenRouter 管理密钥',
     refresh: '刷新',
     disconnect: '断开连接',
@@ -457,6 +476,10 @@ export default defineMessages({
     orFreeTier: '免費額度',
     orKeyInfoFailed: '無法載入這組金鑰的點數資訊。',
     orKeyInvalid: '這組金鑰已失效。請中斷連線後重新連線。',
+    orSaveFailed:
+      'OpenRouter 已建立金鑰，但無法儲存到這個瀏覽器。請在離開此頁面前重新儲存，否則需要重新連線。',
+    orRetrySave: '重新儲存',
+    orCodeStartFailed: '無法開始使用代碼連線。請再試一次，或改為貼上金鑰。',
     orManage: '在 OpenRouter 管理金鑰',
     refresh: '重新整理',
     disconnect: '中斷連線',
