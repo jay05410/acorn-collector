@@ -22,7 +22,7 @@
 - 범위: 기존 타입 오류 2건 수정, pnpm 버전 고정(corepack 호환), Vitest 설정과 첫 테스트, GitHub Actions CI(typecheck·lint·test·build), lint 대상에서 빌드 산출물 제외, 작업 보드 작성.
 - 완료 조건: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` 통과.
 
-### ACORN-2 서버·크레딧·로그인 제거 — `TODO`
+### ACORN-2 서버·크레딧·로그인 제거 — `IN REVIEW`
 - 범위: `api/` Cloudflare Worker(D1 사용자·크레딧·분석 세션·이미지 URL 저장, 결제, OAuth 로그인) 삭제. 확장 쪽 로그인·크레딧·결제 UI와 `api-client`, `auth`, `useAuthStore`, `oauth-callback.html` 삭제. 미사용 의존성(`@google/genai`, `tesseract.js`) 제거.
 - 완료 조건: 서버로 사용자 데이터를 보내는 코드 경로 0개. 번들 크기 감소 수치 기록.
 
@@ -67,4 +67,5 @@
 
 | 티켓 | 브랜치 | 리뷰 결과 | 머지 |
 |---|---|---|---|
-| ACORN-1 | feat/ACORN-1-tooling-baseline | — | — |
+| ACORN-1 | feat/ACORN-1-tooling-baseline | PR #1. 리뷰 인라인 1건(High): 깨끗한 체크아웃에서 `.wxt` 타입이 없어 CI 타입체크 실패 → `postinstall: wxt prepare`로 수정, 재현 후 검증 | 머지 완료 (a7fd11d) |
+| ACORN-2 | feat/ACORN-2-remove-server-credits | 진행 중 | — |

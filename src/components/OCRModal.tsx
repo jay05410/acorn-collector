@@ -10,24 +10,17 @@ import {
   Minus,
   ChevronDown,
   RefreshCw,
-  ShoppingCart,
-  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import {
-  analyzeImagesWithMethod,
+  analyzeImages,
   cancelAnalysis,
-  getAnalysisCapability,
+  isAIEnabled,
   type ImageAnalysisItem,
-  type AnalysisMethod,
-  InsufficientCreditsError,
   ApiKeyFailedError,
   NoAnalysisMethodError,
 } from '@/lib/ai';
 import { t, tWithParams, getCategoryLabel } from '@/lib/i18n';
-import { useAuthStore } from '@/stores/useAuthStore';
-import { AnalysisMethodModal } from './AnalysisMethodModal';
-import { CreditPurchaseModal } from './CreditPurchaseModal';
 
 interface Props {
   isOpen: boolean;
@@ -52,7 +45,7 @@ interface ItemState {
   editedName?: string;
 }
 
-type Status = 'idle' | 'choosing' | 'loading' | 'success' | 'error';
+type Status = 'idle' | 'loading' | 'success' | 'error';
 
 export function OCRModal({
   isOpen,
@@ -68,15 +61,7 @@ export function OCRModal({
   const [itemStates, setItemStates] = useState<Map<number, ItemState>>(
     new Map()
   );
-  const [showMethodModal, setShowMethodModal] = useState(false);
-  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const [selectedMethod, setSelectedMethod] = useState<AnalysisMethod | null>(
-    null
-  );
   const [apiKeyFailed, setApiKeyFailed] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(false);
-
-  const { credits, deductCredits } = useAuthStore();
 
   useEffect(() => {
     if (isOpen && imageUrls.length > 0 && status === 'idle') {
@@ -91,50 +76,31 @@ export function OCRModal({
       setError('');
       setItems([]);
       setItemStates(new Map());
-      setShowMethodModal(false);
-      setShowPurchaseModal(false);
-      setSelectedMethod(null);
       setApiKeyFailed(false);
     }
   }, [isOpen]);
 
   const checkCapabilityAndStart = async () => {
-    const capability = await getAnalysisCapability(credits);
-    setHasApiKey(capability.hasApiKey);
-
-    if (capability.methods.length === 0) {
-      setShowMethodModal(true);
-      setStatus('choosing');
+    if (!(await isAIEnabled())) {
+      setApiKeyFailed(true);
+      setError(t('analysis', 'noMethod'));
+      setStatus('error');
       return;
     }
-
-    const [onlyMethod] = capability.methods;
-    if (capability.methods.length === 1 && onlyMethod) {
-      startAnalysis(onlyMethod);
-      return;
-    }
-
-    // Both methods available — show chooser
-    setShowMethodModal(true);
-    setStatus('choosing');
+    startAnalysis();
   };
 
-  const startAnalysis = async (method: AnalysisMethod) => {
-    setSelectedMethod(method);
-    setShowMethodModal(false);
+  const startAnalysis = async () => {
     setStatus('loading');
     setError('');
     setApiKeyFailed(false);
 
     try {
-      const result = await analyzeImagesWithMethod(imageUrls, method, {
+      const result = await analyzeImages(imageUrls, {
         onProgress: setProgress,
       });
 
       if (result && result.items.length > 0) {
-        if (result.creditUsed && result.remainingCredits !== undefined) {
-          deductCredits(result.creditUsed);
-        }
         setItems(result.items);
         const states = new Map<number, ItemState>();
         result.items.forEach((item, i) => {
@@ -154,20 +120,14 @@ export function OCRModal({
       if (err instanceof ApiKeyFailedError) {
         setApiKeyFailed(true);
         setError(t('analysis', 'apiKeyFailed'));
-      } else if (err instanceof InsufficientCreditsError) {
-        setError(t('analysis', 'insufficientCredits'));
       } else if (err instanceof NoAnalysisMethodError) {
+        setApiKeyFailed(true);
         setError(t('analysis', 'noMethod'));
       } else {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
       setStatus('error');
     }
-  };
-
-  const handleMethodSelect = (method: AnalysisMethod) => {
-    setShowMethodModal(false);
-    startAnalysis(method);
   };
 
   const handleReanalyze = () => {
@@ -265,15 +225,6 @@ export function OCRModal({
     (s) => s.selected
   ).length;
 
-  const creditCost =
-    imageUrls.length <= 1
-      ? 10
-      : imageUrls.length === 2
-        ? 15
-        : imageUrls.length === 3
-          ? 20
-          : 25;
-
   if (!isOpen) return null;
 
   return (
@@ -283,7 +234,6 @@ export function OCRModal({
         onClick={(e) =>
           e.target === e.currentTarget &&
           status !== 'loading' &&
-          status !== 'choosing' &&
           onClose()
         }
       >
@@ -294,20 +244,8 @@ export function OCRModal({
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {t('analysis', 'title')}
               </h2>
-              {selectedMethod && status === 'success' && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                  {selectedMethod === 'credit' ? (
-                    <span className="flex items-center gap-0.5">
-                      <Sparkles className="w-3 h-3" />
-                      {t('analysis', 'premium')}
-                    </span>
-                  ) : (
-                    t('analysis', 'basic')
-                  )}
-                </span>
-              )}
             </div>
-            {status !== 'loading' && status !== 'choosing' && (
+            {status !== 'loading' && (
               <Button variant="ghost" size="icon" onClick={onClose}>
                 <X className="w-5 h-5" />
               </Button>
@@ -315,7 +253,7 @@ export function OCRModal({
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
-            {(status === 'idle' || status === 'choosing') && (
+            {status === 'idle' && (
               <div className="flex flex-col items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
               </div>
@@ -326,7 +264,6 @@ export function OCRModal({
                 progress={progress}
                 imageCount={imageUrls.length}
                 onCancel={handleCancel}
-                method={selectedMethod}
               />
             )}
 
@@ -345,15 +282,7 @@ export function OCRModal({
                   <Button variant="outline" size="sm" onClick={onClose}>
                     {t('common', 'close')}
                   </Button>
-                  {apiKeyFailed && credits > 0 ? (
-                    <Button
-                      size="sm"
-                      onClick={() => startAnalysis('credit')}
-                    >
-                      <Sparkles className="w-4 h-4 mr-1" />
-                      {t('analysis', 'useCreditsInstead')}
-                    </Button>
-                  ) : apiKeyFailed && onOpenSettings ? (
+                  {apiKeyFailed && onOpenSettings ? (
                     <Button
                       size="sm"
                       onClick={() => {
@@ -362,16 +291,6 @@ export function OCRModal({
                       }}
                     >
                       {t('analysis', 'goToSettings')}
-                    </Button>
-                  ) : error.includes('크레딧') ? (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setShowPurchaseModal(true);
-                      }}
-                    >
-                      <ShoppingCart className="w-4 h-4 mr-1" />
-                      {t('analysis', 'buyCredits')}
                     </Button>
                   ) : (
                     <Button size="sm" onClick={handleReanalyze}>
@@ -463,27 +382,6 @@ export function OCRModal({
         </div>
       </div>
 
-      <AnalysisMethodModal
-        isOpen={showMethodModal}
-        onClose={() => {
-          setShowMethodModal(false);
-          if (status === 'choosing') {
-            onClose();
-          }
-        }}
-        onSelect={handleMethodSelect}
-        creditCost={creditCost}
-        credits={credits}
-        hasApiKey={hasApiKey}
-        hasCredits={credits > 0}
-        onOpenSettings={onOpenSettings}
-        onOpenPurchase={() => setShowPurchaseModal(true)}
-      />
-
-      <CreditPurchaseModal
-        isOpen={showPurchaseModal}
-        onClose={() => setShowPurchaseModal(false)}
-      />
     </>
   );
 }
@@ -638,12 +536,10 @@ function LoadingState({
   progress,
   imageCount,
   onCancel,
-  method,
 }: {
   progress: string;
   imageCount: number;
   onCancel: () => void;
-  method: AnalysisMethod | null;
 }) {
   const [displayPercent, setDisplayPercent] = useState(0);
   const targetPercent = parseInt(progress) || 0;
@@ -679,12 +575,6 @@ function LoadingState({
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {tWithParams('analysis', 'analyzingImages', { count: imageCount })}
         </p>
-        {method === 'credit' && (
-          <p className="text-xs text-primary">
-            <Sparkles className="w-3 h-3 inline mr-1" />
-            {t('analysis', 'premiumAnalysis')}
-          </p>
-        )}
       </div>
       <div className="w-full max-w-xs">
         <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">

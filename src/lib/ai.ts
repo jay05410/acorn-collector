@@ -1,7 +1,6 @@
 import { GoogleGenAI, type Part } from '@google/genai';
 import { appStorage } from './storage';
-import { t, getLanguageForAI, getLanguageCode } from './i18n';
-import { apiClient, ApiError } from './api-client';
+import { t, getLanguageForAI } from './i18n';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const MAX_IMAGES = 4;
@@ -18,23 +17,11 @@ export interface ImageAnalysisResult {
   items: ImageAnalysisItem[];
   overallConfidence: number;
   tokenCount?: number;
-  creditUsed?: number;
-  remainingCredits?: number;
-  sessionId?: string;
 }
 
 export interface AnalysisOptions {
   onProgress?: (status: string) => void;
   signal?: AbortSignal;
-  useProxy?: boolean;
-}
-
-export type AnalysisMethod = 'direct' | 'credit';
-
-export interface AnalysisCapability {
-  hasApiKey: boolean;
-  hasCredits: boolean;
-  methods: AnalysisMethod[];
 }
 
 const analysisCache = new Map<string, ImageAnalysisResult>();
@@ -218,40 +205,6 @@ async function analyzeWithDirectApi(
   };
 }
 
-async function analyzeWithProxy(
-  imageUrls: string[],
-  options?: AnalysisOptions
-): Promise<ImageAnalysisResult> {
-  options?.onProgress?.('10');
-
-  try {
-    const langCode = getLanguageCode();
-    const response = await apiClient.analyzeImages(imageUrls, langCode);
-    options?.onProgress?.('100');
-
-    return {
-      items: response.items.map((item) => ({ ...item, confidence: 95 })),
-      overallConfidence: 95,
-      creditUsed: response.creditUsed,
-      remainingCredits: response.remainingCredits,
-      sessionId: response.sessionId,
-    };
-  } catch (error) {
-    if (error instanceof ApiError) {
-      if (error.status === 402) {
-        throw new InsufficientCreditsError(
-          (error.data?.currentBalance as number) ?? 0,
-          (error.data?.required as number) ?? 0
-        );
-      }
-      if (error.status === 401) {
-        throw new Error(t('errors', 'loginRequired'));
-      }
-    }
-    throw error;
-  }
-}
-
 export async function analyzeImages(
   imageUrls: string[],
   options?: AnalysisOptions
@@ -266,80 +219,16 @@ export async function analyzeImages(
   }
 
   const settings = await appStorage.getSettings();
-  const hasOwnApiKey = settings.aiEnabled && !!settings.geminiApiKey;
-
-  try {
-    let result: ImageAnalysisResult;
-
-    if (hasOwnApiKey && !options?.useProxy) {
-      result = await analyzeWithDirectApi(
-        imageUrls,
-        settings.geminiApiKey,
-        options
-      );
-    } else {
-      result = await analyzeWithProxy(imageUrls, options);
-    }
-
-    analysisCache.set(cacheKey, result);
-    return result;
-  } catch (error) {
-    console.error('[AI] Analysis error:', error);
-
-    if (error instanceof InsufficientCreditsError) {
-      throw error;
-    }
-
-    const message = error instanceof Error ? error.message : 'Unknown error';
-
-    if (
-      message.includes('API_KEY') ||
-      message.includes('401') ||
-      message.includes('403')
-    ) {
-      throw new ApiKeyFailedError();
-    }
-    if (message.includes('429')) {
-      throw new Error(t('errors', 'rateLimitExceeded'));
-    }
-    if (message.includes('fetch') || message.includes('network')) {
-      throw new Error(t('errors', 'networkError'));
-    }
-
-    throw new Error(message);
-  }
-}
-
-export async function analyzeImagesWithMethod(
-  imageUrls: string[],
-  method: AnalysisMethod,
-  options?: AnalysisOptions
-): Promise<ImageAnalysisResult | null> {
-  if (!imageUrls?.length) return null;
-
-  const cacheKey = `${method}:${getCacheKey(imageUrls)}`;
-  const cached = analysisCache.get(cacheKey);
-  if (cached) {
-    options?.onProgress?.('100');
-    return cached;
+  if (!settings.aiEnabled || !settings.geminiApiKey) {
+    throw new NoAnalysisMethodError();
   }
 
   try {
-    let result: ImageAnalysisResult;
-
-    if (method === 'direct') {
-      const settings = await appStorage.getSettings();
-      if (!settings.aiEnabled || !settings.geminiApiKey) {
-        throw new NoAnalysisMethodError();
-      }
-      result = await analyzeWithDirectApi(
-        imageUrls,
-        settings.geminiApiKey,
-        options
-      );
-    } else {
-      result = await analyzeWithProxy(imageUrls, options);
-    }
+    const result = await analyzeWithDirectApi(
+      imageUrls,
+      settings.geminiApiKey,
+      options
+    );
 
     analysisCache.set(cacheKey, result);
     return result;
@@ -347,7 +236,6 @@ export async function analyzeImagesWithMethod(
     console.error('[AI] Analysis error:', error);
 
     if (
-      error instanceof InsufficientCreditsError ||
       error instanceof NoAnalysisMethodError ||
       error instanceof ApiKeyFailedError
     ) {
@@ -383,33 +271,6 @@ export async function isAIEnabled(): Promise<boolean> {
   return settings.aiEnabled && !!settings.geminiApiKey;
 }
 
-export async function canUseAI(): Promise<{
-  enabled: boolean;
-  method: 'direct' | 'proxy' | 'none';
-}> {
-  const settings = await appStorage.getSettings();
-
-  if (settings.aiEnabled && settings.geminiApiKey) {
-    return { enabled: true, method: 'direct' };
-  }
-
-  return { enabled: true, method: 'proxy' };
-}
-
-export async function getAnalysisCapability(
-  credits: number
-): Promise<AnalysisCapability> {
-  const settings = await appStorage.getSettings();
-  const hasApiKey = settings.aiEnabled && !!settings.geminiApiKey;
-  const hasCredits = credits > 0;
-
-  const methods: AnalysisMethod[] = [];
-  if (hasApiKey) methods.push('direct');
-  if (hasCredits) methods.push('credit');
-
-  return { hasApiKey, hasCredits, methods };
-}
-
 export async function testGeminiApiKey(
   apiKey: string
 ): Promise<{ success: boolean; error?: string }> {
@@ -437,16 +298,6 @@ export async function testGeminiApiKey(
       return { success: false, error: t('settings', 'apiKeyInvalid') };
     }
     return { success: false, error: message };
-  }
-}
-
-export class InsufficientCreditsError extends Error {
-  constructor(
-    public currentBalance: number,
-    public required: number
-  ) {
-    super(t('errors', 'insufficientCredits'));
-    this.name = 'InsufficientCreditsError';
   }
 }
 
