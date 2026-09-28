@@ -69,6 +69,7 @@ describe('parseSyndicationTweet', () => {
       publishedAt: '2012-11-07T04:16:18.000Z',
       photos: [{ url: 'https://pbs.twimg.com/media/A7EiDWcCYAAZT1D.jpg', width: 800, height: 532 }],
       links: [],
+      expansions: {},
     });
   });
 
@@ -86,6 +87,7 @@ describe('parseSyndicationTweet', () => {
     });
     expect(parsed?.text).toBe('新刊 & グッズ <A-1> https://booth.pm/ja/items/1');
     expect(parsed?.links).toEqual(['https://booth.pm/ja/items/1']);
+    expect(parsed?.expansions).toEqual({ 'https://t.co/abc': 'https://booth.pm/ja/items/1' });
     expect(parsed?.truncated).toBe(true);
   });
 
@@ -155,11 +157,16 @@ describe('enrichXSnapshot', () => {
     links: ['https://t.co/bAJE6Vom'],
   });
 
-  it('uses syndication without fetching the status page when not truncated', async () => {
-    const fetchMock = vi.fn(async () => json(OBAMA));
+  it('prefers the complete syndication copy over the status page', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).startsWith('https://cdn.syndication.twimg.com/')
+        ? json(OBAMA)
+        : new Response('<meta property="og:description" content="Four more years. And a longer page text.">')
+    );
     const result = await enrichXSnapshot(base, { fetch: fetchMock });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls.find(([input]) =>
+      String(input).startsWith('https://cdn.syndication.twimg.com/')
+    ) as unknown as [string, RequestInit];
     expect(url).toBe(syndicationUrl('266031293945503744'));
     expect(init.credentials).toBe('omit');
     expect(result).toMatchObject({
@@ -176,6 +183,50 @@ describe('enrichXSnapshot', () => {
         width: 800,
         height: 532,
       },
+    ]);
+  });
+
+  it('requests the status page in parallel instead of after syndication', async () => {
+    let releaseSyndication: (response: Response) => void = () => {};
+    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+      String(input).startsWith('https://cdn.syndication.twimg.com/')
+        ? new Promise<Response>((resolve) => (releaseSyndication = resolve))
+        : Promise.resolve(
+            new Response('<meta property="og:description" content="Four more years and so on, the full long post.">')
+          )
+    );
+    const pending = enrichXSnapshot(base, { fetch: fetchMock });
+    // Both requests are out before the syndication response arrives.
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      'https://x.com/i/status/266031293945503744',
+      syndicationUrl('266031293945503744'),
+    ]);
+    releaseSyndication(json({ ...OBAMA, text: 'Four more years and so on', note_tweet: { id: 'x' } }));
+    expect((await pending).text).toBe('Four more years and so on, the full long post.');
+  });
+
+  it('expands t.co links in place and drops media links', async () => {
+    const tweet = {
+      ...OBAMA,
+      entities: {
+        ...OBAMA.entities,
+        urls: [
+          { url: 'http://t.co/other', expanded_url: 'https://shop.example.com/' },
+          { url: 'https://t.co/clicked', expanded_url: 'https://forms.example.org/f1' },
+        ],
+      },
+    };
+    const fetchMock = vi.fn(async () => json(tweet));
+    const snapshot = createSnapshot({
+      ...base,
+      // The right-clicked link was put first by the capture.
+      links: ['https://t.co/clicked', 'https://example.com/plain', 'https://t.co/bAJE6Vom'],
+    });
+    const result = await enrichXSnapshot(snapshot, { fetch: fetchMock });
+    expect(result.links).toEqual([
+      'https://forms.example.org/f1',
+      'https://example.com/plain',
+      'https://shop.example.com/',
     ]);
   });
 

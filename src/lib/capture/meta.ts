@@ -3,6 +3,7 @@
  * the content script; `parseMetaTagsFromHtml` is for the background service
  * worker, which has no DOMParser.
  */
+import { isRecord } from './util';
 
 const META_PREFIXES = /^(?:og|article|product|twitter|book|profile|music|video):/;
 const MAX_META_ENTRIES = 60;
@@ -44,17 +45,13 @@ export function readMetaAuthor(doc: Document): string | null {
   return content || null;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function flattenJsonLd(value: unknown, out: unknown[]): void {
   if (out.length >= MAX_JSON_LD_ENTRIES) return;
   if (Array.isArray(value)) {
     for (const entry of value) flattenJsonLd(entry, out);
     return;
   }
-  if (!isObject(value)) return;
+  if (!isRecord(value)) return;
   const graph = value['@graph'];
   if (Array.isArray(graph)) {
     flattenJsonLd(graph, out);
@@ -135,7 +132,7 @@ function nameOf(value: unknown): string | null {
     }
     return null;
   }
-  if (isObject(value)) return firstString(value.name);
+  if (isRecord(value)) return firstString(value.name);
   return firstString(value);
 }
 
@@ -144,14 +141,14 @@ function imageUrls(value: unknown, out: string[]): void {
     if (value.trim()) out.push(value.trim());
   } else if (Array.isArray(value)) {
     for (const entry of value) imageUrls(entry, out);
-  } else if (isObject(value)) {
+  } else if (isRecord(value)) {
     const url = firstString(value.contentUrl) ?? firstString(value.url);
     if (url) out.push(url);
   }
 }
 
 function languageOf(value: unknown): string | null {
-  if (isObject(value)) {
+  if (isRecord(value)) {
     return firstString(value.alternateName) ?? firstString(value.name);
   }
   return firstString(value);
@@ -168,7 +165,7 @@ export function summarizeJsonLd(entries: readonly unknown[]): JsonLdSummary {
     lang: null,
   };
   const ranked = entries
-    .filter(isObject)
+    .filter(isRecord)
     .map((entry, index) => ({ entry, index, rank: rank(entry) }))
     .filter((candidate) => candidate.rank < PRIMARY_TYPES.length)
     .sort((a, b) => a.rank - b.rank || a.index - b.index)

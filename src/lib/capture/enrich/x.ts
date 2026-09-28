@@ -9,14 +9,16 @@
  *    any non-empty value was accepted. Long posts (`note_tweet`) are
  *    truncated there.
  * 2. og:description of the logged-out status page, used when (1) fails or
- *    is truncated.
+ *    is truncated. Requested in parallel with (1) so a fallback costs no
+ *    extra round trip; not awaited when (1) is complete.
  * Any failure falls back to the DOM text.
  */
 import { decodeHtmlEntities, parseMetaTagsFromHtml } from '../meta';
 import { normalizeSnapshot } from '../snapshot';
 import { parseXStatusId, xStatusUrl } from '../sites/x';
 import type { CapturedImage, PageSnapshot } from '../types';
-import { type EnrichDeps, fetchJson, fetchText, isRecord, stringOr } from './http';
+import { isRecord } from '../util';
+import { type EnrichDeps, fetchJson, fetchText, stringOr } from './http';
 
 /** Token derivation used by the embed widget (as in vercel/react-tweet). */
 export function syndicationToken(id: string): string {
@@ -38,6 +40,8 @@ export interface TweetOriginal {
   photos: CapturedImage[];
   /** Expanded targets of the post's t.co links. */
   links: string[];
+  /** t.co URL (https form) -> expanded target, for the post's own links. */
+  expansions: Record<string, string>;
 }
 
 function records(value: unknown): Record<string, unknown>[] {
@@ -70,10 +74,18 @@ function photosOf(tweet: Record<string, unknown>): CapturedImage[] {
     .map((url) => ({ url }));
 }
 
+const SHORT_LINK_PREFIX = 'https://t.co/';
+
+/** t.co links appear as http:// in older payloads and https:// in the DOM. */
+function shortLinkKey(url: string): string {
+  return url.replace(/^http:\/\//i, 'https://');
+}
+
 /** Strip reply mentions, drop media t.co links, expand the other t.co links. */
 function displayText(tweet: Record<string, unknown>, raw: string): {
   text: string;
   links: string[];
+  expansions: Record<string, string>;
 } {
   const range = Array.isArray(tweet.display_text_range) ? tweet.display_text_range : [];
   const start = typeof range[0] === 'number' ? range[0] : 0;
@@ -87,14 +99,32 @@ function displayText(tweet: Record<string, unknown>, raw: string): {
     if (url) text = text.split(url).join('');
   }
   const links: string[] = [];
+  const expansions: Record<string, string> = {};
   for (const entry of records(entities.urls)) {
     const url = stringOr(entry.url);
     const expanded = stringOr(entry.expanded_url);
     if (!url || !expanded) continue;
     text = text.split(url).join(expanded);
     links.push(expanded);
+    expansions[shortLinkKey(url)] = expanded;
   }
-  return { text: decodeHtmlEntities(text).trim(), links };
+  return { text: decodeHtmlEntities(text).trim(), links, expansions };
+}
+
+/**
+ * Replace t.co links by their targets in place (a right-clicked link that
+ * the capture put first stays first) and drop the ones the post does not
+ * explain (media links).
+ */
+function expandShortLinks(
+  links: readonly string[],
+  expansions: Record<string, string>
+): string[] {
+  return links.flatMap((link) => {
+    if (!link.startsWith(SHORT_LINK_PREFIX)) return [link];
+    const target = expansions[shortLinkKey(link)];
+    return target ? [target] : [];
+  });
 }
 
 /** Parse a tweet-result payload; null for `{}`, tombstones and bad data. */
@@ -104,7 +134,7 @@ export function parseSyndicationTweet(payload: unknown): TweetOriginal | null {
   const raw = typeof payload.text === 'string' ? payload.text : null;
   if (!id || raw === null) return null;
 
-  const { text, links } = displayText(payload, raw);
+  const { text, links, expansions } = displayText(payload, raw);
   const user = isRecord(payload.user) ? payload.user : null;
   return {
     id,
@@ -117,6 +147,7 @@ export function parseSyndicationTweet(payload: unknown): TweetOriginal | null {
     publishedAt: stringOr(payload.created_at),
     photos: photosOf(payload),
     links,
+    expansions,
   };
 }
 
@@ -178,10 +209,13 @@ export async function enrichXSnapshot(
     parseXStatusId(snapshot.canonicalUrl ?? '') ?? parseXStatusId(snapshot.url);
   if (!id) return snapshot;
 
+  // Both requests go out now; the status page is only waited for when the
+  // syndication copy is missing or cut short.
+  const statusDescription = fetchStatusDescription(id, deps).catch(() => null);
   const tweet = await fetchSyndicationTweet(id, deps);
   let original = tweet?.text ?? null;
   if (!tweet || tweet.truncated) {
-    const description = await fetchStatusDescription(id, deps);
+    const description = await statusDescription;
     if (description && isLongerOriginal(description, original)) {
       original = description;
     }
@@ -212,7 +246,7 @@ export async function enrichXSnapshot(
     images: [...(tweet?.photos ?? []), ...snapshot.images],
     // With the original in hand, t.co links are replaced by their targets.
     links: tweet
-      ? [...tweet.links, ...snapshot.links.filter((link) => !link.startsWith('https://t.co/'))]
+      ? [...expandShortLinks(snapshot.links, tweet.expansions), ...tweet.links]
       : snapshot.links,
   });
 }

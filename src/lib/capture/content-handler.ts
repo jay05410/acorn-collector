@@ -8,24 +8,16 @@ import { buildBlueskySnapshot } from './sites/bluesky';
 import type { CaptureContext } from './sites/context';
 import { buildGenericSnapshot } from './sites/generic';
 import { buildXSnapshot } from './sites/x';
-import type { CaptureMessage, CaptureTrigger, PageSnapshot } from './types';
+import type { CaptureMessage, PageSnapshot } from './types';
+import { isCaptureTrigger, isRecord } from './util';
 
 type CaptureRequest = Extract<CaptureMessage, { type: 'acorn:capture' }>;
 
-const CAPTURE_TRIGGERS: readonly CaptureTrigger[] = [
-  'context-menu',
-  'image-context-menu',
-  'action',
-  'shortcut',
-  'panel-button',
-];
-
 export function isCaptureRequest(message: unknown): message is CaptureRequest {
-  if (typeof message !== 'object' || message === null) return false;
-  const candidate = message as { type?: unknown; trigger?: unknown };
   return (
-    candidate.type === 'acorn:capture' &&
-    CAPTURE_TRIGGERS.includes(candidate.trigger as CaptureTrigger)
+    isRecord(message) &&
+    message.type === 'acorn:capture' &&
+    isCaptureTrigger(message.trigger)
   );
 }
 

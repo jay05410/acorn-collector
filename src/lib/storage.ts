@@ -1,6 +1,6 @@
 /**
- * chrome.storage.local access: settings v2 (see settings-types.ts) and the
- * legacy pendingAdd handoff (replaced in ACORN-5/7).
+ * chrome.storage.local access: settings v2 (see settings-types.ts). Captures
+ * reach the side panel through the session handoff (lib/capture/client.ts).
  */
 import { detectLanguage, type AppLanguage } from '@/i18n/languages';
 import { isAppLanguage } from '@/i18n/state';
@@ -15,15 +15,6 @@ import {
   type OpenRouterSettings,
   type SortBy,
 } from '@/lib/settings-types';
-
-export interface PendingAddData {
-  text: string;
-  url: string;
-  pageUrl?: string;
-  author?: string;
-  imageUrls?: string[];
-  timestamp: number;
-}
 
 const SETTINGS_KEY = 'settings';
 
@@ -264,29 +255,3 @@ export function watchSettings(
   chrome.storage.onChanged.addListener(listener);
   return () => chrome.storage.onChanged.removeListener(listener);
 }
-
-function isPendingAddData(value: unknown): value is PendingAddData {
-  if (!value || typeof value !== 'object') return false;
-  const obj = value as Record<string, unknown>;
-  return (
-    typeof obj.text === 'string' &&
-    typeof obj.url === 'string' &&
-    typeof obj.timestamp === 'number' &&
-    (obj.author === undefined || typeof obj.author === 'string')
-  );
-}
-
-export const appStorage = {
-  async getPendingAdd(): Promise<PendingAddData | null> {
-    const result = await chrome.storage.local.get('pendingAdd');
-    const pending = result.pendingAdd;
-    if (isPendingAddData(pending)) {
-      return pending;
-    }
-    return null;
-  },
-
-  async clearPendingAdd(): Promise<void> {
-    await chrome.storage.local.remove('pendingAdd');
-  },
-};

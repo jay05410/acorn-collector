@@ -53,10 +53,6 @@ export async function fetchText(url: string, deps: EnrichDeps): Promise<string |
   }
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 export function stringOr(value: unknown, fallback: string | null = null): string | null {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }

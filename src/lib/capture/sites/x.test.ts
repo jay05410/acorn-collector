@@ -214,6 +214,10 @@ describe('translated post end to end (DOM snapshot + syndication enrichment)', (
     if (!snapshot) throw new Error('no snapshot');
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      // The logged-out status page is requested in parallel; syndication wins.
+      if (!String(input).startsWith('https://cdn.syndication.twimg.com/')) {
+        return new Response('', { status: 404 });
+      }
       expect(String(input)).toContain(`id=${TRANSLATED_POST_ID}`);
       return Response.json({
         __typename: 'Tweet',
@@ -234,7 +238,10 @@ describe('translated post end to end (DOM snapshot + syndication enrichment)', (
     });
 
     const enriched = await enrichXSnapshot(snapshot, { fetch: fetchMock });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const syndicationCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).startsWith('https://cdn.syndication.twimg.com/')
+    );
+    expect(syndicationCalls).toHaveLength(1);
     expect(enriched.text).toBe(
       'See you at Comiket booth A-12! Acrylic stands 1500 yen ✨\nMail order: https://booth.pm/ja/items/8893147'
     );

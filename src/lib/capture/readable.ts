@@ -23,14 +23,20 @@ function absolute(url: string | null, base: string): string | null {
 }
 
 export function extractReadable(doc: Document, url: string): ReadableResult {
-  // parse() works on an internal clone; the page is not modified. useAsync is
-  // off so no third-party requests are made from the page.
-  const result = new Defuddle(doc, { url, useAsync: false }).parse();
+  // defuddle 0.19.4 parse() rewrites the document it is given before its own
+  // internal clone (srcSet -> srcset, <noscript> images promoted into the
+  // page), so it gets a detached copy and the live page is never touched.
+  // Trade-off: the copy has no window, so defuddle's computed-style checks
+  // (hidden elements, small images, mobile media queries) fall back to
+  // attributes and inline styles. Relative URLs resolve against `url`.
+  // useAsync is off so no third-party requests are made from the page.
+  const copy = doc.cloneNode(true) as Document;
+  const result = new Defuddle(copy, { url, useAsync: false }).parse();
   return {
     title: orNull(result.title),
     // Snapshots keep at most MAX_TEXT_LENGTH chars; do not ship more over IPC.
     text: result.content
-      ? normalizeText(htmlToMarkdown(result.content, doc), MAX_TEXT_LENGTH)
+      ? normalizeText(htmlToMarkdown(result.content, copy), MAX_TEXT_LENGTH)
       : '',
     author: orNull(result.author),
     published: orNull(result.published),

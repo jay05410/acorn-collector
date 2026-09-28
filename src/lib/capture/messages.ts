@@ -2,6 +2,7 @@
  * Side panel -> background capture request. (The content-script protocol is
  * the frozen CaptureMessage union in ./types.)
  */
+import { isRecord } from './util';
 
 export interface CaptureRequestMessage {
   type: 'acorn:request-capture';
@@ -22,10 +23,9 @@ export type CaptureRequestResponse =
   | { ok: false; code: CaptureRequestFailure };
 
 export function isCaptureRequestMessage(value: unknown): value is CaptureRequestMessage {
-  if (typeof value !== 'object' || value === null) return false;
-  const candidate = value as { type?: unknown; windowId?: unknown };
   return (
-    candidate.type === 'acorn:request-capture' &&
-    (candidate.windowId === undefined || typeof candidate.windowId === 'number')
+    isRecord(value) &&
+    value.type === 'acorn:request-capture' &&
+    (value.windowId === undefined || typeof value.windowId === 'number')
   );
 }

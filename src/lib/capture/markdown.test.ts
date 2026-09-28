@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { htmlToMarkdown, toMarkdown } from './markdown';
+import { htmlToMarkdown, markdownToPlainText, toMarkdown } from './markdown';
 
 describe('htmlToMarkdown', () => {
   it('converts the elements defuddle emits', () => {
@@ -65,5 +65,35 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<p>A &amp; B</p><p>C<br>D</p><script>x()</script>', blocked)).toBe(
       'A & B\n\nC\nD'
     );
+  });
+});
+
+describe('markdownToPlainText', () => {
+  it('reduces emitted Markdown to the text a reader sees', () => {
+    const markdown = [
+      '## Menu',
+      '',
+      'Prices are **tax included**, *cash only*. See [the **shop**](https://e.com/a_(b)).',
+      '',
+      '- Acrylic stand',
+      '1. First',
+      '> - quoted item',
+      '>',
+      '| Item | Price \\| tax |',
+      '',
+      '---',
+      '',
+      '```',
+      'const x = 1;',
+      '```',
+      'Use `A-12` then turn left.',
+    ].join('\n');
+    expect(markdownToPlainText(markdown)).toBe(
+      'Menu Prices are tax included, cash only. See the shop. Acrylic stand First quoted item Item Price tax const x = 1; Use A-12 then turn left.'
+    );
+  });
+
+  it('leaves plain text alone apart from whitespace', () => {
+    expect(markdownToPlainText('  Booth E-21\n\n  on both days  ')).toBe('Booth E-21 on both days');
   });
 });

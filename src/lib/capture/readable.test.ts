@@ -52,6 +52,47 @@ describe('extractReadable (defuddle core)', () => {
   });
 });
 
+const LAZY_IMAGES = `
+<head><title>Gallery post</title></head>
+<body>
+  <article>
+    <h1>Gallery post</h1>
+    <p>New acrylic stands for the autumn fair, pictured below. We will bring twenty of each design and restock the zine as well.</p>
+    <figure>
+      <img alt="Stand A" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+      <noscript><img alt="Stand A" src="/images/stand-a.jpg"></noscript>
+    </figure>
+    <figure>
+      <noscript><img alt="Stand B" src="/images/stand-b.jpg"></noscript>
+    </figure>
+    <picture><source srcSet="/images/c-2x.jpg 2x"><img alt="Stand C" srcSet="/images/c.jpg 1x, /images/c-2x.jpg 2x" src="/images/c.jpg"></picture>
+    <p>Mail order opens after the event at <a href="/shop/order">the order form</a>. Thank you for reading and see you at the venue on both days of the fair.</p>
+  </article>
+</body>`;
+
+describe('extractReadable leaves the live page alone', () => {
+  it('does not normalize srcset or promote noscript images in the document', () => {
+    document.documentElement.innerHTML = LAZY_IMAGES;
+    const before = document.documentElement.outerHTML;
+    const placeholder = document.querySelector('img[alt="Stand A"]');
+
+    const result = extractReadable(document, 'https://blog.example.com/gallery');
+
+    expect(result.text).toContain('New acrylic stands');
+    // The detached copy has no page URL of its own; links resolve via `url`.
+    expect(result.text).toContain('[the order form](https://blog.example.com/shop/order)');
+    expect(document.documentElement.outerHTML).toBe(before);
+    // defuddle 0.19.4 would swap in the noscript src and insert a promoted
+    // <img> next to the second <noscript> if it ran on the live document.
+    expect(placeholder?.getAttribute('src')).toMatch(/^data:/);
+    const pageImages = [...document.querySelectorAll('img')].filter(
+      (img) => !img.closest('noscript')
+    );
+    expect(pageImages.map((img) => img.getAttribute('alt'))).toEqual(['Stand A', 'Stand C']);
+    expect(document.querySelector('img[alt="Stand C"]')?.hasAttribute('srcSet')).toBe(true);
+  });
+});
+
 describe('isReadableResult', () => {
   it('rejects malformed injection results', () => {
     expect(isReadableResult(undefined)).toBe(false);
@@ -105,6 +146,26 @@ describe('mergeReadable', () => {
     expect(merged.text).toBe('Sidebar notice: sold out\n\nMain article text. Booth E-21 details.');
     expect(merged.title).toBe('Page');
     expect(merged.lang).toBe('ja');
+  });
+
+  it('does not duplicate block text the article holds with Markdown markup', () => {
+    const snapshot = createSnapshot({
+      url: 'https://e.com/a',
+      capturedAt: 1,
+      // innerText of the right-clicked block: no Markdown, list markers or link targets.
+      text: 'Mail order opens at our shop.\nBooth E-21 on both days.\nAcrylic stand\nZine',
+    });
+    const article = [
+      '## Autumn fair',
+      '',
+      'Mail order opens at [our shop](https://shop.example.com/(new)).',
+      '**Booth E-21** on *both* days.',
+      '',
+      '- Acrylic stand',
+      '- Zine',
+    ].join('\n');
+    const merged = mergeReadable(snapshot, { ...readable, text: article });
+    expect(merged.text).toBe(article);
   });
 
   it('keeps the snapshot text when the article is empty', () => {

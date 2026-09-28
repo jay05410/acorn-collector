@@ -6,7 +6,8 @@
 import { normalizeSnapshot } from '../snapshot';
 import { type BlueskyPostRef, blueskyPostUrl, parseBlueskyPostUrl } from '../sites/bluesky';
 import type { CapturedImage, PageSnapshot } from '../types';
-import { type EnrichDeps, fetchJson, isRecord, stringOr } from './http';
+import { isRecord } from '../util';
+import { type EnrichDeps, fetchJson, stringOr } from './http';
 
 export function getPostThreadUrl(ref: BlueskyPostRef): string {
   const uri = `at://${ref.actor}/app.bsky.feed.post/${ref.rkey}`;
@@ -128,6 +129,7 @@ export async function enrichBlueskySnapshot(
     },
     publishedAt: post.createdAt ?? snapshot.publishedAt,
     images: [...post.images, ...snapshot.images],
-    links: [...post.links, ...snapshot.links],
+    // Page links first: a right-clicked link the capture put first stays first.
+    links: [...snapshot.links, ...post.links],
   });
 }

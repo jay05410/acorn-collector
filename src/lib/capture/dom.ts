@@ -3,6 +3,7 @@
  * the page.
  */
 import type { CapturedImage } from './types';
+import { hostOf } from './util';
 
 const BLOCK_TAGS = new Set([
   'ADDRESS',
@@ -204,14 +205,6 @@ export function largeImagesInView(
     .sort((a, b) => b.area - a.area)
     .slice(0, limit)
     .map((entry) => entry.image);
-}
-
-function hostOf(url: string): string | null {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
 }
 
 /**

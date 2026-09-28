@@ -5,6 +5,7 @@ import {
   HANDOFF_MAX_AGE_MS,
   type HandoffStore,
   isCaptureHandoff,
+  isForWindow,
   requestCapture,
   subscribeCaptureHandoff,
 } from './client';
@@ -26,7 +27,8 @@ function handoff(overrides: Partial<CaptureHandoff> = {}): CaptureHandoff {
 
 type Listener = (changes: Record<string, chrome.storage.StorageChange>) => void;
 
-function store(initial: unknown) {
+/** Session storage fake for a side panel in window 3 (null: unknown window). */
+function store(initial: unknown, windowId: number | null = 3) {
   const data = new Map<string, unknown>([[CAPTURE_HANDOFF_KEY, initial]]);
   const listeners = new Set<Listener>();
   const session = {
@@ -40,12 +42,17 @@ function store(initial: unknown) {
     },
   };
   const emit = (value: unknown) => {
+    const oldValue = data.get(CAPTURE_HANDOFF_KEY);
     data.set(CAPTURE_HANDOFF_KEY, value);
     for (const listener of listeners) {
-      listener({ [CAPTURE_HANDOFF_KEY]: { newValue: value } });
+      listener({ [CAPTURE_HANDOFF_KEY]: { oldValue, newValue: value } });
     }
   };
-  const handoffStore = { session, now: () => NOW } as unknown as HandoffStore;
+  const handoffStore = {
+    session,
+    now: () => NOW,
+    windowId: async () => windowId,
+  } as unknown as HandoffStore;
   return { handoffStore, session, emit, data, listeners };
 }
 
@@ -55,6 +62,17 @@ describe('isCaptureHandoff / freshHandoff', () => {
     expect(isCaptureHandoff({ ...handoff(), trigger: 'bogus' })).toBe(false);
     expect(isCaptureHandoff({ ...handoff(), snapshot: {} })).toBe(false);
     expect(isCaptureHandoff(undefined)).toBe(false);
+    expect(isCaptureHandoff(handoff({ windowId: 3 }))).toBe(true);
+    expect(isCaptureHandoff(handoff({ windowId: null }))).toBe(true);
+    expect(isCaptureHandoff({ ...handoff(), windowId: '3' })).toBe(false);
+  });
+
+  it('matches windows, treating unstamped handoffs and unknown panels as any window', () => {
+    expect(isForWindow(handoff({ windowId: 3 }), 3)).toBe(true);
+    expect(isForWindow(handoff({ windowId: 4 }), 3)).toBe(false);
+    expect(isForWindow(handoff(), 3)).toBe(true);
+    expect(isForWindow(handoff({ windowId: null }), 3)).toBe(true);
+    expect(isForWindow(handoff({ windowId: 4 }), null)).toBe(true);
   });
 
   it('ignores handoffs older than two minutes', () => {
@@ -75,12 +93,36 @@ describe('subscribeCaptureHandoff', () => {
     expect(received[0]?.id).toBe('h1');
 
     emit(handoff({ id: 'h2' }));
-    expect(received[1]?.id).toBe('h2');
+    await vi.waitFor(() => expect(received[1]?.id).toBe('h2'));
     emit(undefined);
+    await vi.waitFor(() => expect(received).toHaveLength(3));
     expect(received[2]).toBeNull();
 
     unsubscribe();
     expect(listeners.size).toBe(0);
+  });
+
+  it("ignores other windows' handoffs, including their removal", async () => {
+    const { handoffStore, emit, session } = store(handoff({ id: 'other', windowId: 4 }));
+    const received: Array<CaptureHandoff | null> = [];
+    subscribeCaptureHandoff((value) => received.push(value), handoffStore);
+    await vi.waitFor(() => expect(session.get).toHaveBeenCalled());
+
+    emit(handoff({ id: 'mine', windowId: 3 }));
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+    // Window 4 captures again (overwriting the shared key), then consumes it.
+    emit(handoff({ id: 'other-2', windowId: 4 }));
+    emit(undefined);
+    emit(handoff({ id: 'unstamped' }));
+    await vi.waitFor(() => expect(received).toHaveLength(2));
+    expect(received.map((value) => value?.id)).toEqual(['mine', 'unstamped']);
+  });
+
+  it('shows every window its handoff when the panel window is unknown', async () => {
+    const { handoffStore } = store(handoff({ id: 'other', windowId: 4 }), null);
+    const onHandoff = vi.fn();
+    subscribeCaptureHandoff(onHandoff, handoffStore);
+    await vi.waitFor(() => expect(onHandoff).toHaveBeenCalledWith(expect.objectContaining({ id: 'other' })));
   });
 
   it('skips a stale stored handoff', async () => {
@@ -88,7 +130,8 @@ describe('subscribeCaptureHandoff', () => {
     const onHandoff = vi.fn();
     subscribeCaptureHandoff(onHandoff, handoffStore);
     await vi.waitFor(() => expect(session.get).toHaveBeenCalled());
-    await Promise.resolve();
+    // Let the storage read and window lookup settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onHandoff).not.toHaveBeenCalled();
   });
 });

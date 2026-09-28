@@ -177,3 +177,25 @@ export function htmlToMarkdown(html: string, doc: Document): string {
       .trim();
   }
 }
+
+/** `[text](http…)` as emitted by `link`, allowing one level of parentheses in the URL. */
+const MARKDOWN_LINK = /\[([^\]\n]*)\]\(https?:\/\/[^\s()]*(?:\([^\s()]*\)[^\s()]*)*\)/gi;
+/** Heading, list, quote and fence markers at the start of a line (nested too). */
+const LINE_MARKERS = /^[ \t]*(?:(?:#{1,6}|>|-|\d+\.|```)(?:[ \t]+|$))+/gm;
+
+/**
+ * Plain text of Markdown written by `toMarkdown`, for comparing it with DOM
+ * text (innerText): keeps link text, drops link targets, emphasis and code
+ * markers, heading/list/quote syntax, rules and table pipes, and collapses
+ * whitespace. Apply it to both sides of a comparison.
+ */
+export function markdownToPlainText(markdown: string): string {
+  return markdown
+    .replace(MARKDOWN_LINK, '$1')
+    .replace(LINE_MARKERS, '')
+    .replace(/^-{3,}$/gm, ' ')
+    .replace(/\\?\|/g, ' ')
+    .replace(/\*+|`+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

@@ -8,7 +8,8 @@ import type { ExtractedItem } from '@/lib/ai/types';
 import type { ItemCategory } from '@/types';
 import { normalizeSnapshot } from '../snapshot';
 import type { CapturedImage, PageSnapshot } from '../types';
-import { type EnrichDeps, fetchJson, isRecord, stringOr } from './http';
+import { isRecord } from '../util';
+import { type EnrichDeps, fetchJson, stringOr } from './http';
 
 export const BOOTH_CURRENCY = 'JPY';
 

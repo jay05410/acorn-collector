@@ -110,6 +110,13 @@ describe('enrichBlueskySnapshot', () => {
     ]);
   });
 
+  it('keeps page links (a right-clicked link first) ahead of API links', async () => {
+    const fetchMock = vi.fn(async () => Response.json(THREAD));
+    const clicked = createSnapshot({ ...dom, links: ['https://shop.example.com/d4'] });
+    const result = await enrichBlueskySnapshot(clicked, { fetch: fetchMock });
+    expect(result.links).toEqual(['https://shop.example.com/d4', 'https://forms.example.org/d4']);
+  });
+
   it('keeps the DOM snapshot when the API fails', async () => {
     const fetchMock = vi.fn(async () => new Response('', { status: 500 }));
     expect(await enrichBlueskySnapshot(dom, { fetch: fetchMock })).toBe(dom);

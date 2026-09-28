@@ -4,9 +4,17 @@
  * 1. Open the side panel synchronously, while the user gesture is live.
  * 2. Ask the tab's content script for a snapshot (injecting it if the tab
  *    predates the extension), frame-aware for context menu clicks.
- * 3. Pages without a dedicated extractor get the defuddle extractor injected.
+ * 3. Merge what the browser reported about the click (link, selection).
  * 4. Enrich from better sources (original X text, Bluesky API, BOOTH JSON).
- * 5. Hand off through chrome.storage.session (memory only).
+ * 5. Pages still without a dedicated source get the defuddle extractor.
+ * 6. Hand off through chrome.storage.session (memory only), stamped with
+ *    the window so only that window's side panel picks it up.
+ *
+ * The always-on content script runs in the top frame only (injecting it into
+ * every ad and embed iframe is not worth it). A right-click inside an iframe
+ * gets a copy injected on demand, which never saw the clicked element; the
+ * browser's linkUrl / srcUrl / selectionText then say what was clicked, but
+ * the text block around the clicked element is not available there.
  */
 import { enrichSnapshot } from './enrich';
 import type { FetchFn } from './enrich/http';
@@ -17,7 +25,14 @@ import {
   isCaptureRequestMessage,
 } from './messages';
 import { isReadableResult, mergeReadable, type ReadableResult } from './readable-result';
-import { cleanUrl, createSnapshot, isPageSnapshot, withLeadingImages } from './snapshot';
+import { parseXStatusId } from './sites/x';
+import {
+  cleanUrl,
+  createSnapshot,
+  isPageSnapshot,
+  normalizeSnapshot,
+  withLeadingImages,
+} from './snapshot';
 import {
   CAPTURE_HANDOFF_KEY,
   type CaptureHandoff,
@@ -34,8 +49,11 @@ export const CAPTURE_COMMAND = 'capture-page';
 export const CONTENT_SCRIPT_FILE = 'content-scripts/content.js';
 export const EXTRACTOR_FILE = 'extractor.js';
 
-/** v1 keys: removed account data and the per-right-click tweet cache. */
-const LEGACY_LOCAL_KEYS = ['auth_state', 'auth_token', 'lastContextTweet'];
+/**
+ * v1 keys: removed account data, the per-right-click tweet cache and the
+ * local-storage side panel handoff (replaced by the session handoff).
+ */
+const LEGACY_LOCAL_KEYS = ['auth_state', 'auth_token', 'lastContextTweet', 'pendingAdd'];
 
 /** Sites whose content-script extractor and API enrichment beat defuddle. */
 const DEDICATED_SITES: ReadonlySet<SiteId> = new Set(['x', 'bluesky']);
@@ -63,10 +81,14 @@ export interface CaptureControllerDeps {
 
 interface CaptureJob {
   tabId: number;
+  windowId: number;
   frameId: number;
   trigger: CaptureTrigger;
   focusImageUrl: string | null;
-  /** What the browser told us, for pages the content script cannot read. */
+  /**
+   * What the browser told us: the whole snapshot for pages the content
+   * script cannot read, and the click context (link, selection) otherwise.
+   */
   fallback: {
     url: string | null;
     title: string | null;
@@ -79,12 +101,50 @@ function httpUrl(url: string | undefined): string | null {
   return url ? cleanUrl(url) : null;
 }
 
+/** A dedicated extractor or a structured source (BOOTH item JSON) beat defuddle. */
+function hasDedicatedSource(snapshot: PageSnapshot): boolean {
+  return DEDICATED_SITES.has(snapshot.site) || snapshot.prefilledItems !== null;
+}
+
+/**
+ * Merge the browser's report of a context-menu click into a snapshot:
+ * - the right-clicked link always leads `links` (enrichment keeps page links
+ *   first, and X expands a t.co link in place);
+ * - on X, a right-clicked post link becomes the post to enrich when the
+ *   snapshot is not about a post of its own (e.g. an embedded-post iframe);
+ *   on other sites the link is not followed;
+ * - the selection fills `selection`, and `text` when the page gave none.
+ */
+function withClickContext(
+  snapshot: PageSnapshot,
+  click: { selection: string | null; link: string | null }
+): PageSnapshot {
+  const { selection, link } = click;
+  if (!selection && !link) return snapshot;
+  const ownStatus =
+    parseXStatusId(snapshot.canonicalUrl ?? '') ?? parseXStatusId(snapshot.url);
+  const linkedStatus =
+    link && snapshot.site === 'x' && !ownStatus ? parseXStatusId(link) : null;
+  return normalizeSnapshot({
+    ...snapshot,
+    canonicalUrl: linkedStatus ? link : snapshot.canonicalUrl,
+    text: snapshot.text || selection || '',
+    selection: snapshot.selection ?? selection,
+    links: link ? [link, ...snapshot.links] : snapshot.links,
+  });
+}
+
+/** Handoff written, nothing captured, or a newer capture in the same window won. */
+type CaptureOutcome = CaptureHandoff | null | 'superseded';
+
 export function createCaptureController(deps: CaptureControllerDeps) {
   const api = deps.chrome;
   const now = deps.now ?? Date.now;
   const createId = deps.createId ?? (() => crypto.randomUUID());
   const warn = deps.warn ?? ((message: string, error?: unknown) => console.warn(message, error));
-  let latestJob = 0;
+  let jobCounter = 0;
+  /** Newest job per window: a capture only supersedes one in its own window. */
+  const latestJobs = new Map<number, number>();
 
   /** Must run before any await: sidePanel.open needs the user gesture. */
   function openPanel(windowId: number): void {
@@ -165,39 +225,54 @@ export function createCaptureController(deps: CaptureControllerDeps) {
     const fromPage = await requestSnapshot(job);
     let snapshot = fromPage ?? fallbackSnapshot(job);
     if (!snapshot) return null;
-    if (fromPage && !DEDICATED_SITES.has(snapshot.site)) {
+    snapshot = withClickContext(snapshot, job.fallback);
+    // Enrich before deciding on defuddle: a BOOTH item page read from its
+    // JSON (description + prefilled items) needs no readability pass.
+    snapshot = await enrichSnapshot(snapshot, { fetch: deps.fetch });
+    if (fromPage && !hasDedicatedSource(snapshot)) {
       const readable = await runExtractor(job);
       if (readable) snapshot = mergeReadable(snapshot, readable);
     }
-    snapshot = await enrichSnapshot(snapshot, { fetch: deps.fetch });
     return job.focusImageUrl
       ? withLeadingImages(snapshot, [{ url: job.focusImageUrl }])
       : snapshot;
   }
 
-  /**
-   * Resolves to the handoff, or null if nothing was captured, a newer
-   * capture superseded this one, or the handoff could not be stored.
-   * Never rejects.
-   */
-  async function capture(job: CaptureJob): Promise<CaptureHandoff | null> {
-    const jobNumber = ++latestJob;
+  /** Never rejects. */
+  async function runCapture(job: CaptureJob): Promise<CaptureOutcome> {
+    const jobNumber = ++jobCounter;
+    latestJobs.set(job.windowId, jobNumber);
+    const isLatest = () => latestJobs.get(job.windowId) === jobNumber;
     try {
       const snapshot = await buildSnapshot(job);
-      if (!snapshot || jobNumber !== latestJob) return null;
+      if (!isLatest()) return 'superseded';
+      if (!snapshot) return null;
       const handoff: CaptureHandoff = {
         id: createId(),
         trigger: job.trigger,
         snapshot,
         focusImageUrl: job.focusImageUrl,
         createdAt: now(),
+        windowId: job.windowId,
       };
       await api.storage.session.set({ [CAPTURE_HANDOFF_KEY]: handoff });
       return handoff;
     } catch (error) {
       warn('[acorn] capture failed', error);
-      return null;
+      return isLatest() ? null : 'superseded';
+    } finally {
+      if (isLatest()) latestJobs.delete(job.windowId);
     }
+  }
+
+  /**
+   * Resolves to the handoff, or null if nothing was captured, a newer
+   * capture in the same window superseded this one, or the handoff could
+   * not be stored. Never rejects.
+   */
+  async function capture(job: CaptureJob): Promise<CaptureHandoff | null> {
+    const outcome = await runCapture(job);
+    return outcome === 'superseded' ? null : outcome;
   }
 
   function jobForTab(
@@ -210,6 +285,7 @@ export function createCaptureController(deps: CaptureControllerDeps) {
     if (tab.id === undefined || tab.id < 0) return null;
     return {
       tabId: tab.id,
+      windowId: tab.windowId,
       frameId: extra.frameId ?? 0,
       trigger,
       focusImageUrl: extra.focusImageUrl ?? null,
@@ -266,10 +342,11 @@ export function createCaptureController(deps: CaptureControllerDeps) {
     );
     const job = tab ? jobForTab(tab, 'panel-button') : null;
     if (!job) return { ok: false, code: 'no-tab' };
-    const jobNumber = latestJob + 1;
-    const handoff = await capture(job);
-    if (handoff) return { ok: true, handoffId: handoff.id };
-    return { ok: false, code: jobNumber === latestJob ? 'unsupported-page' : 'superseded' };
+    const outcome = await runCapture(job);
+    if (outcome === 'superseded') return { ok: false, code: 'superseded' };
+    return outcome
+      ? { ok: true, handoffId: outcome.id }
+      : { ok: false, code: 'unsupported-page' };
   }
 
   /**

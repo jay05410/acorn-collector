@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CAPTURE_COMMAND,
@@ -72,7 +74,9 @@ function setup(options: MockOptions = {}) {
     contextMenus: { create: vi.fn(), removeAll: vi.fn(async () => {}) },
     i18n: { getMessage: vi.fn((key: string) => `msg:${key}`) },
   };
-  const fetchMock = vi.fn(async () => new Response('', { status: 404 }));
+  const fetchMock = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('', { status: 404 })
+  );
   const warn = vi.fn();
   const controller = createCaptureController({
     chrome: api as unknown as CaptureChrome,
@@ -133,6 +137,7 @@ describe('context menu capture', () => {
       trigger: 'context-menu',
       focusImageUrl: null,
       createdAt: 1_000,
+      windowId: 3,
     });
     expect(stored.snapshot.text).toBe('Main article. Block text');
     expect(stored.snapshot.author?.name).toBe('Mika');
@@ -203,6 +208,85 @@ describe('context menu capture', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  it('keeps the right-clicked link first when the content script replies', async () => {
+    const { controller, session } = setup({
+      replies: [result(pageSnapshot({ links: ['https://blog.example.com/about', 'https://shop.example.com/'] }))],
+    });
+    await controller.onContextMenuClick(
+      {
+        menuItemId: MENU_ADD_ID,
+        editable: false,
+        pageUrl: TAB.url,
+        linkUrl: 'https://forms.example.org/f1?utm_source=blog',
+      } as chrome.contextMenus.OnClickData,
+      TAB
+    );
+    const stored = session.get(CAPTURE_HANDOFF_KEY) as CaptureHandoff;
+    expect(stored.snapshot.links).toEqual([
+      'https://forms.example.org/f1',
+      'https://blog.example.com/about',
+      'https://shop.example.com/',
+    ]);
+  });
+
+  it('iframe click: uses the link and selection the browser reported', async () => {
+    // The top-frame-only content script is injected into the frame on demand;
+    // it never saw the right-click, so its snapshot has no clicked block.
+    const frameSnapshot = pageSnapshot({
+      url: 'https://widgets.example.net/embed/42',
+      text: '',
+      links: [],
+    });
+    const { api, controller, session } = setup({
+      replies: [new Error('no receiver'), result(frameSnapshot)],
+    });
+    await controller.onContextMenuClick(
+      {
+        menuItemId: MENU_ADD_ID,
+        frameId: 5,
+        editable: false,
+        pageUrl: TAB.url,
+        frameUrl: 'https://widgets.example.net/embed/42',
+        linkUrl: 'https://booth.pm/ja/items/1',
+        selectionText: 'Booth F-12, both days',
+      } as chrome.contextMenus.OnClickData,
+      TAB
+    );
+    expect(api.scripting.executeScript).toHaveBeenNthCalledWith(1, {
+      target: { tabId: 7, frameIds: [5] },
+      files: [CONTENT_SCRIPT_FILE],
+    });
+    const stored = session.get(CAPTURE_HANDOFF_KEY) as CaptureHandoff;
+    expect(stored.snapshot).toMatchObject({
+      url: 'https://widgets.example.net/embed/42',
+      text: 'Booth F-12, both days',
+      selection: 'Booth F-12, both days',
+      links: ['https://booth.pm/ja/items/1'],
+    });
+  });
+
+  it('embedded X post frame: the right-clicked post link is the post to enrich', async () => {
+    const embed = pageSnapshot({
+      site: 'x',
+      url: 'https://platform.twitter.com/embed/Tweet.html?id=266031293945503744',
+      text: 'Four more years.',
+    });
+    const { controller, fetchMock } = setup({ replies: [result(embed)] });
+    await controller.onContextMenuClick(
+      {
+        menuItemId: MENU_ADD_ID,
+        frameId: 9,
+        editable: false,
+        pageUrl: TAB.url,
+        linkUrl: 'https://twitter.com/BarackObama/status/266031293945503744?ref_src=twsrc',
+      } as chrome.contextMenus.OnClickData,
+      TAB
+    );
+    const requested = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(requested).toContain('https://x.com/i/status/266031293945503744');
+    expect(requested.some((url) => url.startsWith('https://cdn.syndication.twimg.com/tweet-result?id=266031293945503744'))).toBe(true);
+  });
+
   it('ignores other menu items', async () => {
     const { api, controller } = setup();
     expect(
@@ -225,6 +309,59 @@ describe('context menu capture', () => {
     releaseFirst(result(pageSnapshot({ site: 'x', url: 'https://x.com/old' })));
     expect(await first).toBeNull();
     expect((session.get(CAPTURE_HANDOFF_KEY) as CaptureHandoff).snapshot.url).toBe('https://x.com/new');
+  });
+
+  it('captures in different windows do not supersede each other', async () => {
+    const { controller, api } = setup();
+    let releaseFirst: (value: unknown) => void = () => {};
+    api.tabs.sendMessage
+      .mockImplementationOnce(() => new Promise((resolve) => (releaseFirst = resolve)))
+      .mockImplementationOnce(async () => result(pageSnapshot({ site: 'x', url: 'https://x.com/b' })));
+    const info = { menuItemId: MENU_ADD_ID, editable: false } as chrome.contextMenus.OnClickData;
+
+    const first = controller.onContextMenuClick(info, TAB);
+    const second = controller.onContextMenuClick(info, { ...TAB, id: 8, windowId: 4 });
+    expect((await second)?.windowId).toBe(4);
+    releaseFirst(result(pageSnapshot({ site: 'x', url: 'https://x.com/a' })));
+    const older = await first;
+    expect(older?.windowId).toBe(3);
+    expect(older?.snapshot.url).toBe('https://x.com/a');
+  });
+});
+
+describe('BOOTH item pages', () => {
+  const ITEM_URL = 'https://booth.pm/ja/items/8477745';
+  const ITEM_JSON = {
+    name: 'Logo pack',
+    price: '¥ 250',
+    description: 'Stream overlay logos.',
+    category: { name: 'Logo', parent: { name: 'Assets' } },
+    shop: { name: 'Sunomon', subdomain: 'sunomon', url: 'https://sunomon.booth.pm/' },
+    images: [],
+    variations: [{ name: 'Paid', price: 250, type: 'digital' }],
+  };
+  const click = { menuItemId: MENU_ADD_ID, editable: false } as chrome.contextMenus.OnClickData;
+
+  it('skips defuddle when the item JSON supplies the description and items', async () => {
+    const { api, controller, fetchMock, session } = setup({
+      replies: [result(pageSnapshot({ url: ITEM_URL }))],
+    });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(ITEM_JSON)));
+    await controller.onContextMenuClick(click, { ...TAB, url: ITEM_URL });
+    expect(fetchMock).toHaveBeenCalledWith('https://booth.pm/ja/items/8477745.json', expect.anything());
+    expect(api.scripting.executeScript).not.toHaveBeenCalled();
+    const stored = session.get(CAPTURE_HANDOFF_KEY) as CaptureHandoff;
+    expect(stored.snapshot.text).toBe('Stream overlay logos.');
+    expect(stored.snapshot.prefilledItems).toHaveLength(1);
+  });
+
+  it('falls back to defuddle when the item JSON is unavailable', async () => {
+    const { api, controller } = setup({ replies: [result(pageSnapshot({ url: ITEM_URL }))] });
+    await controller.onContextMenuClick(click, { ...TAB, url: ITEM_URL });
+    expect(api.scripting.executeScript).toHaveBeenCalledWith({
+      target: { tabId: 7, frameIds: [0] },
+      files: [EXTRACTOR_FILE],
+    });
   });
 });
 
@@ -314,7 +451,12 @@ describe('onInstalled', () => {
   it('recreates both menus with localized titles and clears v1 data on update', async () => {
     const { api, controller } = setup();
     await controller.onInstalled({ reason: 'update' } as chrome.runtime.InstalledDetails);
-    expect(api.storage.local.remove).toHaveBeenCalledWith(['auth_state', 'auth_token', 'lastContextTweet']);
+    expect(api.storage.local.remove).toHaveBeenCalledWith([
+      'auth_state',
+      'auth_token',
+      'lastContextTweet',
+      'pendingAdd',
+    ]);
     expect(api.contextMenus.removeAll).toHaveBeenCalled();
     expect(api.contextMenus.create).toHaveBeenCalledWith({
       id: MENU_ADD_ID,
@@ -326,6 +468,20 @@ describe('onInstalled', () => {
       title: 'msg:contextMenuAnalyzeImage',
       contexts: ['image'],
     });
+  });
+
+  it('every shipped locale names the menus and the capture shortcut', () => {
+    const localesDir = path.resolve(__dirname, '../../public/_locales');
+    const locales = readdirSync(localesDir);
+    expect(locales).toEqual(expect.arrayContaining(['en', 'ko', 'ja', 'zh_CN', 'zh_TW']));
+    for (const locale of locales) {
+      const messages = JSON.parse(
+        readFileSync(path.join(localesDir, locale, 'messages.json'), 'utf8')
+      ) as Record<string, { message?: string }>;
+      for (const key of ['contextMenuAdd', 'contextMenuAnalyzeImage', 'commandCapture']) {
+        expect(messages[key]?.message, `${locale}.${key}`).toBeTruthy();
+      }
+    }
   });
 
   it('does not touch storage on a fresh install', async () => {

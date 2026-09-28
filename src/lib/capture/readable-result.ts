@@ -3,8 +3,10 @@
  * background merges it into a snapshot. Kept free of the defuddle import so
  * the background bundle stays small.
  */
+import { markdownToPlainText } from './markdown';
 import { normalizeSnapshot } from './snapshot';
 import type { PageSnapshot } from './types';
+import { isNullableString, isRecord } from './util';
 
 export interface ReadableResult {
   title: string | null;
@@ -16,32 +18,25 @@ export interface ReadableResult {
   lang: string | null;
 }
 
-function isNullableString(value: unknown): value is string | null {
-  return value === null || typeof value === 'string';
-}
-
 /** executeScript results cross a process boundary; check their shape. */
 export function isReadableResult(value: unknown): value is ReadableResult {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
   return (
-    typeof v.text === 'string' &&
-    isNullableString(v.title) &&
-    isNullableString(v.author) &&
-    isNullableString(v.published) &&
-    isNullableString(v.image) &&
-    isNullableString(v.lang)
+    isRecord(value) &&
+    typeof value.text === 'string' &&
+    isNullableString(value.title) &&
+    isNullableString(value.author) &&
+    isNullableString(value.published) &&
+    isNullableString(value.image) &&
+    isNullableString(value.lang)
   );
-}
-
-function squash(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
 }
 
 /**
  * Main content wins as `text`; text the content script found around the
  * right-clicked element is kept in front when the article does not already
- * contain it. Metadata only fills gaps.
+ * contain it. The article is Markdown and the block text is plain DOM text,
+ * so both are reduced to plain text before comparing. Metadata only fills
+ * gaps.
  */
 export function mergeReadable(
   snapshot: PageSnapshot,
@@ -51,7 +46,7 @@ export function mergeReadable(
   const main = readable.text.trim();
   let text = current;
   if (main) {
-    text = !current || squash(main).includes(squash(current))
+    text = !current || markdownToPlainText(main).includes(markdownToPlainText(current))
       ? main
       : `${current}\n\n${main}`;
   }

@@ -8,6 +8,12 @@ import {
  * Always-on and deliberately small: it only remembers the last right-clicked
  * element (in memory) and builds a snapshot when the background asks. The
  * heavy readability extractor is injected separately, on demand.
+ *
+ * Top frame only (no allFrames): running in every ad and embed iframe costs
+ * more than it gives. For a right-click inside an iframe the background
+ * injects this script into that frame on demand; that copy never saw the
+ * click, so the background relies on the link, image and selection the
+ * browser reported (see lib/capture/controller.ts).
  */
 export default defineContentScript({
   matches: ['<all_urls>'],

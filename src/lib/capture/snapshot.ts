@@ -5,6 +5,7 @@
  */
 import { filterImages } from './images';
 import type { CapturedImage, PageSnapshot, SiteId } from './types';
+import { hostOf, isNullableString, isRecord } from './util';
 
 export const MAX_TEXT_LENGTH = 8000;
 export const MAX_LINKS = 20;
@@ -13,14 +14,6 @@ const MAX_AUTHOR_FIELD_LENGTH = 200;
 /** Serialized JSON-LD budget; pages can embed whole product catalogs. */
 const MAX_JSON_LD_CHARS = 30_000;
 const MAX_JSON_LD_ENTRIES = 20;
-
-function hostOf(url: string): string | null {
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
 
 function onDomain(host: string, domain: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
@@ -308,17 +301,9 @@ export function withLeadingImages(
   });
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function isNullableString(value: unknown): value is string | null {
-  return value === null || typeof value === 'string';
-}
-
 /** Structural check for snapshots crossing a process boundary. */
 export function isPageSnapshot(value: unknown): value is PageSnapshot {
-  if (!isObject(value)) return false;
+  if (!isRecord(value)) return false;
   return (
     value.version === 1 &&
     typeof value.capturedAt === 'number' &&
@@ -327,16 +312,16 @@ export function isPageSnapshot(value: unknown): value is PageSnapshot {
     isNullableString(value.canonicalUrl) &&
     typeof value.title === 'string' &&
     isNullableString(value.lang) &&
-    (value.author === null || isObject(value.author)) &&
+    (value.author === null || isRecord(value.author)) &&
     typeof value.text === 'string' &&
     isNullableString(value.displayedText) &&
     isNullableString(value.selection) &&
     Array.isArray(value.images) &&
-    value.images.every((image) => isObject(image) && typeof image.url === 'string') &&
+    value.images.every((image) => isRecord(image) && typeof image.url === 'string') &&
     Array.isArray(value.links) &&
     value.links.every((link) => typeof link === 'string') &&
     isNullableString(value.publishedAt) &&
-    (value.structured === null || isObject(value.structured)) &&
+    (value.structured === null || isRecord(value.structured)) &&
     (value.prefilledItems === null || Array.isArray(value.prefilledItems)) &&
     isNullableString(value.prefilledCurrency)
   );

@@ -6,12 +6,9 @@ import { AddBoothModal } from '@/components/AddBoothModal';
 import { SettingsModal } from '@/components/SettingsModal';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
 import { useUIStore } from '@/stores/useUIStore';
-import {
-  appStorage,
-  getSettings,
-  watchSettings,
-  type PendingAddData,
-} from '@/lib/storage';
+import { getSettings, watchSettings } from '@/lib/storage';
+import { useCaptureHandoff } from '@/lib/capture/client';
+import { prefillFromHandoff, type AddBoothPrefill } from '@/lib/capture/prefill';
 import type { AppSettings, ColorTheme } from '@/lib/settings-types';
 import { LANGUAGE_INFO } from '@/i18n/languages';
 import { setLanguage, t, useLanguage } from '@/i18n';
@@ -43,7 +40,7 @@ export default function App({ initialSettings }: AppProps) {
   const language = useLanguage();
   const [currentView, setCurrentView] = useState<View>('events');
   const [isDark, setIsDark] = useState(() => getSystemPrefersDark());
-  const [pendingData, setPendingData] = useState<PendingAddData | null>(null);
+  const [prefill, setPrefill] = useState<AddBoothPrefill | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [exportEventId, setExportEventId] = useState<string | null>(null);
@@ -95,39 +92,19 @@ export default function App({ initialSettings }: AppProps) {
     };
   }, [initialSettings]);
 
+  const { handoff, consume } = useCaptureHandoff();
+
+  // Minimal capture adapter until the review UI (ACORN-7): open the add form
+  // prefilled from this window's capture, then clear the handoff so it is
+  // not shown again.
   useEffect(() => {
-    const checkPendingAdd = async () => {
-      try {
-        const pending = await appStorage.getPendingAdd();
-        if (pending && Date.now() - pending.timestamp < 60000) {
-          setPendingData(pending);
-          setIsAddModalOpen(true);
-          await appStorage.clearPendingAdd();
-        }
-      } catch (e) {
-        console.error('Failed to check pending add:', e);
-      }
-    };
-
-    checkPendingAdd();
-
-    const handleStorageChange = (
-      changes: { [key: string]: chrome.storage.StorageChange },
-      areaName: string
-    ) => {
-      if (areaName === 'local' && changes.pendingAdd?.newValue) {
-        const pending = changes.pendingAdd.newValue as PendingAddData;
-        if (Date.now() - pending.timestamp < 60000) {
-          setPendingData(pending);
-          setIsAddModalOpen(true);
-          appStorage.clearPendingAdd();
-        }
-      }
-    };
-
-    chrome.storage.onChanged.addListener(handleStorageChange);
-    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
-  }, []);
+    if (!handoff) return;
+    setPrefill(prefillFromHandoff(handoff));
+    setIsAddModalOpen(true);
+    consume().catch((error: unknown) => {
+      console.warn('[acorn] could not clear capture handoff', error);
+    });
+  }, [handoff, consume]);
 
   const handleSelectBooth = (boothId: string, eventId: string) => {
     setSelectedEventId(eventId);
@@ -151,13 +128,13 @@ export default function App({ initialSettings }: AppProps) {
   };
 
   const handleOpenAddModal = useCallback(() => {
-    setPendingData(null);
+    setPrefill(null);
     setIsAddModalOpen(true);
   }, []);
 
   const handleCloseAddModal = useCallback(() => {
     setIsAddModalOpen(false);
-    setPendingData(null);
+    setPrefill(null);
   }, []);
 
   return (
@@ -190,10 +167,10 @@ export default function App({ initialSettings }: AppProps) {
       <AddBoothModal
         isOpen={isAddModalOpen}
         onClose={handleCloseAddModal}
-        initialText={pendingData?.text}
-        sourceUrl={pendingData?.url}
-        author={pendingData?.author}
-        imageUrls={pendingData?.imageUrls}
+        initialText={prefill?.text}
+        sourceUrl={prefill?.url}
+        author={prefill?.author}
+        imageUrls={prefill?.imageUrls}
         defaultEventId={selectedEventId}
       />
 
