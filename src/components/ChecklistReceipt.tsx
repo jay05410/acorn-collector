@@ -10,7 +10,10 @@ import { BoothNumber } from '@/components/ui/BoothNumber';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
-import { groupItemsByBooth } from '@/components/checklist-progress';
+import {
+  groupItemsByBooth,
+  summarizeChecklist,
+} from '@/lib/checklist-progress';
 import { exportChecklistAsImage } from '@/lib/export';
 import {
   cn,
@@ -26,7 +29,7 @@ import {
   tp,
   useLanguage,
 } from '@/i18n';
-import type { Booth, Item } from '@/types';
+import type { Badge as BadgeRecord, Booth, Item } from '@/types';
 
 type ExportMode = 'receipt' | 'checklist';
 
@@ -44,6 +47,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
   const boothIds = useMemo(() => booths.map((b) => b.id), [booths]);
   const items = useItemsForBooths(boothIds);
   const itemsByBooth = useMemo(() => groupItemsByBooth(items), [items]);
+  const { getBadgeById } = useBadges();
   const [isExporting, setIsExporting] = useState(false);
   const [mode, setMode] = useState<ExportMode>('checklist');
 
@@ -161,6 +165,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
                 key={booth.id}
                 booth={booth}
                 items={itemsByBooth.get(booth.id) ?? []}
+                getBadgeById={getBadgeById}
                 currency={eventCurrency}
                 showPrices={mode === 'receipt'}
               />
@@ -215,6 +220,7 @@ export function ChecklistReceipt({ eventId, onClose }: ChecklistReceiptProps) {
 interface BoothSectionProps {
   booth: Booth;
   items: Item[];
+  getBadgeById: (id: string) => BadgeRecord | undefined;
   /** Event currency, used for items without their own. */
   currency: string;
   showPrices: boolean;
@@ -223,17 +229,16 @@ interface BoothSectionProps {
 function BoothSection({
   booth,
   items,
+  getBadgeById,
   currency,
   showPrices,
 }: BoothSectionProps) {
-  const { getBadgeById } = useBadges();
-
   const sortedItems = [...items].sort((a, b) => {
     if (a.checked !== b.checked) return a.checked ? 1 : -1;
     return a.createdAt - b.createdAt;
   });
 
-  const checkedCount = items.filter((i) => i.checked).length;
+  const progress = summarizeChecklist(items);
   const totals = totalsByCurrency(items, currency).filter(
     (row) => row.total > 0
   );
@@ -245,9 +250,9 @@ function BoothSection({
         <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">
           {booth.circleName}
         </h4>
-        {items.length > 0 && (
+        {progress.total > 0 && (
           <span className="text-xs text-fg-muted tabular-nums">
-            {checkedCount}/{items.length}
+            {progress.checked}/{progress.total}
           </span>
         )}
       </div>

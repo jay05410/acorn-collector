@@ -44,10 +44,15 @@ function ToastItem({ toast }: { toast: Toast }) {
         : null;
   return (
     <li
-      onMouseEnter={() => pauseToast(toast.id)}
-      onMouseLeave={() => resumeToast(toast.id)}
-      onFocus={() => pauseToast(toast.id)}
-      onBlur={() => resumeToast(toast.id)}
+      onMouseEnter={() => pauseToast(toast.id, 'hover')}
+      onMouseLeave={() => resumeToast(toast.id, 'hover')}
+      onFocus={() => pauseToast(toast.id, 'focus')}
+      onBlur={(event) => {
+        // Focus moving between the toast's own buttons is not a blur.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          resumeToast(toast.id, 'focus');
+        }
+      }}
       className="pointer-events-auto flex animate-toast-in items-center gap-2 rounded-xl bg-fg py-2 pr-1.5 pl-3.5 text-sm text-canvas shadow-lg"
     >
       {Icon && (

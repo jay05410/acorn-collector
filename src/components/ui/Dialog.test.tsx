@@ -98,6 +98,32 @@ describe('Dialog', () => {
     expect(document.body.style.overflow).toBe('auto');
   });
 
+  it('keeps an autofocused child focused and returns focus to the opener', () => {
+    function AutoFocusHarness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <Dialog open={open} onClose={() => setOpen(false)} title="Rename">
+            <button type="button">before</button>
+            <input aria-label="Name" autoFocus />
+          </Dialog>
+        </>
+      );
+    }
+    render(<AutoFocusHarness />);
+    const opener = byText('open');
+    opener.focus();
+    click(opener);
+    const input = document.querySelector('input[aria-label="Name"]');
+    expect(document.activeElement).toBe(input);
+    press(input, 'Escape');
+    expect(byRole('dialog')).toHaveLength(0);
+    expect(document.activeElement).toBe(opener);
+  });
+
   it('lets only the innermost of nested dialogs handle Escape', () => {
     const outerClose = vi.fn();
     const innerClose = vi.fn();

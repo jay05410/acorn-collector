@@ -3,6 +3,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useId,
   type FocusEvent,
   type KeyboardEvent,
 } from 'react';
@@ -11,7 +12,11 @@ import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDate, parseIsoDate, t, toIsoDate, useLanguage } from '@/i18n';
 import type { AppLanguage } from '@/i18n/languages';
-import { controlClassName, useFieldControl } from './field-context';
+import {
+  controlClassName,
+  useFieldControl,
+  useFieldLabelId,
+} from './field-context';
 
 type LocaleLanguage = Exclude<AppLanguage, 'en'>;
 
@@ -82,6 +87,8 @@ export function DatePicker({
   const language = useLanguage();
   const locale = useDayPickerLocale(language);
   const fieldProps = useFieldControl({});
+  const fieldLabelId = useFieldLabelId();
+  const valueId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -153,6 +160,11 @@ export function DatePicker({
         ref={triggerRef}
         type="button"
         {...fieldProps}
+        // A <label for> alone would replace the content as the name, hiding
+        // the chosen date: name it with the label and the value together.
+        aria-labelledby={
+          fieldLabelId ? `${fieldLabelId} ${valueId}` : undefined
+        }
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={handleButtonClick}
@@ -168,7 +180,7 @@ export function DatePicker({
           aria-hidden="true"
           className="size-4 shrink-0 text-fg-subtle"
         />
-        <span className="min-w-0 flex-1 truncate tabular-nums">
+        <span id={valueId} className="min-w-0 flex-1 truncate tabular-nums">
           {value
             ? formatDate(value)
             : (placeholder ?? t('events', 'selectDate'))}

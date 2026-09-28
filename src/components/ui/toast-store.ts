@@ -1,7 +1,7 @@
 /**
  * Tiny toast store: show() from anywhere, <ToastViewport /> renders the list.
  * Toasts dismiss themselves after `duration` ms; hovering or focusing one
- * pauses its timer (WCAG 2.2.1).
+ * pauses its timer until neither applies (WCAG 2.2.1).
  */
 import { useSyncExternalStore } from 'react';
 
@@ -32,10 +32,14 @@ export const MAX_TOASTS = 3;
 const DEFAULT_DURATION = 5000;
 const ACTION_DURATION = 8000;
 
+/** Why a toast's timer is paused. It runs again once no reason is left. */
+export type ToastPauseReason = 'hover' | 'focus';
+
 interface Timer {
   handle: ReturnType<typeof setTimeout> | null;
   remaining: number;
   startedAt: number;
+  pausedBy: Set<ToastPauseReason>;
 }
 
 type Listener = () => void;
@@ -54,6 +58,7 @@ function startTimer(id: string, ms: number): void {
     handle: setTimeout(() => dismissToast(id), ms),
     remaining: ms,
     startedAt: Date.now(),
+    pausedBy: new Set(),
   });
 }
 
@@ -97,18 +102,29 @@ export function runToastAction(id: string): void {
   toast.action?.onClick();
 }
 
-export function pauseToast(id: string): void {
+export function pauseToast(
+  id: string,
+  reason: ToastPauseReason = 'hover'
+): void {
   const timer = timers.get(id);
-  if (!timer?.handle) return;
+  if (!timer) return;
+  timer.pausedBy.add(reason);
+  if (!timer.handle) return;
   clearTimeout(timer.handle);
   timer.handle = null;
   timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
 }
 
-export function resumeToast(id: string): void {
+export function resumeToast(
+  id: string,
+  reason: ToastPauseReason = 'hover'
+): void {
   const timer = timers.get(id);
-  if (!timer || timer.handle) return;
-  startTimer(id, timer.remaining);
+  if (!timer) return;
+  timer.pausedBy.delete(reason);
+  if (timer.handle || timer.pausedBy.size > 0) return;
+  timer.handle = setTimeout(() => dismissToast(id), timer.remaining);
+  timer.startedAt = Date.now();
 }
 
 export function clearToasts(): void {

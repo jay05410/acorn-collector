@@ -34,7 +34,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import {
   groupItemsByBooth,
   summarizeChecklist,
-} from '@/components/checklist-progress';
+} from '@/lib/checklist-progress';
 import {
   formatDate,
   getBadgeLabel,
@@ -48,7 +48,7 @@ import {
   resolveEventCurrency,
   shouldPersistEventCurrency,
 } from '@/lib/utils';
-import type { Booth, Event, Item } from '@/types';
+import type { Badge as BadgeRecord, Booth, Event, Item } from '@/types';
 
 interface EventListProps {
   onSelectBooth: (boothId: string, eventId: string) => void;
@@ -392,7 +392,8 @@ function EventCard({
             {tn('events', 'boothCount', booths.length)}
           </Badge>
           <Progress value={progress.checked} max={progress.total} />
-          <div className="relative z-10 ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
+          {/* gap-3: the 44px hit areas of the 32px buttons must not overlap. */}
+          <div className="relative z-10 ml-auto flex items-center gap-3 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
             <IconButton
               size="sm"
               label={t('common', 'edit')}
@@ -452,6 +453,7 @@ function BoothPreviewList({
 }: BoothPreviewListProps) {
   const [sortBy, setSortBy] = useState<BoothSort>('order');
   const itemsByBooth = useMemo(() => groupItemsByBooth(items), [items]);
+  const { getBadgeById } = useBadges();
 
   const sortedBooths = [...booths].sort((a, b) => {
     if (sortBy === 'boothNumber') {
@@ -497,6 +499,7 @@ function BoothPreviewList({
               key={booth.id}
               booth={booth}
               items={itemsByBooth.get(booth.id) ?? []}
+              getBadgeById={getBadgeById}
               onClick={() => onSelectBooth(booth.id)}
             />
           ))}
@@ -515,18 +518,27 @@ function BoothPreviewList({
   );
 }
 
+/** Badge chips shown per booth row; the rest collapse into "+N". */
+const MAX_BADGE_CHIPS = 3;
+
 function BoothPreviewRow({
   booth,
   items,
+  getBadgeById,
   onClick,
 }: {
   booth: Booth;
   items: Item[];
+  getBadgeById: (id: string) => BadgeRecord | undefined;
   onClick: () => void;
 }) {
-  const { getBadgeById } = useBadges();
   const progress = summarizeChecklist(items);
   const isComplete = progress.total > 0 && progress.checked === progress.total;
+  const badgeStats = progress.byBadge.flatMap((stat) => {
+    const badge = getBadgeById(stat.badgeId);
+    return badge ? [{ ...stat, badge }] : [];
+  });
+  const hiddenBadges = badgeStats.length - MAX_BADGE_CHIPS;
 
   return (
     <li>
@@ -547,23 +559,28 @@ function BoothPreviewRow({
                   {t('common', 'complete')}
                 </Badge>
               ) : (
-                progress.byBadge.map((stat) => {
-                  const badge = getBadgeById(stat.badgeId);
-                  if (!badge) return null;
-                  const done = stat.checked === stat.total;
-                  return (
-                    <Badge
-                      key={stat.badgeId}
-                      color={badge.color}
-                      icon={done ? <Check aria-hidden="true" /> : undefined}
-                    >
-                      {getBadgeLabel(badge)}{' '}
-                      <span className="tabular-nums">
-                        {stat.checked}/{stat.total}
-                      </span>
+                <>
+                  {badgeStats.slice(0, MAX_BADGE_CHIPS).map((stat) => {
+                    const done = stat.checked === stat.total;
+                    return (
+                      <Badge
+                        key={stat.badgeId}
+                        color={stat.badge.color}
+                        icon={done ? <Check aria-hidden="true" /> : undefined}
+                      >
+                        {getBadgeLabel(stat.badge)}{' '}
+                        <span className="tabular-nums">
+                          {stat.checked}/{stat.total}
+                        </span>
+                      </Badge>
+                    );
+                  })}
+                  {hiddenBadges > 0 && (
+                    <Badge tone="neutral">
+                      <span className="tabular-nums">+{hiddenBadges}</span>
                     </Badge>
-                  );
-                })
+                  )}
+                </>
               )}
             </span>
           )}

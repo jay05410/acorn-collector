@@ -19,7 +19,12 @@ const STEP_BUTTON =
 
 /**
  * Quantity input (WAI-ARIA spinbutton): type a number, use Arrow Up/Down,
- * Page Up/Down, Home/End, or the -/+ buttons.
+ * Page Up/Down, Home/End, or the -/+ buttons. Enter commits the typed value
+ * and still submits the surrounding form.
+ *
+ * A stored value outside [min, max] (older data, imports) is shown and kept
+ * as is: the range widens to include it, so stepping moves it by one toward
+ * the range instead of snapping it to the bound.
  */
 export function Stepper({
   value,
@@ -34,33 +39,46 @@ export function Stepper({
   const fieldLabelId = useFieldLabelId();
   const [draft, setDraft] = useState<string | null>(null);
 
-  const clamp = (n: number) => Math.min(max, Math.max(min, n));
+  const floor = Math.min(min, value);
+  const ceiling = Math.max(max, value);
+  const clamp = (n: number) => Math.min(ceiling, Math.max(floor, n));
+
+  /** The typed value if there is one, else the committed value. */
+  const current = (): number => {
+    const parsed = draft === null ? Number.NaN : Number.parseInt(draft, 10);
+    return Number.isFinite(parsed) ? parsed : value;
+  };
+
   const set = (n: number) => {
     setDraft(null);
-    onChange(clamp(n));
+    const next = clamp(n);
+    if (next !== value) onChange(next);
   };
+
   const commit = () => {
-    if (draft === null) return;
-    const parsed = Number.parseInt(draft, 10);
-    set(Number.isFinite(parsed) ? parsed : value);
+    if (draft !== null) set(current());
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      // No preventDefault: the parent re-renders with the committed value
+      // before the browser submits the form.
+      commit();
+      return;
+    }
+    const base = current();
     const steps: Record<string, number> = {
-      ArrowUp: value + 1,
-      ArrowDown: value - 1,
-      PageUp: value + 10,
-      PageDown: value - 10,
-      Home: min,
-      End: max,
+      ArrowUp: base + 1,
+      ArrowDown: base - 1,
+      PageUp: base + 10,
+      PageDown: base - 10,
+      Home: floor,
+      End: ceiling,
     };
     const next = steps[event.key];
     if (next !== undefined) {
       event.preventDefault();
       set(next);
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      commit();
     }
   };
 
@@ -77,7 +95,7 @@ export function Stepper({
         tabIndex={-1}
         aria-label={t('ui', 'decrease')}
         title={t('ui', 'decrease')}
-        disabled={value <= min}
+        disabled={value <= floor}
         onClick={() => set(value - 1)}
         className={STEP_BUTTON}
       >
@@ -91,8 +109,8 @@ export function Stepper({
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : fieldLabelId}
         aria-valuenow={value}
-        aria-valuemin={min}
-        aria-valuemax={max}
+        aria-valuemin={floor}
+        aria-valuemax={ceiling}
         value={draft ?? String(value)}
         onChange={(event) => setDraft(event.target.value.replace(/\D/g, ''))}
         onBlur={commit}
@@ -104,7 +122,7 @@ export function Stepper({
         tabIndex={-1}
         aria-label={t('ui', 'increase')}
         title={t('ui', 'increase')}
-        disabled={value >= max}
+        disabled={value >= ceiling}
         onClick={() => set(value + 1)}
         className={STEP_BUTTON}
       >

@@ -31,6 +31,7 @@ import { Progress } from '@/components/ui/Progress';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Stepper } from '@/components/ui/Stepper';
+import { showToast } from '@/components/ui/toast-store';
 import { OCRModal, type SelectedItem } from '@/components/OCRModal';
 import {
   cn,
@@ -57,7 +58,8 @@ interface ItemDraft {
   badgeId: string;
 }
 
-const MAX_QUANTITY = 99;
+/** For new input only: a larger stored quantity is still shown and kept. */
+const MAX_QUANTITY = 999;
 
 export function ItemChecklist({
   boothId,
@@ -69,11 +71,11 @@ export function ItemChecklist({
   const {
     items,
     isLoading,
-    checkedCount,
-    totalCount,
+    progress,
     createItem,
     updateItem,
     deleteItem,
+    restoreItem,
     toggleItemCheck,
   } = useItems(boothId);
   const { badges, getBadgeById, createBadge } = useBadges();
@@ -143,6 +145,22 @@ export function ItemChecklist({
     }
   };
 
+  // Deleting has no confirmation, so it can be undone from a toast.
+  const handleDelete = async (item: Item) => {
+    await deleteItem(item.id);
+    showToast({
+      message: tp('items', 'itemDeleted', { name: item.name }),
+      action: {
+        label: t('ui', 'undo'),
+        onClick: () => {
+          restoreItem(item).catch((error: unknown) => {
+            console.error('Failed to restore item:', error);
+          });
+        },
+      },
+    });
+  };
+
   const handleOCRItemsSelected = async (selected: SelectedItem[]) => {
     for (const item of selected) {
       await createItem({
@@ -169,7 +187,7 @@ export function ItemChecklist({
   }
 
   const badgeAccessory = isCreatingBadge ? (
-    <div className="flex items-center gap-1.5 pt-1">
+    <div className="flex items-center gap-2 pt-1">
       <Input
         placeholder={t('items', 'newBadge')}
         aria-label={t('items', 'newBadge')}
@@ -205,10 +223,10 @@ export function ItemChecklist({
         <h3 id={headingId} className="text-sm font-semibold text-fg">
           {t('items', 'title')}
           <span className="ms-1.5 text-fg-subtle tabular-nums">
-            {totalCount}
+            {progress.total}
           </span>
         </h3>
-        <Progress value={checkedCount} max={totalCount} />
+        <Progress value={progress.checked} max={progress.total} />
         {!isAdding && (
           <Button
             size="sm"
@@ -323,7 +341,7 @@ export function ItemChecklist({
               badges={badges}
               onToggle={() => toggleItemCheck(item.id)}
               onUpdate={(data) => updateItem(item.id, data)}
-              onDelete={() => deleteItem(item.id)}
+              onDelete={() => void handleDelete(item)}
             />
           ))}
         </Card>
@@ -549,7 +567,8 @@ function ItemRow({
             ×{item.quantity}
           </span>
         )}
-        <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
+        {/* gap-3: the 44px hit areas of the 32px buttons must not overlap. */}
+        <div className="flex gap-3 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
           <IconButton
             size="sm"
             label={t('common', 'edit')}

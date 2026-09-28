@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
+import { summarizeChecklist } from '@/lib/checklist-progress';
 import { generateId } from '@/lib/utils';
 import { DEFAULT_BADGE_ID } from '@/constants/presetBadges';
 import type { Item } from '@/types';
@@ -62,6 +64,11 @@ export function useItems(boothId: string) {
     await db.items.delete(id);
   };
 
+  /** Puts a deleted item back as it was (undo). */
+  const restoreItem = async (item: Item): Promise<void> => {
+    await db.items.put(item);
+  };
+
   const toggleItemCheck = async (id: string): Promise<void> => {
     const item = await db.items.get(id);
     if (item) {
@@ -69,44 +76,17 @@ export function useItems(boothId: string) {
     }
   };
 
-  const checkedCount = items?.filter((i) => i.checked).length ?? 0;
-  const totalCount = items?.length ?? 0;
-
-  const badgeCounts = items?.reduce(
-    (acc, item) => {
-      if (!item.checked) {
-        acc[item.badgeId] = (acc[item.badgeId] || 0) + 1;
-      }
-      return acc;
-    },
-    {} as Record<string, number>
-  ) ?? {};
-
-  const badgeStats: Record<string, { total: number; checked: number }> = {};
-  if (items) {
-    for (const item of items) {
-      const existing = badgeStats[item.badgeId];
-      if (existing) {
-        existing.total += 1;
-        if (item.checked) {
-          existing.checked += 1;
-        }
-      } else {
-        badgeStats[item.badgeId] = { total: 1, checked: item.checked ? 1 : 0 };
-      }
-    }
-  }
+  const progress = useMemo(() => summarizeChecklist(items ?? []), [items]);
 
   return {
     items: items ?? [],
     isLoading: items === undefined,
-    checkedCount,
-    totalCount,
-    badgeCounts,
-    badgeStats,
+    /** Checked/total counts, overall and per badge. */
+    progress,
     createItem,
     updateItem,
     deleteItem,
+    restoreItem,
     toggleItemCheck,
   };
 }

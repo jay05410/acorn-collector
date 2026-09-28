@@ -3,6 +3,10 @@ import { cn } from '@/lib/utils';
 interface SpinnerProps {
   /** Announced to screen readers; omit when the spinner is decorative. */
   label?: string;
+  /**
+   * Classes for the outermost element: the ring, or the status wrapper when
+   * labelled, so positioning classes (e.g. `absolute`) take it out of flow.
+   */
   className?: string;
 }
 
@@ -13,7 +17,7 @@ export function Spinner({ label, className }: SpinnerProps) {
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
-      className={cn('size-4 shrink-0 animate-spin', className)}
+      className={cn('size-4 shrink-0 animate-spin', !label && className)}
     >
       <circle
         cx="12"
@@ -34,7 +38,7 @@ export function Spinner({ label, className }: SpinnerProps) {
 
   if (!label) return ring;
   return (
-    <span role="status" className="inline-flex items-center">
+    <span role="status" className={cn('inline-flex items-center', className)}>
       {ring}
       <span className="sr-only">{label}</span>
     </span>

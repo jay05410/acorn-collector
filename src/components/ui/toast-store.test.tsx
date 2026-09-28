@@ -59,6 +59,20 @@ describe('toast store', () => {
     expect(getToasts()).toHaveLength(0);
   });
 
+  it('resumes only when every pause reason is gone', () => {
+    const id = showToast({ message: 'Saved', duration: 1000 });
+    pauseToast(id, 'focus');
+    pauseToast(id, 'hover');
+    resumeToast(id, 'hover');
+    vi.advanceTimersByTime(5000);
+    expect(getToasts()).toHaveLength(1);
+    resumeToast(id, 'focus');
+    vi.advanceTimersByTime(999);
+    expect(getToasts()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(getToasts()).toHaveLength(0);
+  });
+
   it(`keeps at most ${MAX_TOASTS}, dropping the oldest`, () => {
     const ids = ['a', 'b', 'c', 'd'].map((message) => showToast({ message }));
     expect(getToasts().map((toast) => toast.id)).toEqual(ids.slice(1));
@@ -127,6 +141,36 @@ describe('ToastViewport', () => {
     act(() => {
       item?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
     });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(getToasts()).toHaveLength(0);
+  });
+
+  it('stays paused while focused even after the pointer leaves', () => {
+    render(<ToastViewport />);
+    act(() => {
+      showToast({
+        message: 'Item deleted',
+        duration: 1000,
+        action: { label: 'Undo', onClick: () => {} },
+      });
+    });
+    const item = byText('Item deleted').closest('li');
+    const undo = byText('Undo');
+    const dismiss = document.querySelector<HTMLElement>('[aria-label="Dismiss"]');
+    act(() => undo.focus());
+    act(() => {
+      item?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      item?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+    act(() => vi.advanceTimersByTime(5000));
+    expect(getToasts()).toHaveLength(1);
+
+    // Moving focus between the toast's own buttons keeps it paused.
+    act(() => dismiss?.focus());
+    act(() => vi.advanceTimersByTime(5000));
+    expect(getToasts()).toHaveLength(1);
+
+    act(() => dismiss?.blur());
     act(() => vi.advanceTimersByTime(1000));
     expect(getToasts()).toHaveLength(0);
   });

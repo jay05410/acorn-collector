@@ -5,6 +5,7 @@ export default defineMessages({
   en: {
     notifications: 'Notifications',
     dismiss: 'Dismiss',
+    undo: 'Undo',
     decrease: 'Decrease',
     increase: 'Increase',
     progress: '{checked} of {total} checked',
@@ -15,6 +16,7 @@ export default defineMessages({
   ko: {
     notifications: '알림',
     dismiss: '알림 닫기',
+    undo: '실행 취소',
     decrease: '줄이기',
     increase: '늘리기',
     progress: '{total}개 중 {checked}개 체크',
@@ -25,6 +27,7 @@ export default defineMessages({
   ja: {
     notifications: '通知',
     dismiss: '通知を閉じる',
+    undo: '元に戻す',
     decrease: '減らす',
     increase: '増やす',
     progress: '{total}件中{checked}件チェック済み',
@@ -35,6 +38,7 @@ export default defineMessages({
   'zh-CN': {
     notifications: '通知',
     dismiss: '关闭通知',
+    undo: '撤销',
     decrease: '减少',
     increase: '增加',
     progress: '已勾选 {checked}/{total}',
@@ -45,6 +49,7 @@ export default defineMessages({
   'zh-TW': {
     notifications: '通知',
     dismiss: '關閉通知',
+    undo: '復原',
     decrease: '減少',
     increase: '增加',
     progress: '已勾選 {checked}/{total}',

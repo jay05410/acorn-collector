@@ -5,6 +5,7 @@ import { Header } from '@/components/Header';
 import { AddBoothModal } from '@/components/AddBoothModal';
 import { SettingsModal } from '@/components/SettingsModal';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
+import { ToastViewport } from '@/components/ui/ToastViewport';
 import { useUIStore } from '@/stores/useUIStore';
 import { getSettings, watchSettings } from '@/lib/storage';
 import { useCaptureHandoff } from '@/lib/capture/client';
@@ -188,6 +189,8 @@ export default function App({ initialSettings }: AppProps) {
           }}
         />
       )}
+
+      <ToastViewport />
     </div>
   );
 }

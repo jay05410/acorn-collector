@@ -110,19 +110,24 @@ function DialogPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const tokenRef = useRef<symbol | null>(null);
+  // Read while rendering the first time, before commit: a child with
+  // autoFocus takes focus during commit, ahead of any effect of this panel.
+  const [opener] = useState(() =>
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+  );
 
   useEffect(() => {
     const token = Symbol('dialog');
     tokenRef.current = token;
     openDialogs.push({ token, depth });
-    const opener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
     lockScroll();
 
     const panel = panelRef.current;
-    if (isTopDialog(token)) {
+    // Keep the focus a child took with autoFocus; otherwise move it in.
+    const focusIsInside = panel?.contains(document.activeElement) ?? false;
+    if (isTopDialog(token) && !focusIsInside) {
       const target =
         initialFocusRef?.current ?? focusableIn(contentRef.current)[0] ?? panel;
       target?.focus();
@@ -145,7 +150,7 @@ function DialogPanel({
       unlockScroll();
       if (opener?.isConnected) opener.focus();
     };
-  }, [depth, initialFocusRef]);
+  }, [depth, initialFocusRef, opener]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const panel = panelRef.current;

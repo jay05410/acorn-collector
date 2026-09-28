@@ -122,7 +122,8 @@ export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
                   </p>
                 )}
               </div>
-              <div className="-mt-1 -mr-1 flex shrink-0 gap-0.5">
+              {/* gap-2: the 44px hit areas of the 36px buttons must not overlap. */}
+              <div className="-mt-1 -mr-1 flex shrink-0 gap-2">
                 <IconButton
                   label={t('common', 'edit')}
                   onClick={() => setIsEditing(true)}
