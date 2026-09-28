@@ -2,7 +2,8 @@ import { useEffect, useId, useRef } from 'react';
 import { EyeOff, Globe, Languages, Lock, Tag, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { MONETIZATION, SPONSOR_CONTACT } from '@/config/monetization';
-import { getLanguage, t, useLanguage, type MessageKey } from '@/i18n';
+import { getLanguage, t, useLanguage } from '@/i18n';
+import { adsNetworkNotice } from '@/lib/sponsor/disclosure';
 import { ExternalLink } from './ExternalLink';
 
 interface AboutAdsProps {
@@ -17,12 +18,29 @@ function adsPolicyUrl(): string {
   return `${base}#${anchor}`;
 }
 
-const POINTS: { icon: LucideIcon; key: MessageKey<'support'> }[] = [
-  { icon: Languages, key: 'aboutAdsContextual' },
-  { icon: EyeOff, key: 'aboutAdsNoTracking' },
-  { icon: Lock, key: 'aboutAdsNoPersonalData' },
-  { icon: Tag, key: 'aboutAdsCampaignTag' },
-  { icon: Globe, key: 'aboutAdsNetwork' },
+const POINTS: { id: string; icon: LucideIcon; text: () => string }[] = [
+  {
+    id: 'contextual',
+    icon: Languages,
+    text: () => t('support', 'aboutAdsContextual'),
+  },
+  {
+    id: 'no-tracking',
+    icon: EyeOff,
+    text: () => t('support', 'aboutAdsNoTracking'),
+  },
+  {
+    id: 'no-personal-data',
+    icon: Lock,
+    text: () => t('support', 'aboutAdsNoPersonalData'),
+  },
+  {
+    id: 'campaign-tag',
+    icon: Tag,
+    text: () => t('support', 'aboutAdsCampaignTag'),
+  },
+  // Names the host this build downloads from, or that nothing is downloaded.
+  { id: 'network', icon: Globe, text: () => adsNetworkNotice() },
 ];
 
 /**
@@ -70,15 +88,13 @@ export function AboutAds({ open, onClose }: AboutAdsProps) {
           {t('support', 'aboutAdsIntro')}
         </p>
         <ul className="space-y-2.5">
-          {POINTS.map(({ icon: Icon, key }) => (
-            <li key={key} className="flex gap-2.5">
+          {POINTS.map(({ id, icon: Icon, text }) => (
+            <li key={id} className="flex gap-2.5">
               <Icon
                 className="mt-0.5 h-4 w-4 shrink-0 text-accent dark:text-primary"
                 aria-hidden="true"
               />
-              <span className="text-gray-700 dark:text-gray-300">
-                {t('support', key)}
-              </span>
+              <span className="text-gray-700 dark:text-gray-300">{text()}</span>
             </li>
           ))}
         </ul>

@@ -194,13 +194,74 @@ describe('SponsorSelector', () => {
     expect(selector.pick('analysis', [[], house], NOW)?.id).toBe('house-b');
   });
 
-  it('keeps a house pick stable when sponsor data arrives later', () => {
+  it('switches a house pick to a sponsor as soon as one is available', () => {
     const selector = new SponsorSelector({ rng: () => 0 });
     const house = [creative('house-a')];
     selector.pick('footer', [[], house], NOW);
     expect(
       selector.pick('footer', [[creative('sponsor')], house], NOW + 1000)?.id
-    ).toBe('house-a');
+    ).toBe('sponsor');
+    // Also on a recheck, which otherwise keeps the current creative.
+    selector.pick('settings', [[], house], NOW);
+    expect(
+      selector.pick('settings', [[creative('other')], house], NOW + 1000, {
+        rotate: false,
+      })?.id
+    ).toBe('other');
+  });
+
+  it('switches to a sponsor that another slot has just freed', () => {
+    const selector = new SponsorSelector({ rng: () => 0 });
+    const sponsors = [creative('sponsor')];
+    const house = [creative('house-a')];
+    selector.pick('footer', [sponsors, house], NOW);
+    expect(selector.pick('settings', [sponsors, house], NOW)?.id).toBe(
+      'house-a'
+    );
+    selector.release('footer');
+    expect(selector.pick('settings', [sponsors, house], NOW + 1)?.id).toBe(
+      'sponsor'
+    );
+  });
+
+  it('keeps a house pick while every sponsor shows in another slot', () => {
+    const selector = new SponsorSelector({ rng: sequence(0, 0.9) });
+    const sponsors = [creative('sponsor')];
+    const house = [creative('house-a'), creative('house-b')];
+    selector.pick('footer', [sponsors, house], NOW);
+    expect(selector.pick('settings', [sponsors, house], NOW)?.id).toBe(
+      'house-b'
+    );
+    expect(selector.pick('settings', [sponsors, house], NOW + 1)?.id).toBe(
+      'house-b'
+    );
+  });
+
+  it('keeps a sponsor pick when other sponsors become available', () => {
+    const selector = new SponsorSelector({ rng: () => 0 });
+    selector.pick('footer', [[creative('a')]], NOW);
+    expect(
+      selector.pick('footer', [[creative('b'), creative('a')]], NOW + 1)?.id
+    ).toBe('a');
+  });
+
+  it('keeps the current creative past STABLE_MS on a recheck', () => {
+    const selector = new SponsorSelector({ rng: sequence(0, 0.9) });
+    selector.pick('footer', [pool], NOW);
+    const later = NOW + STABLE_MS * 10;
+    expect(selector.pick('footer', [pool], later, { rotate: false })?.id).toBe(
+      'a'
+    );
+    // A rotating pick may still replace it.
+    expect(selector.pick('footer', [pool], later)?.id).toBe('c');
+  });
+
+  it('replaces the current creative on a recheck once it is ineligible', () => {
+    const selector = new SponsorSelector({ rng: () => 0 });
+    selector.pick('footer', [pool], NOW);
+    expect(
+      selector.pick('footer', [pool.slice(1)], NOW + 1, { rotate: false })?.id
+    ).toBe('b');
   });
 
   it('returns null when nothing is eligible', () => {

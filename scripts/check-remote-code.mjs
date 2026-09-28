@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
  * MV3 / Chrome Web Store guard: fails when the built extension could load or
- * run code that is not in the package (remote scripts, remote imports) or
- * build code from strings (eval, new Function, string timers).
+ * run code that is not in the package (remote <script src>, static
+ * `import ... from` / `export ... from` / side-effect `import "..."`, dynamic
+ * import(), importScripts() of http(s) or protocol-relative URLs) or build
+ * code from strings (eval, new Function, string timers).
  *
  * Usage: node scripts/check-remote-code.mjs [dir]   (default .output/chrome-mv3)
  * Exit codes: 0 clean, 1 findings, 2 missing or empty build directory.
@@ -11,19 +13,43 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 const QUOTE = `["'\`]`;
+/** An http(s) or protocol-relative URL start; the scheme is case-insensitive. */
+const REMOTE = '(?:[hH][tT][tT][pP][sS]?:)?//';
+/** Not part of a longer identifier or a property access (`x.import`). */
+const KEYWORD_START = '(?<![\\w$.])';
+/**
+ * What may sit between `import`/`export` and `from` in a static declaration:
+ * bindings, braces, commas, `*` and `as`, with or without whitespace
+ * (minified output has none). Bounded so a stray keyword cannot span a file.
+ */
+const BINDINGS = '[\\w$\\s{},*]{0,500}?';
 const RULES = [
   {
     name: 'remote <script src>',
     pattern: /<script\b[^>]*\bsrc\s*=\s*["']?\s*(?:https?:)?\/\//gi,
   },
   {
+    name: 'remote static import/export ... from',
+    pattern: new RegExp(
+      `${KEYWORD_START}(?:import|export)${BINDINGS}(?<![\\w$])from\\s*${QUOTE}\\s*${REMOTE}`,
+      'g'
+    ),
+  },
+  {
+    name: 'remote side-effect import',
+    pattern: new RegExp(`${KEYWORD_START}import\\s*${QUOTE}\\s*${REMOTE}`, 'g'),
+  },
+  {
     name: 'remote dynamic import()',
-    pattern: new RegExp(`\\bimport\\s*\\(\\s*${QUOTE}\\s*(?:https?:)?//`, 'g'),
+    pattern: new RegExp(
+      `${KEYWORD_START}import\\s*\\(\\s*${QUOTE}\\s*${REMOTE}`,
+      'g'
+    ),
   },
   {
     name: 'remote importScripts()',
     pattern: new RegExp(
-      `\\bimportScripts\\s*\\([^)]*${QUOTE}\\s*(?:https?:)?//`,
+      `\\bimportScripts\\s*\\([^)]*${QUOTE}\\s*${REMOTE}`,
       'g'
     ),
   },

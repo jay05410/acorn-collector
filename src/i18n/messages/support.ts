@@ -19,7 +19,9 @@ export default defineMessages({
     aboutAdsCampaignTag:
       "Ad links include a campaign tag, so the sponsor's own site can see that a visit came from this extension.",
     aboutAdsNetwork:
-      'The ad list and its images are downloaded from GitHub. Like any web request, this shows your IP address and browser type to GitHub.',
+      'The ad list and its images are downloaded from {host}. Like any web request, this shows your IP address and browser type to {host}.',
+    aboutAdsNetworkOff:
+      'Nothing is downloaded for ads: this version only shows messages built into the extension.',
     privacyPolicy: 'Privacy policy',
     advertiseHere: 'Advertise here',
     houseDonateTitle: 'Enjoying {appName}?',
@@ -61,7 +63,9 @@ export default defineMessages({
     aboutAdsCampaignTag:
       '광고 링크에는 캠페인 태그가 붙어 있어, 광고주 사이트에서는 이 확장 프로그램을 통해 방문했다는 사실을 알 수 있습니다.',
     aboutAdsNetwork:
-      '광고 목록과 이미지는 GitHub에서 내려받습니다. 여느 웹 요청과 마찬가지로 IP 주소와 브라우저 종류가 GitHub에 전달됩니다.',
+      '광고 목록과 이미지는 {host}에서 내려받습니다. 여느 웹 요청과 마찬가지로 IP 주소와 브라우저 종류가 {host}에 전달됩니다.',
+    aboutAdsNetworkOff:
+      '광고 때문에 내려받는 것은 없습니다. 이 버전은 확장 프로그램에 들어 있는 안내만 보여 줍니다.',
     privacyPolicy: '개인정보 처리방침',
     advertiseHere: '광고 문의',
     houseDonateTitle: '{appName}, 유용하게 쓰고 계신가요?',
@@ -104,7 +108,9 @@ export default defineMessages({
     aboutAdsCampaignTag:
       '広告のリンクにはキャンペーンタグが付いているため、広告主のサイトではこの拡張機能からの訪問だとわかります。',
     aboutAdsNetwork:
-      '広告リストと画像はGitHubからダウンロードします。一般的なWebリクエストと同じく、IPアドレスとブラウザの種類がGitHubに送信されます。',
+      '広告リストと画像は{host}からダウンロードします。一般的なWebリクエストと同じく、IPアドレスとブラウザの種類が{host}に送信されます。',
+    aboutAdsNetworkOff:
+      '広告のためにダウンロードするものはありません。このバージョンでは拡張機能に組み込まれたお知らせだけを表示します。',
     privacyPolicy: 'プライバシーポリシー',
     advertiseHere: '広告掲載のお問い合わせ',
     houseDonateTitle: '{appName}はお役に立っていますか？',
@@ -147,7 +153,9 @@ export default defineMessages({
     aboutAdsCampaignTag:
       '广告链接带有活动标记，因此广告主的网站可以看出访问来自本扩展程序。',
     aboutAdsNetwork:
-      '广告列表和图片从 GitHub 下载。与所有网络请求一样，GitHub 会看到你的 IP 地址和浏览器类型。',
+      '广告列表和图片从 {host} 下载。与所有网络请求一样，{host} 会看到你的 IP 地址和浏览器类型。',
+    aboutAdsNetworkOff:
+      '不会为广告下载任何内容：此版本只显示扩展程序内置的消息。',
     privacyPolicy: '隐私政策',
     advertiseHere: '广告合作',
     houseDonateTitle: '觉得{appName}好用吗？',
@@ -187,7 +195,9 @@ export default defineMessages({
     aboutAdsCampaignTag:
       '廣告連結附有活動標記，因此廣告主的網站可以得知造訪來自本擴充功能。',
     aboutAdsNetwork:
-      '廣告清單和圖片從 GitHub 下載。與所有網路要求一樣，GitHub 會看到你的 IP 位址和瀏覽器類型。',
+      '廣告清單和圖片從 {host} 下載。與所有網路要求一樣，{host} 會看到你的 IP 位址和瀏覽器類型。',
+    aboutAdsNetworkOff:
+      '不會為廣告下載任何內容：此版本只顯示擴充功能內建的訊息。',
     privacyPolicy: '隱私權政策',
     advertiseHere: '廣告合作',
     houseDonateTitle: '覺得{appName}好用嗎？',

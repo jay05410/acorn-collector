@@ -6,6 +6,7 @@
  * back to the defaults below, so a typo can never point the extension at an
  * insecure URL.
  */
+import { parseHttpsUrl } from '@/lib/https-url';
 
 const REPO_URL = 'https://github.com/jay05410/acorn-collector';
 
@@ -62,14 +63,15 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** An absolute https URL without embedded credentials, or null. */
+/**
+ * An absolute https URL without embedded credentials (the same rule the
+ * sponsor feed applies), or null.
+ */
 export function toHttpsUrl(value: unknown): string | null {
   const raw = text(value);
   if (!raw) return null;
   try {
-    const url = new URL(raw);
-    if (url.protocol !== 'https:' || url.username || url.password) return null;
-    return url.href;
+    return parseHttpsUrl(raw).href;
   } catch {
     return null;
   }

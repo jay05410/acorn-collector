@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getLanguage, setLanguage } from '@/i18n';
 import type { AppLanguage } from '@/i18n/languages';
 import { parseSponsorFeed } from './feed';
-import { houseCreatives, resolveWebStoreUrl, type HouseLinks } from './house';
+import {
+  houseCreatives,
+  resolveWebStoreUrl,
+  webStoreReviewsUrl,
+  type HouseLinks,
+} from './house';
 
 const LINKS: HouseLinks = {
   donationLinks: {
@@ -59,6 +64,33 @@ describe('resolveWebStoreUrl', () => {
   });
 });
 
+describe('webStoreReviewsUrl', () => {
+  it.each([
+    [
+      'https://chromewebstore.google.com/detail/abc',
+      'https://chromewebstore.google.com/detail/abc/reviews',
+    ],
+    [
+      'https://chromewebstore.google.com/detail/abc/',
+      'https://chromewebstore.google.com/detail/abc/reviews',
+    ],
+    [
+      'https://chromewebstore.google.com/detail/abc?hl=ko#top',
+      'https://chromewebstore.google.com/detail/abc/reviews?hl=ko#top',
+    ],
+    [
+      'https://chromewebstore.google.com/detail/abc/reviews?hl=ja',
+      'https://chromewebstore.google.com/detail/abc/reviews?hl=ja',
+    ],
+  ])('%s -> %s', (listing, reviews) => {
+    expect(webStoreReviewsUrl(listing)).toBe(reviews);
+  });
+
+  it('is null for an unusable listing URL', () => {
+    expect(webStoreReviewsUrl('not a url')).toBeNull();
+  });
+});
+
 describe('houseCreatives', () => {
   it('builds localized promos with the right links', () => {
     const byId = new Map(houseCreatives(LINKS).map((c) => [c.id, c]));
@@ -77,6 +109,16 @@ describe('houseCreatives', () => {
     expect(byId.get('house-share')?.clickUrl).toBe(LINKS.webStoreUrl);
     expect(byId.get('house-advertise')?.clickUrl).toBe(LINKS.sponsorContact);
     expect(byId.get('house-donate')?.title).toBe('Enjoying Acorn Collector?');
+  });
+
+  it('keeps the listing query when linking to its reviews', () => {
+    const rate = houseCreatives({
+      ...LINKS,
+      webStoreUrl: 'https://chromewebstore.google.com/detail/abc?hl=ko',
+    }).find((c) => c.id === 'house-rate');
+    expect(rate?.clickUrl).toBe(
+      'https://chromewebstore.google.com/detail/abc/reviews?hl=ko'
+    );
   });
 
   it('follows the current language', () => {

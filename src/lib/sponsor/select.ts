@@ -66,6 +66,16 @@ interface Hold {
   since: number;
 }
 
+export interface PickOptions {
+  /**
+   * true (default): a pick older than `stableMs` may be replaced, e.g. when
+   * the slot mounts or the panel becomes visible again. false: keep the
+   * current creative while it is still eligible (feed, language or clock
+   * recheck), so shared updates do not reshuffle the slots.
+   */
+  rotate?: boolean;
+}
+
 /**
  * Remembers which creative each placement shows. Picks are kept for
  * `stableMs` (also across a quick unmount/remount of the slot) and a creative
@@ -86,11 +96,17 @@ export class SponsorSelector {
    * Chooses the creative for a placement. `pools` are eligible creatives in
    * priority order (sponsor feed first, then house promos); a lower pool is
    * used only when every higher one is empty or already shown elsewhere.
+   *
+   * The current creative is kept (see PickOptions.rotate) unless it is no
+   * longer eligible, another active slot shows it, or a higher pool now has
+   * a creative free: a slot showing a house promo switches to a sponsor as
+   * soon as one is available. The hold only prevents churn within a pool.
    */
   pick<T extends Creative>(
     placement: Placement,
     pools: readonly (readonly T[])[],
-    now: number
+    now: number,
+    options: PickOptions = {}
   ): T | null {
     this.active.add(placement);
     const taken = new Set<string>();
@@ -98,27 +114,26 @@ export class SponsorSelector {
       const hold = this.holds.get(other);
       if (other !== placement && hold) taken.add(hold.id);
     }
+    // The highest-priority pool with a creative no other slot shows.
+    const best = pools
+      .map((pool) => pool.filter((creative) => !taken.has(creative.id)))
+      .find((pool) => pool.length > 0);
+    if (!best) {
+      this.holds.delete(placement);
+      return null;
+    }
 
     const previous = this.holds.get(placement);
-    if (previous && now - previous.since < this.stableMs) {
-      for (const pool of pools) {
-        const kept = pool.find((creative) => creative.id === previous.id);
-        if (kept && !taken.has(kept.id)) return kept;
-      }
+    const rotate = options.rotate ?? true;
+    if (previous && (!rotate || now - previous.since < this.stableMs)) {
+      const kept = best.find((creative) => creative.id === previous.id);
+      if (kept) return kept;
     }
 
-    for (const pool of pools) {
-      const choice = weightedPick(
-        pool.filter((creative) => !taken.has(creative.id)),
-        this.rng
-      );
-      if (choice) {
-        this.holds.set(placement, { id: choice.id, since: now });
-        return choice;
-      }
-    }
-    this.holds.delete(placement);
-    return null;
+    const choice = weightedPick(best, this.rng);
+    if (choice) this.holds.set(placement, { id: choice.id, since: now });
+    else this.holds.delete(placement);
+    return choice;
   }
 
   /** The slot unmounted; its creative may now appear elsewhere. */

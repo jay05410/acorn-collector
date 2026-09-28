@@ -86,7 +86,11 @@ describe('loadSponsorFeed', () => {
 
     const result = await loadSponsorFeed(deps);
 
-    expect(result).toEqual({ source: 'network', feed: feed('fresh') });
+    expect(result).toEqual({
+      source: 'network',
+      feed: feed('fresh'),
+      fetchedAt: T0,
+    });
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe(FEED_URL);
     expect(init).toMatchObject({
@@ -113,6 +117,7 @@ describe('loadSponsorFeed', () => {
     expect(await loadSponsorFeed(deps)).toEqual({
       source: 'cache',
       feed: feed('cached'),
+      fetchedAt: T0,
     });
     expect(fetchMock).not.toHaveBeenCalled();
 
@@ -148,7 +153,11 @@ describe('loadSponsorFeed', () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
       'If-None-Match': '"v1"',
     });
-    expect(result).toEqual({ source: 'network', feed: feed('cached') });
+    expect(result).toEqual({
+      source: 'network',
+      feed: feed('cached'),
+      fetchedAt: T0 + FEED_TTL_MS + 1,
+    });
     expect(cached()?.fetchedAt).toBe(T0 + FEED_TTL_MS + 1);
     expect(cached()?.etag).toBe('"v1"');
 
@@ -170,6 +179,7 @@ describe('loadSponsorFeed', () => {
     expect(await loadSponsorFeed(deps)).toEqual({
       source: 'cache',
       feed: feed('cached'),
+      fetchedAt: T0,
     });
     expect(cached()?.fetchedAt).toBe(T0);
   });
@@ -205,6 +215,7 @@ describe('loadSponsorFeed', () => {
     expect(await loadSponsorFeed(withCache.deps)).toEqual({
       source: 'cache',
       feed: feed('cached'),
+      fetchedAt: 0,
     });
 
     const empty = setup();
@@ -214,6 +225,73 @@ describe('loadSponsorFeed', () => {
       feed: null,
     });
     expect(empty.cached()).toBeUndefined();
+  });
+
+  it('stops reading a body without Content-Length once it is too large', async () => {
+    const chunk = new TextEncoder().encode(' '.repeat(16 * 1024));
+    const totalChunks = 64; // 1 MiB if read to the end
+    let pulled = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled === totalChunks) {
+          controller.close();
+          return;
+        }
+        pulled += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const { deps, fetchMock } = setup();
+    fetchMock.mockResolvedValue(new Response(body, { status: 200 }));
+
+    expect(await loadSponsorFeed(deps)).toEqual({
+      source: 'house',
+      feed: null,
+    });
+    expect(cancelled).toBe(true);
+    // At most one chunk past the limit, plus the stream's read-ahead.
+    expect(pulled).toBeLessThanOrEqual(MAX_FEED_BYTES / chunk.length + 2);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it('reads a chunked body within the limit', async () => {
+    const title = 'どんぐり';
+    const bytes = new TextEncoder().encode(JSON.stringify(feed(title)));
+    // Split in the middle of a multi-byte character.
+    const split = bytes.indexOf(new TextEncoder().encode(title)[0]!) + 1;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, split));
+        controller.enqueue(bytes.slice(split));
+        controller.close();
+      },
+    });
+    const { deps, fetchMock } = setup();
+    fetchMock.mockResolvedValue(new Response(body, { status: 200 }));
+    expect((await loadSponsorFeed(deps)).feed).toEqual(feed(title));
+  });
+
+  it('uses a cache entry the caller already read', async () => {
+    const { deps, fetchMock } = setup();
+    const get = vi.spyOn(deps.storage, 'get');
+    const entry: FeedCacheEntry = {
+      feed: feed('pre-read'),
+      etag: null,
+      fetchedAt: T0,
+    };
+    expect(await loadSponsorFeed(deps, entry)).toEqual({
+      source: 'cache',
+      feed: feed('pre-read'),
+      fetchedAt: T0,
+    });
+
+    fetchMock.mockResolvedValue(jsonResponse(feed('fresh')));
+    expect((await loadSponsorFeed(deps, null)).source).toBe('network');
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('aborts after the timeout', async () => {

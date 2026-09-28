@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { resolveMonetizationConfig } from '@/config/monetization';
+import { resolveMonetizationConfig, toHttpsUrl } from '@/config/monetization';
 import {
   LIMITS,
   SponsorFeedError,
@@ -132,6 +132,39 @@ describe('parseSponsorFeed creatives', () => {
     const { feed, issues } = parseOne(overrides);
     expect(feed.creatives).toEqual([]);
     expect(issues).toHaveLength(1);
+  });
+
+  it('treats JSON null in optional fields as absent', () => {
+    const optional = [
+      'body',
+      'imageUrl',
+      'cta',
+      'startsAt',
+      'endsAt',
+      'weight',
+    ];
+    const nulls = Object.fromEntries(optional.map((field) => [field, null]));
+    const { feed, issues } = parseOne(nulls);
+    expect(issues).toEqual([]);
+    expect(feed.creatives).toEqual([creative()]);
+    for (const field of optional)
+      expect(feed.creatives[0]).not.toHaveProperty(field);
+  });
+
+  it('still requires required fields to be non-null', () => {
+    expect(parseOne({ title: null }).issues[0]?.reason).toBe('title: missing');
+  });
+
+  it.each([
+    'https://acme.example/pens?x=1#y',
+    'http://acme.example/',
+    'https://user:pw@acme.example/',
+    'https://user@acme.example/',
+    'javascript:alert(1)',
+    'not a url',
+  ])('accepts %s exactly when the build-time config would', (url) => {
+    const accepted = parseOne({ clickUrl: url }).issues.length === 0;
+    expect(accepted).toBe(toHttpsUrl(url) !== null);
   });
 
   it('measures length in characters, not UTF-16 units', () => {

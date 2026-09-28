@@ -35,7 +35,12 @@ export interface FeedLoaderDeps {
 }
 
 export type FeedLoadResult =
-  | { source: 'network' | 'cache'; feed: SponsorFeed }
+  | {
+      source: 'network' | 'cache';
+      feed: SponsorFeed;
+      /** When this feed was last confirmed by the server (ms). */
+      fetchedAt: number;
+    }
   | { source: 'house'; feed: null };
 
 const chromeLocalStorage: FeedStorage = {
@@ -108,14 +113,41 @@ function isFresh(entry: FeedCacheEntry, deps: FeedLoaderDeps): boolean {
   return age >= 0 && age < deps.ttlMs;
 }
 
-async function readLimitedText(response: Response): Promise<string> {
+/**
+ * The body as UTF-8 text, never holding more than MAX_FEED_BYTES: an
+ * oversized Content-Length fails at once, and otherwise (e.g. a chunked
+ * response without a length) the stream is read chunk by chunk and cancelled,
+ * with the request aborted, as soon as it goes over the limit.
+ */
+async function readLimitedText(
+  response: Response,
+  abort: () => void
+): Promise<string> {
   const declared = Number(response.headers.get('Content-Length'));
   if (Number.isFinite(declared) && declared > MAX_FEED_BYTES)
     throw new Error('sponsor feed is too large');
-  const body = await response.text();
-  if (new TextEncoder().encode(body).length > MAX_FEED_BYTES)
-    throw new Error('sponsor feed is too large');
-  return body;
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_FEED_BYTES) {
+      void reader.cancel().catch(() => {});
+      abort();
+      throw new Error('sponsor feed is too large');
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 /**
@@ -145,7 +177,7 @@ async function download(
     }
     if (!response.ok)
       throw new Error(`sponsor feed request failed (${response.status})`);
-    const text = await readLimitedText(response);
+    const text = await readLimitedText(response, () => controller.abort());
     const { feed, issues } = parseSponsorFeed(JSON.parse(text), {
       imageHosts: deps.imageHosts,
     });
@@ -160,22 +192,27 @@ async function download(
  * Returns the sponsor feed to display. A fresh cache answers without network;
  * otherwise the feed is downloaded (conditionally when an ETag is cached).
  * Never rejects: failures fall back to the cached feed, then to house promos.
+ *
+ * `cached` is the result of a readFeedCache call the caller already made
+ * (null for "no usable cache"); when omitted the cache is read here.
  */
 export async function loadSponsorFeed(
-  deps: FeedLoaderDeps = defaultFeedLoaderDeps()
+  deps: FeedLoaderDeps = defaultFeedLoaderDeps(),
+  cached?: FeedCacheEntry | null
 ): Promise<FeedLoadResult> {
-  const cached = await readFeedCache(deps);
-  if (cached && isFresh(cached, deps))
-    return { source: 'cache', feed: cached.feed };
+  const entry = cached === undefined ? await readFeedCache(deps) : cached;
+  if (entry && isFresh(entry, deps))
+    return { source: 'cache', feed: entry.feed, fetchedAt: entry.fetchedAt };
 
   try {
-    const fresh = await download(deps, cached);
-    await writeFeedCache(deps.storage, { ...fresh, fetchedAt: deps.now() });
-    return { source: 'network', feed: fresh.feed };
+    const fresh = await download(deps, entry);
+    const fetchedAt = deps.now();
+    await writeFeedCache(deps.storage, { ...fresh, fetchedAt });
+    return { source: 'network', feed: fresh.feed, fetchedAt };
   } catch (error) {
     console.warn('[sponsor] using fallback sponsor data', error);
   }
-  return cached
-    ? { source: 'cache', feed: cached.feed }
+  return entry
+    ? { source: 'cache', feed: entry.feed, fetchedAt: entry.fetchedAt }
     : { source: 'house', feed: null };
 }

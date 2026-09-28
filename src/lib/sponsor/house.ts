@@ -51,6 +51,22 @@ export function resolveWebStoreUrl(
     : null;
 }
 
+/**
+ * The listing's reviews page: `/reviews` appended to the path, keeping any
+ * query (e.g. ?hl=ko) and fragment. Null when the listing URL is unusable.
+ */
+export function webStoreReviewsUrl(listingUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(listingUrl);
+  } catch {
+    return null;
+  }
+  const path = url.pathname.replace(/\/+$/, '');
+  if (!/\/reviews$/.test(path)) url.pathname = `${path}/reviews`;
+  return url.href;
+}
+
 function currentRuntime(): RuntimeInfo | undefined {
   return typeof chrome === 'undefined' ? undefined : chrome.runtime;
 }
@@ -92,7 +108,10 @@ export function houseCreatives(
       icon: 'coffee',
     });
   }
-  if (links.webStoreUrl) {
+  const reviewsUrl = links.webStoreUrl
+    ? webStoreReviewsUrl(links.webStoreUrl)
+    : null;
+  if (reviewsUrl) {
     creatives.push({
       id: 'house-rate',
       placements: PLACEMENTS,
@@ -100,7 +119,7 @@ export function houseCreatives(
       title: t('support', 'houseRateTitle'),
       body: t('support', 'houseRateBody'),
       cta: t('support', 'houseRateCta'),
-      clickUrl: `${links.webStoreUrl.replace(/\/+$/, '')}/reviews`,
+      clickUrl: reviewsUrl,
       sponsorName: appName,
       weight: 2,
       icon: 'star',

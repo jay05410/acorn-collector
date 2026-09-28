@@ -7,6 +7,7 @@
  * typo cannot take every sponsor offline.
  */
 import { APP_LANGUAGES, type AppLanguage } from '@/i18n/languages';
+import { HttpsUrlError, parseHttpsUrl } from '@/lib/https-url';
 
 export const PLACEMENTS = ['footer', 'analysis', 'settings'] as const;
 export type Placement = (typeof PLACEMENTS)[number];
@@ -128,12 +129,17 @@ function requiredText(raw: UnknownRecord, field: string, max: number): string {
   return clean;
 }
 
+/** JSON null counts as absent for optional fields ("body": null). */
+function isAbsent(value: unknown): value is null | undefined {
+  return value === undefined || value === null;
+}
+
 function optionalText(
   raw: UnknownRecord,
   field: string,
   max: number
 ): string | undefined {
-  if (raw[field] === undefined) return undefined;
+  if (isAbsent(raw[field])) return undefined;
   return requiredText(raw, field, max);
 }
 
@@ -165,7 +171,7 @@ export function parseIsoDateTime(value: unknown): number | null {
 
 function optionalDate(raw: UnknownRecord, field: string): string | undefined {
   const value = raw[field];
-  if (value === undefined) return undefined;
+  if (isAbsent(value)) return undefined;
   if (parseIsoDateTime(value) === null)
     throw new CreativeError(`${field}: not an ISO 8601 date-time with zone`);
   return value as string;
@@ -174,24 +180,20 @@ function optionalDate(raw: UnknownRecord, field: string): string | undefined {
 function httpsUrl(value: unknown, field: string): URL {
   if (typeof value !== 'string' || value.length > LIMITS.url)
     throw new CreativeError(`${field}: missing or too long`);
-  let url: URL;
   try {
-    url = new URL(value);
-  } catch {
-    throw new CreativeError(`${field}: not a URL`);
+    return parseHttpsUrl(value);
+  } catch (error) {
+    if (error instanceof HttpsUrlError)
+      throw new CreativeError(`${field}: ${error.message}`);
+    throw error;
   }
-  if (url.protocol !== 'https:')
-    throw new CreativeError(`${field}: must use https`);
-  if (url.username || url.password)
-    throw new CreativeError(`${field}: must not contain credentials`);
-  return url;
 }
 
 function imageUrl(
   value: unknown,
   imageHosts: readonly string[] | undefined
 ): string | undefined {
-  if (value === undefined) return undefined;
+  if (isAbsent(value)) return undefined;
   const url = httpsUrl(value, 'imageUrl');
   if (!IMAGE_EXTENSIONS.test(url.pathname))
     throw new CreativeError('imageUrl: must be .png, .jpg, .jpeg or .webp');
@@ -215,7 +217,7 @@ function stringList<T extends string>(
 }
 
 function weight(value: unknown): number | undefined {
-  if (value === undefined) return undefined;
+  if (isAbsent(value)) return undefined;
   if (
     typeof value !== 'number' ||
     !Number.isInteger(value) ||

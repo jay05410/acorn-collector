@@ -191,6 +191,10 @@ describe('SponsorSlot', () => {
     expect(dialog.textContent).toContain(
       'chosen only by your display language'
     );
+    // The feed host of this build, not a hard-coded name.
+    expect(dialog.textContent).toContain(
+      'downloaded from raw.githubusercontent.com'
+    );
     const policy = [...dialog.querySelectorAll('a')].find((a) =>
       a.textContent?.includes('Privacy policy')
     );
