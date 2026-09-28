@@ -34,7 +34,12 @@ function applyDarkMode(isDark: boolean): void {
   }
 }
 
-export default function App() {
+interface AppProps {
+  /** Settings read at bootstrap; App reads them itself when absent. */
+  initialSettings?: AppSettings;
+}
+
+export default function App({ initialSettings }: AppProps) {
   const language = useLanguage();
   const [currentView, setCurrentView] = useState<View>('events');
   const [isDark, setIsDark] = useState(() => getSystemPrefersDark());
@@ -65,11 +70,15 @@ export default function App() {
       applyDarkMode(dark);
     };
 
-    getSettings()
-      .then(applySettings)
-      .catch((error: unknown) => {
-        console.error('Failed to load settings:', error);
-      });
+    if (initialSettings) {
+      applySettings(initialSettings);
+    } else {
+      getSettings()
+        .then(applySettings)
+        .catch((error: unknown) => {
+          console.error('Failed to load settings:', error);
+        });
+    }
 
     const unwatch = watchSettings(applySettings);
 
@@ -84,7 +93,7 @@ export default function App() {
       unwatch();
       mediaQuery.removeEventListener('change', handleSystemChange);
     };
-  }, []);
+  }, [initialSettings]);
 
   useEffect(() => {
     const checkPendingAdd = async () => {

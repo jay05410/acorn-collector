@@ -4,6 +4,7 @@ import App from './App';
 import '@/app.css';
 import { initializeDatabase, db } from '@/lib/db';
 import { getSettings } from '@/lib/storage';
+import type { AppSettings } from '@/lib/settings-types';
 import { setLanguage, t } from '@/i18n';
 
 window.addEventListener('beforeunload', () => {
@@ -13,13 +14,24 @@ window.addEventListener('beforeunload', () => {
 async function bootstrap(root: ReactDOM.Root): Promise<void> {
   // Apply the saved language before the first render to avoid a flash of the
   // browser-detected language. The app still starts if settings can't load.
-  const languageReady = getSettings().then(
-    (settings) => setLanguage(settings.language),
-    (error: unknown) => console.error('Failed to load settings:', error)
+  // App gets these settings too, so startup reads (and migrates) them once.
+  const settingsReady = getSettings().then(
+    (settings) => {
+      setLanguage(settings.language);
+      return settings;
+    },
+    (error: unknown) => {
+      console.error('Failed to load settings:', error);
+      return undefined;
+    }
   );
 
+  let initialSettings: AppSettings | undefined;
   try {
-    await Promise.all([initializeDatabase(), languageReady]);
+    [, initialSettings] = await Promise.all([
+      initializeDatabase(),
+      settingsReady,
+    ]);
   } catch (error) {
     console.error('Failed to open the database:', error);
     root.render(
@@ -32,7 +44,7 @@ async function bootstrap(root: ReactDOM.Root): Promise<void> {
 
   root.render(
     <React.StrictMode>
-      <App />
+      <App initialSettings={initialSettings} />
     </React.StrictMode>
   );
 }

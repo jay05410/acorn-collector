@@ -214,6 +214,44 @@ describe('settings storage', () => {
     expect(local.set).toHaveBeenCalledTimes(1);
   });
 
+  it('never lets a slow legacy read overwrite a queued update', async () => {
+    const { data, local } = installChromeStorage({ settings: v1Settings });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Startup read: storage is read now (v1), the answer arrives later.
+    local.get.mockImplementationOnce(async (key: string) => {
+      const snapshot = { [key]: structuredClone(data[key]) };
+      await gate;
+      return snapshot;
+    });
+
+    const startup = getSettings();
+    const updated = await updateSettings({ colorTheme: 'sky' });
+    release();
+    const settings = await startup;
+
+    expect(updated.colorTheme).toBe('sky');
+    expect(data.settings).toMatchObject({
+      schemaVersion: 2,
+      colorTheme: 'sky',
+      language: 'zh-CN',
+    });
+    expect(settings).toEqual(data.settings);
+    expect(JSON.stringify(data)).not.toContain('AIza-secret');
+  });
+
+  it('migrates once when several readers find v1 settings', async () => {
+    const { data, local } = installChromeStorage({ settings: v1Settings });
+
+    const [first, second] = await Promise.all([getSettings(), getSettings()]);
+
+    expect(first).toEqual(second);
+    expect(data.settings).toEqual(first);
+    expect(local.set).toHaveBeenCalledTimes(1);
+  });
+
   it('returns defaults without writing on a fresh install', async () => {
     const { local } = installChromeStorage();
     expect(await getSettings()).toEqual(createDefaultSettings());

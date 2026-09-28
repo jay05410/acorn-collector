@@ -196,31 +196,57 @@ function isLegacySettings(raw: unknown): boolean {
   );
 }
 
-export async function getSettings(): Promise<AppSettings> {
+async function readStoredSettings(): Promise<unknown> {
   const stored = await chrome.storage.local.get(SETTINGS_KEY);
-  const raw: unknown = stored[SETTINGS_KEY];
-  const settings = migrateSettings(raw);
-  if (isLegacySettings(raw)) {
-    // Persist once so v1 secrets (the old Gemini key) leave storage.
-    await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
-  }
-  return settings;
+  return stored[SETTINGS_KEY];
 }
 
 let writeQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs every settings write one after another, so no read-modify-write can
+ * overwrite another's result. A failed job does not stop later ones.
+ */
+function enqueueWrite<T>(job: () => Promise<T>): Promise<T> {
+  const result = writeQueue.then(job);
+  writeQueue = result.catch(() => undefined);
+  return result;
+}
+
+/**
+ * Persists the v1 -> v2 migration so v1 secrets (the old Gemini key) leave
+ * storage. Queued with updateSettings() and re-checked when it runs: if
+ * another write stored v2 settings meanwhile, those are kept and returned.
+ */
+function persistLegacyMigration(): Promise<AppSettings> {
+  return enqueueWrite(async () => {
+    const raw = await readStoredSettings();
+    const settings = migrateSettings(raw);
+    if (isLegacySettings(raw)) {
+      await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+    }
+    return settings;
+  });
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  const raw = await readStoredSettings();
+  return isLegacySettings(raw)
+    ? persistLegacyMigration()
+    : migrateSettings(raw);
+}
 
 /**
  * Applies a partial update. Calls are serialized so rapid updates (e.g.
  * typing an API key) never overwrite each other's read-modify-write.
  */
 export function updateSettings(patch: SettingsPatch): Promise<AppSettings> {
-  const result = writeQueue.then(async () => {
-    const next = applySettingsPatch(await getSettings(), patch);
+  return enqueueWrite(async () => {
+    const current = migrateSettings(await readStoredSettings());
+    const next = applySettingsPatch(current, patch);
     await chrome.storage.local.set({ [SETTINGS_KEY]: next });
     return next;
   });
-  writeQueue = result.catch(() => undefined);
-  return result;
 }
 
 export function watchSettings(
