@@ -1,24 +1,28 @@
 /**
  * Extraction engine (ADR-001 section 3): resolve provider/model/key from
  * settings, prepare images for the model (skipping ones that cannot be
- * loaded), serve from the local cache when possible, otherwise fan out one
- * call per image in parallel (call #1 also carries the post text), stream
- * merged partial items, merge deterministically and cache the result. Every
- * failure surfaces as AIError.
+ * loaded), then run one call per image in parallel (call #1 also carries the
+ * post text and the hints), each answered from the local cache when
+ * possible. Every call streams its own partial items with its currency, and
+ * the result keeps each call's items and currency (`calls`) next to the
+ * deterministic merge. Every failure surfaces as AIError.
  */
 import type { AppLanguage } from '@/i18n/languages';
 import type { AISettings } from '@/lib/settings-types';
+// The submodule, not '@/i18n': the barrel pulls in React.
+import { normalizeCurrencyCode } from '@/i18n/format';
 import { cacheKey, type AnalysisCacheStore, type CachedAnalysis } from './cache';
 import { sha256Hex } from './encoding';
 import { abortedError, toAIError } from './errors';
 import { isRecord, numberField } from './guards';
 import { prepareImages, type DecodedImage, type ImageCodec, type PreparedImages } from './image';
-import { mergeItems, mergeWire } from './merge';
+import { mergeWire } from './merge';
 import { imageLimitsFor } from './models';
-import { extractClosedItems } from './partial-json';
+import { parsePartialWire } from './partial-json';
 import { buildUserContent, systemPromptFor } from './prompt';
 import { getProvider } from './providers';
 import {
+  dedupeItems,
   normalizeWireItem,
   SCHEMA_VERSION,
   toExtractedItem,
@@ -29,12 +33,12 @@ import {
 import {
   AIError,
   type AIProvider,
+  type ExtractionCall,
   type ExtractionRequest,
   type ExtractionResult,
   type ModelTier,
   type PartialExtraction,
   type ProviderId,
-  type ProviderRawResult,
   type WireExtraction,
 } from './types';
 
@@ -61,10 +65,24 @@ export interface ExtractBoothInput {
   /** Image URLs (fetched without credentials) or blobs, in display order. */
   images: ReadonlyArray<string | Blob>;
   targetLanguage: AppLanguage;
+  /** Sent with the first call only, together with the post text. */
   hints?: ExtractionRequest['hints'];
   signal?: AbortSignal;
-  /** Merged items so far across all calls; fires when the count grows. */
-  onPartial?: (partial: PartialExtraction) => void;
+  /**
+   * One call's items so far, with its currency once parsed. Fires when the
+   * call's item count grows or its currency arrives; a call answered from
+   * the cache reports everything at once. `call.index` is the call's
+   * position in ExtractionResult.calls.
+   */
+  onPartial?: (partial: PartialExtraction, call: CallInfo) => void;
+}
+
+/** Which call a partial update belongs to. */
+export interface CallInfo {
+  /** Position in ExtractionResult.calls. */
+  index: number;
+  /** Index into the requested images; null for a text-only call. */
+  imageIndex: number | null;
 }
 
 export interface ExtractBoothOptions {
@@ -81,6 +99,8 @@ export interface ExtractBoothOptions {
   /** Image preparation limit; defaults to IMAGE_TIMEOUT_MS. */
   imageTimeoutMs?: number;
   retryDelayMs?: number;
+  /** Skips cache reads (an explicit re-analysis); fresh results are still cached. */
+  bypassCacheRead?: boolean;
 }
 
 interface Target {
@@ -163,40 +183,79 @@ function delay(ms: number, signal: AbortSignal, provider: ProviderId): Promise<v
   });
 }
 
-/** Turns per-call streamed text into merged partial items. */
+/** Currency of a streamed wire prefix: undefined until its value has arrived. */
+function streamedCurrency(raw: unknown): string | null | undefined {
+  if (raw === undefined) return undefined;
+  return typeof raw === 'string' ? normalizeCurrencyCode(raw) : null;
+}
+
+type PartialListener = NonNullable<ExtractBoothInput['onPartial']>;
+
+/** Turns each call's streamed text into that call's partial items and currency. */
 class PartialItems {
-  private readonly perCall: WireItem[][];
+  private readonly items: WireItem[][];
+  private readonly currencies: Array<string | null | undefined>;
   private readonly scanned: number[];
-  private emitted = 0;
+  private readonly emittedCount: number[];
+  private readonly emittedCurrency: Array<string | null | undefined>;
 
   constructor(
-    calls: number,
-    private readonly onPartial: ((partial: PartialExtraction) => void) | undefined
+    private readonly calls: readonly CallInfo[],
+    private readonly listener: PartialListener | undefined
   ) {
-    this.perCall = Array.from({ length: calls }, () => []);
-    this.scanned = new Array<number>(calls).fill(0);
+    const n = calls.length;
+    this.items = Array.from({ length: n }, () => []);
+    this.currencies = new Array<string | null | undefined>(n).fill(undefined);
+    this.scanned = new Array<number>(n).fill(0);
+    this.emittedCount = new Array<number>(n).fill(0);
+    this.emittedCurrency = new Array<string | null | undefined>(n).fill(undefined);
   }
 
-  /** A retried call streams from scratch. */
+  /** A retried call streams from scratch; what was already reported stays. */
   reset(call: number): void {
-    this.perCall[call] = [];
+    this.items[call] = [];
     this.scanned[call] = 0;
   }
 
   update(call: number, text: string): void {
-    if (!this.onPartial) return;
+    if (!this.listener) return;
     const from = Math.min(this.scanned[call] ?? 0, text.length);
     this.scanned[call] = text.length;
-    // Items only complete when a closing brace arrives; skip other deltas.
-    if (text.indexOf('}', from) === -1) return;
-    this.perCall[call] = extractClosedItems(text)
-      .map(normalizeWireItem)
-      .filter((item): item is WireItem => item !== null);
-    const merged = mergeItems(this.perCall);
-    if (merged.length <= this.emitted) return;
-    this.emitted = merged.length;
+    // Once the currency is known, only a closing brace can complete an item.
+    if (this.currencies[call] !== undefined && text.indexOf('}', from) === -1) return;
+    const parsed = parsePartialWire(text);
+    const currency = streamedCurrency(parsed.currency);
+    if (currency !== undefined) this.currencies[call] = currency;
+    this.items[call] = dedupeItems(
+      parsed.items.map(normalizeWireItem).filter((item): item is WireItem => item !== null)
+    );
+    this.emit(call);
+  }
+
+  /** Reports a call answered from the cache in one go. */
+  complete(call: number, wire: WireExtraction): void {
+    this.items[call] = wire.items;
+    this.currencies[call] = wire.currency;
+    this.emit(call);
+  }
+
+  private emit(call: number): void {
+    const info = this.calls[call];
+    const items = this.items[call] ?? [];
+    const currency = this.currencies[call];
+    const grew = items.length > (this.emittedCount[call] ?? 0);
+    const newCurrency = currency !== undefined && currency !== this.emittedCurrency[call];
+    if (!info || (!grew && !newCurrency)) return;
+    this.emittedCount[call] = Math.max(items.length, this.emittedCount[call] ?? 0);
+    this.emittedCurrency[call] = currency;
     try {
-      this.onPartial({ items: merged.map(toExtractedItem) });
+      this.listener?.(
+        {
+          items: items.map(toExtractedItem),
+          ...(currency !== undefined ? { currency } : {}),
+        },
+        info
+      );
     } catch {
       // Partial updates are best effort; a UI callback bug must not fail extraction.
     }
@@ -214,12 +273,21 @@ async function readCache(
   }
 }
 
+/** One call's validated output, fresh or from the cache. */
+interface CallOutcome {
+  wire: WireExtraction;
+  model: string;
+  cached: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 /**
  * Re-validates a cache hit, since persistent stores can hold entries from an
  * older build or corrupted data: the entry must have the ExtractionResult
  * shape and pass validateWire with every item intact. Undefined means a miss.
  */
-function validCachedResult(entry: unknown, provider: ProviderId): ExtractionResult | undefined {
+function validCachedCall(entry: unknown): CallOutcome | undefined {
   const result = isRecord(entry) ? entry.result : undefined;
   if (!isRecord(result) || !isRecord(result.booth) || !isRecord(result.meta)) return undefined;
   const { booth, meta, items } = result;
@@ -248,14 +316,13 @@ function validCachedResult(entry: unknown, provider: ProviderId): ExtractionResu
   if (wire.items.length !== items.length) return undefined;
   const inputTokens = numberField(meta.inputTokens);
   const outputTokens = numberField(meta.outputTokens);
-  return toResult(wire, {
-    provider,
+  return {
+    wire,
     model: meta.model,
-    latencyMs: 0,
     cached: true,
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {}),
-  });
+  };
 }
 
 async function writeCache(
@@ -275,31 +342,45 @@ function sumDefined(values: ReadonlyArray<number | undefined>): number | undefin
   return defined.length === 0 ? undefined : defined.reduce((a, b) => a + b, 0);
 }
 
+/** One provider call of a run. */
+interface PlannedCall {
+  info: CallInfo;
+  request: ExtractionRequest;
+  /** Cache key over exactly what this call sends. */
+  key: string;
+}
+
 interface CallPlan {
   target: Target;
-  requests: ExtractionRequest[];
+  calls: readonly PlannedCall[];
   signal: AbortSignal | undefined;
-  onPartial: ExtractBoothInput['onPartial'];
+  partials: PartialItems;
+  cache: AnalysisCacheStore | undefined;
+  now: () => number;
   idleMs: number;
   totalMs: number;
   retryDelayMs: number;
 }
 
-/** Runs all calls in parallel; the first failure aborts the rest. */
-async function runCalls(plan: CallPlan): Promise<ProviderRawResult[]> {
-  const { target, requests, signal: caller } = plan;
+/**
+ * Runs the calls in parallel and caches each one as it succeeds; the first
+ * failure aborts the rest.
+ */
+async function runCalls(plan: CallPlan): Promise<CallOutcome[]> {
+  const { target, signal: caller } = plan;
+  const providerId = target.provider.id;
   const group = new AbortController();
   const onCallerAbort = () => group.abort(caller?.reason);
   if (caller?.aborted) onCallerAbort();
   else caller?.addEventListener('abort', onCallerAbort, { once: true });
-  const partials = new PartialItems(requests.length, plan.onPartial);
 
-  const runOne = async (request: ExtractionRequest, index: number): Promise<ProviderRawResult> => {
+  const runOne = async ({ info, request, key }: PlannedCall): Promise<CallOutcome> => {
+    const startedAt = plan.now();
     for (let attempt = 1; ; attempt++) {
-      partials.reset(index);
+      plan.partials.reset(info.index);
       const call = deadline(group.signal, plan.totalMs, plan.idleMs);
       try {
-        return await target.provider.extract(
+        const raw = await target.provider.extract(
           { ...request, signal: call.signal },
           {
             apiKey: target.apiKey,
@@ -307,24 +388,41 @@ async function runCalls(plan: CallPlan): Promise<ProviderRawResult[]> {
             signal: call.signal,
             onText: (text) => {
               call.touch();
-              partials.update(index, text);
+              plan.partials.update(info.index, text);
             },
           }
         );
+        const outcome: CallOutcome = {
+          wire: validateWire(raw.wire, providerId),
+          model: raw.model,
+          cached: false,
+          ...(raw.inputTokens !== undefined ? { inputTokens: raw.inputTokens } : {}),
+          ...(raw.outputTokens !== undefined ? { outputTokens: raw.outputTokens } : {}),
+        };
+        const result = toResult(outcome.wire, {
+          provider: providerId,
+          model: outcome.model,
+          latencyMs: plan.now() - startedAt,
+          cached: false,
+          ...(outcome.inputTokens !== undefined ? { inputTokens: outcome.inputTokens } : {}),
+          ...(outcome.outputTokens !== undefined ? { outputTokens: outcome.outputTokens } : {}),
+        });
+        await writeCache(plan.cache, key, { result, storedAt: plan.now() });
+        return outcome;
       } catch (error) {
-        const aiError = toAIError(error, target.provider.id, call.signal);
+        const aiError = toAIError(error, providerId, call.signal);
         if (attempt >= MAX_ATTEMPTS || !aiError.retryable || group.signal.aborted) throw aiError;
       } finally {
         call.dispose();
       }
-      await delay(plan.retryDelayMs * attempt, group.signal, target.provider.id);
+      await delay(plan.retryDelayMs * attempt, group.signal, providerId);
     }
   };
 
   try {
     return await Promise.all(
-      requests.map((request, index) =>
-        runOne(request, index).catch((error: unknown) => {
+      plan.calls.map((call) =>
+        runOne(call).catch((error: unknown) => {
           group.abort(new DOMException('Another extraction call failed', 'AbortError'));
           throw error;
         })
@@ -333,6 +431,30 @@ async function runCalls(plan: CallPlan): Promise<ProviderRawResult[]> {
   } finally {
     caller?.removeEventListener('abort', onCallerAbort);
   }
+}
+
+/**
+ * Cache key of one call: a hash of exactly the prompt it sends (system
+ * prompt, user content with any hints, tier) plus its image. Image-only
+ * calls carry no hints, so a changed event list or event currency only
+ * re-runs the text-bearing call.
+ */
+async function callKey(
+  target: Target,
+  language: AppLanguage,
+  tier: ModelTier,
+  request: ExtractionRequest
+): Promise<string> {
+  const promptHash = await sha256Hex(
+    JSON.stringify([systemPromptFor(language), buildUserContent(request.text, request.hints), tier])
+  );
+  return cacheKey(
+    target.provider.id,
+    target.model,
+    SCHEMA_VERSION,
+    promptHash,
+    request.images.map((image) => image.hash)
+  );
 }
 
 export async function extractBooth(
@@ -364,60 +486,84 @@ export async function extractBooth(
   }
   if (input.signal?.aborted) throw abortedError(input.signal, providerId);
   const { images, skipped } = prepared;
-  // Images that failed to load are dropped; fail only when nothing is left.
+  // Images that failed to load are dropped (the first one left carries the
+  // text); fail only when nothing is left.
   if (images.length === 0 && input.text.trim() === '') {
     throw prepared.firstError ?? new AIError('unknown', 'No image could be loaded', providerId);
   }
-  const skippedMeta = skipped.length > 0 ? { skippedImages: skipped } : {};
+  const skippedSet = new Set(skipped);
+  const loadedIndices = input.images.map((_, index) => index).filter((index) => !skippedSet.has(index));
 
-  const textHash = await sha256Hex(
-    JSON.stringify([
-      systemPromptFor(input.targetLanguage),
-      buildUserContent(input.text, input.hints),
-      settings.tier,
-    ])
+  const base = { targetLanguage: input.targetLanguage, tier: settings.tier };
+  const lead: ExtractionRequest = { ...base, text: input.text, images: [], hints: input.hints };
+  const requests: Array<{ info: CallInfo; request: ExtractionRequest }> =
+    images.length === 0
+      ? [{ info: { index: 0, imageIndex: null }, request: lead }]
+      : images.map((image, index) => ({
+          info: { index, imageIndex: loadedIndices[index] ?? index },
+          // Only the first call carries the text and the hints.
+          request: index === 0 ? { ...lead, images: [image] } : { ...base, text: '', images: [image] },
+        }));
+  const planned: PlannedCall[] = await Promise.all(
+    requests.map(async ({ info, request }) => ({
+      info,
+      request,
+      key: await callKey(target, input.targetLanguage, settings.tier, request),
+    }))
   );
-  const key = await cacheKey(
-    providerId,
-    target.model,
-    SCHEMA_VERSION,
-    textHash,
-    images.map((image) => image.hash)
+
+  const partials = new PartialItems(
+    planned.map((call) => call.info),
+    input.onPartial
   );
-  const cached = validCachedResult(await readCache(options.cache, key), providerId);
-  if (cached) {
-    // skippedImages describes this call's input, not the one that filled the cache.
-    return { ...cached, meta: { ...cached.meta, latencyMs: now() - startedAt, ...skippedMeta } };
+  const outcomes = new Array<CallOutcome | undefined>(planned.length);
+  if (!options.bypassCacheRead) {
+    const hits = await Promise.all(
+      planned.map(async (call) => validCachedCall(await readCache(options.cache, call.key)))
+    );
+    hits.forEach((hit, index) => {
+      if (!hit) return;
+      outcomes[index] = hit;
+      partials.complete(index, hit.wire);
+    });
+    if (input.signal?.aborted) throw abortedError(input.signal, providerId);
   }
 
-  const base = { targetLanguage: input.targetLanguage, tier: settings.tier, hints: input.hints };
-  const requests: ExtractionRequest[] =
-    images.length === 0
-      ? [{ ...base, text: input.text, images: [] }]
-      : images.map((image, index) => ({ ...base, text: index === 0 ? input.text : '', images: [image] }));
-
-  const results = await runCalls({
+  const misses = planned.filter((_, index) => outcomes[index] === undefined);
+  const fresh = await runCalls({
     target,
-    requests,
+    calls: misses,
     signal: input.signal,
-    onPartial: input.onPartial,
+    partials,
+    cache: options.cache,
+    now,
     idleMs: options.idleTimeoutMs ?? CALL_TIMEOUTS[settings.tier].idleMs,
     totalMs: options.callTimeoutMs ?? CALL_TIMEOUTS[settings.tier].totalMs,
     retryDelayMs: options.retryDelayMs ?? RETRY_DELAY_MS,
   });
-
-  const wire = mergeWire(results.map((r) => validateWire(r.wire, providerId)));
-  const inputTokens = sumDefined(results.map((r) => r.inputTokens));
-  const outputTokens = sumDefined(results.map((r) => r.outputTokens));
-  const result = toResult(wire, {
-    provider: providerId,
-    model: results[0]?.model ?? target.model,
-    latencyMs: now() - startedAt,
-    cached: false,
-    ...(inputTokens !== undefined ? { inputTokens } : {}),
-    ...(outputTokens !== undefined ? { outputTokens } : {}),
-    ...skippedMeta,
+  misses.forEach((call, index) => {
+    outcomes[call.info.index] = fresh[index];
   });
-  await writeCache(options.cache, key, { result, storedAt: now() });
-  return result;
+
+  const done = outcomes.filter((outcome): outcome is CallOutcome => outcome !== undefined);
+  const spent = done.filter((outcome) => !outcome.cached);
+  const inputTokens = sumDefined(spent.map((outcome) => outcome.inputTokens));
+  const outputTokens = sumDefined(spent.map((outcome) => outcome.outputTokens));
+  const calls: ExtractionCall[] = planned.map((call, index) => ({
+    imageIndex: call.info.imageIndex,
+    currency: outcomes[index]?.wire.currency ?? null,
+    items: (outcomes[index]?.wire.items ?? []).map(toExtractedItem),
+  }));
+  return {
+    ...toResult(mergeWire(done.map((outcome) => outcome.wire)), {
+      provider: providerId,
+      model: done[0]?.model ?? target.model,
+      latencyMs: now() - startedAt,
+      cached: done.every((outcome) => outcome.cached),
+      ...(inputTokens !== undefined ? { inputTokens } : {}),
+      ...(outputTokens !== undefined ? { outputTokens } : {}),
+      ...(skipped.length > 0 ? { skippedImages: skipped } : {}),
+    }),
+    calls,
+  };
 }

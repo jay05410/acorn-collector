@@ -5,6 +5,7 @@ import {
   CALL_TIMEOUTS,
   extractBooth,
   resolveTarget,
+  type CallInfo,
   type ExtractBoothInput,
   type ExtractBoothOptions,
 } from './engine';
@@ -229,8 +230,65 @@ describe('extractBooth', () => {
 
   it('measures latency with the injected clock', async () => {
     let t = 1000;
-    const result = await extractBooth(input(), options({ now: () => (t += 250) }));
+    useProvider(async () => {
+      t += 250;
+      return ok(wire());
+    });
+    const result = await extractBooth(input(), options({ now: () => t }));
     expect(result.meta.latencyMs).toBe(250);
+  });
+
+  it('returns each call with its own image index, currency and items next to the merge', async () => {
+    useProvider(async (req) =>
+      req.text !== ''
+        ? ok(wire({ currency: 'KRW', items: [item('Keyring', 5000), item('Sticker', 1500)] }))
+        : ok(wire({ currency: 'JPY', items: [item('Keyring', 5000), item('Book', 800)] }))
+    );
+    const result = await extractBooth(input({ images: [image(1), image(2)] }), options());
+    expect(result.calls).toEqual([
+      {
+        imageIndex: 0,
+        currency: 'KRW',
+        items: [
+          expect.objectContaining({ name: 'Keyring', price: 5000 }),
+          expect.objectContaining({ name: 'Sticker', price: 1500 }),
+        ],
+      },
+      {
+        imageIndex: 1,
+        currency: 'JPY',
+        items: [
+          expect.objectContaining({ name: 'Keyring', price: 5000 }),
+          expect.objectContaining({ name: 'Book', price: 800 }),
+        ],
+      },
+    ]);
+    // The merge is unchanged: one currency, items deduped by name and price.
+    expect(result.currency).toBe('KRW');
+    expect(result.items.map((i) => i.name)).toEqual(['Keyring', 'Sticker', 'Book']);
+  });
+
+  it('reports a text-only call with a null image index', async () => {
+    useProvider(async () => ok(wire({ currency: 'TWD', items: [item('Tape', 90)] })));
+    const result = await extractBooth(input(), options());
+    expect(result.calls).toEqual([
+      { imageIndex: null, currency: 'TWD', items: [expect.objectContaining({ name: 'Tape' })] },
+    ]);
+  });
+
+  it('skips a failing first image without post text and analyzes the others', async () => {
+    stubImageFetch();
+    useProvider(async (_req, _opts, call) =>
+      ok(wire({ currency: 'JPY', items: [item(`Item ${call}`, 100 * (call + 1))] }))
+    );
+    const result = await extractBooth(
+      input({ text: '', images: ['https://x.test/missing.jpg', image(1), image(2)] }),
+      options()
+    );
+    expect(provider.calls).toHaveLength(2);
+    expect(result.meta.skippedImages).toEqual([0]);
+    expect(result.calls?.map((c) => c.imageIndex)).toEqual([1, 2]);
+    expect(result.items).toHaveLength(2);
   });
 
   describe('cache', () => {
@@ -243,6 +301,85 @@ describe('extractBooth', () => {
       expect(first.meta.cached).toBe(false);
       expect(second.meta.cached).toBe(true);
       expect(second.items).toEqual(first.items);
+    });
+
+    it('caches each call, so image-only calls still hit after the hints change', async () => {
+      const cache = createMemoryCacheStore();
+      useProvider(async (req) => ok(wire({ currency: 'JPY', items: [item(`n${req.images.length}`, 1)] })));
+      const images = [image(1), image(2), image(3)];
+      await extractBooth(input({ images, hints: { eventNames: ['SCW'], defaultCurrency: 'KRW' } }), options({ cache }));
+      expect(provider.calls).toHaveLength(3);
+      // Image-only calls carry neither the text nor the hints.
+      expect(provider.calls.map((c) => c.req.hints)).toEqual([
+        { eventNames: ['SCW'], defaultCurrency: 'KRW' },
+        undefined,
+        undefined,
+      ]);
+
+      // A new event and another event currency: only the text-bearing call runs again.
+      const again = await extractBooth(
+        input({ images, hints: { eventNames: ['SCW', 'Comic World'], defaultCurrency: 'JPY' } }),
+        options({ cache })
+      );
+      expect(provider.calls).toHaveLength(4);
+      expect(provider.calls[3]?.req.text).toBe('Booth A-01 price list');
+      expect(again.meta.cached).toBe(false);
+      expect(again.calls).toHaveLength(3);
+
+      const same = await extractBooth(
+        input({ images, hints: { eventNames: ['SCW', 'Comic World'], defaultCurrency: 'JPY' } }),
+        options({ cache })
+      );
+      expect(provider.calls).toHaveLength(4);
+      expect(same.meta.cached).toBe(true);
+    });
+
+    it('reports cached calls through onPartial at once', async () => {
+      const cache = createMemoryCacheStore();
+      useProvider(async () => ok(wire({ currency: 'JPY', items: [item('Book', 800)] })));
+      await extractBooth(input({ images: [image(1)] }), options({ cache }));
+      const updates: Array<[PartialExtraction, CallInfo]> = [];
+      await extractBooth(
+        input({ images: [image(1)], onPartial: (partial, call) => updates.push([partial, call]) }),
+        options({ cache })
+      );
+      expect(updates).toEqual([
+        [{ currency: 'JPY', items: [expect.objectContaining({ name: 'Book' })] }, { index: 0, imageIndex: 0 }],
+      ]);
+    });
+
+    it('skips cache reads on request but still stores the fresh result', async () => {
+      const store = createMemoryCacheStore();
+      const cache: AnalysisCacheStore = { get: vi.fn(store.get), set: vi.fn(store.set) };
+      await extractBooth(input(), options({ cache }));
+      vi.mocked(cache.get).mockClear();
+      vi.mocked(cache.set).mockClear();
+      useProvider(async () => ok(wire({ items: [item('Fresh', 1)] })));
+      const fresh = await extractBooth(input(), options({ cache, bypassCacheRead: true }));
+      expect(fresh.meta.cached).toBe(false);
+      expect(fresh.items.map((i) => i.name)).toEqual(['Fresh']);
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(cache.set).toHaveBeenCalledTimes(1);
+      // The next normal read gets the fresh answer.
+      const next = await extractBooth(input(), options({ cache }));
+      expect(next.meta.cached).toBe(true);
+      expect(next.items.map((i) => i.name)).toEqual(['Fresh']);
+    });
+
+    it('keeps the calls that finished when another call fails, for the retry', async () => {
+      const cache = createMemoryCacheStore();
+      let failSecond = true;
+      useProvider(async (req) => {
+        if (req.text === '' && failSecond) throw new AIError('auth', 'bad key', 'openai', 401);
+        return ok(wire({ items: [item(req.text === '' ? 'Second' : 'First', 1)] }));
+      });
+      const images = [image(1), image(2)];
+      await expect(extractBooth(input({ images }), options({ cache }))).rejects.toMatchObject({ code: 'auth' });
+      failSecond = false;
+      const calls = provider.calls.length;
+      const retried = await extractBooth(input({ images }), options({ cache }));
+      expect(provider.calls.length - calls).toBe(1);
+      expect(retried.items.map((i) => i.name)).toEqual(['First', 'Second']);
     });
 
     it('misses when the language, hints, tier, model or image change', async () => {
@@ -511,32 +648,51 @@ describe('extractBooth', () => {
   });
 
   describe('partial streaming', () => {
-    const full = (items: WireItem[]) => JSON.stringify(wire({ currency: 'KRW', items }));
+    const full = (items: WireItem[], currency: string | null = 'KRW') =>
+      JSON.stringify(wire({ currency, items }));
 
     function streamText(opts: ProviderCallOptions, text: string, step = 5) {
       for (let i = step; i < text.length + step; i += step) opts.onText?.(text.slice(0, i));
     }
 
-    it('emits merged items across calls as their count grows', async () => {
-      const perCall = [
-        [item('Keyring', 5000, ['A']), item('Sticker', 1500)],
-        [item('keyring', 5000, ['B']), item('Postcard', 2000)],
+    it("reports each call's own items with its currency, as they grow", async () => {
+      const perCall: Array<[WireItem[], string]> = [
+        [[item('Keyring', 5000, ['A']), item('Sticker', 1500)], 'KRW'],
+        [[item('keyring', 5000, ['B']), item('Postcard', 2000)], 'JPY'],
       ];
       useProvider(async (_req, opts, call) => {
-        const items = perCall[call] ?? [];
-        streamText(opts, full(items));
-        return ok(wire({ items }));
+        const [items, currency] = perCall[call] ?? [[], 'KRW'];
+        streamText(opts, full(items, currency));
+        return ok(wire({ currency, items }));
       });
-      const updates: PartialExtraction[] = [];
+      const updates: Array<[PartialExtraction, CallInfo]> = [];
       const result = await extractBooth(
-        input({ images: [image(1), image(2)], onPartial: (p) => updates.push(p) }),
+        input({ images: [image(1), image(2)], onPartial: (p, call) => updates.push([p, call]) }),
         options()
       );
-      const counts = updates.map((u) => u.items.length);
-      expect(counts).toEqual([...counts].sort((a, b) => a - b));
-      expect(new Set(counts).size).toBe(counts.length);
-      expect(updates.at(-1)?.items.map((i) => i.name)).toEqual(['Keyring', 'Sticker', 'Postcard']);
+      for (const index of [0, 1]) {
+        const mine = updates.filter(([, call]) => call.index === index);
+        expect(mine.every(([, call]) => call.imageIndex === index)).toBe(true);
+        // The currency comes first (the schema writes it before the items).
+        expect(mine[0]?.[0]).toEqual({ items: [], currency: index === 0 ? 'KRW' : 'JPY' });
+        expect(mine.map(([p]) => p.items.length)).toEqual([0, 1, 2]);
+        expect(mine.every(([p]) => p.currency === (index === 0 ? 'KRW' : 'JPY'))).toBe(true);
+      }
+      const last = (index: number) => updates.filter(([, call]) => call.index === index).at(-1)?.[0];
+      expect(last(0)?.items.map((i) => i.name)).toEqual(['Keyring', 'Sticker']);
+      expect(last(1)?.items.map((i) => i.name)).toEqual(['keyring', 'Postcard']);
       expect(result.items).toHaveLength(3);
+    });
+
+    it('reports a null currency once it has arrived', async () => {
+      useProvider(async (_req, opts) => {
+        streamText(opts, full([item('Free zine', 0)], null), 1);
+        return ok(wire({ items: [item('Free zine', 0)] }));
+      });
+      const updates: PartialExtraction[] = [];
+      await extractBooth(input({ onPartial: (p) => updates.push(p) }), options());
+      expect(updates[0]).toEqual({ items: [], currency: null });
+      expect(updates.at(-1)).toEqual({ items: [expect.objectContaining({ name: 'Free zine' })], currency: null });
     });
 
     it('does not re-emit stale counts after a retry restarts a stream', async () => {
@@ -550,7 +706,8 @@ describe('extractBooth', () => {
       });
       const counts: number[] = [];
       await extractBooth(input({ onPartial: (p) => counts.push(p.items.length) }), options());
-      expect(counts).toEqual([1, 2]);
+      // The first update carries only the currency.
+      expect(counts).toEqual([0, 1, 2]);
     });
 
     it('survives a throwing onPartial callback', async () => {

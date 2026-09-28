@@ -20,9 +20,7 @@ export default defineMessages({
     openForm: 'Open Order Form',
     openFormNumbered: 'Open Order Form {index}',
     openSource: 'Open Original Post',
-    autoParsed: 'Auto-filled (confidence {confidence}%)',
     source: 'Source: {url}',
-    itemsAfterSaveHint: '💡 Add items from the booth details after saving',
   },
   ko: {
     title: '부스',
@@ -43,9 +41,7 @@ export default defineMessages({
     openForm: '판매폼 열기',
     openFormNumbered: '판매폼 열기 {index}',
     openSource: '원본 게시글 열기',
-    autoParsed: '자동 파싱됨 (정확도: {confidence}%)',
     source: '원본: {url}',
-    itemsAfterSaveHint: '💡 상품은 저장 후 부스 상세에서 직접 추가해주세요',
   },
   ja: {
     title: 'ブース',
@@ -66,9 +62,7 @@ export default defineMessages({
     openForm: '通販フォームを開く',
     openFormNumbered: '通販フォームを開く {index}',
     openSource: '元の投稿を開く',
-    autoParsed: '自動入力済み（精度：{confidence}%）',
     source: '元の投稿：{url}',
-    itemsAfterSaveHint: '💡 商品は保存後、ブース詳細から追加してください',
   },
   'zh-CN': {
     title: '展位',
@@ -89,9 +83,7 @@ export default defineMessages({
     openForm: '打开订单表单',
     openFormNumbered: '打开订单表单 {index}',
     openSource: '打开原帖',
-    autoParsed: '已自动填写（准确度：{confidence}%）',
     source: '来源：{url}',
-    itemsAfterSaveHint: '💡 保存后请在展位详情中添加商品',
   },
   'zh-TW': {
     title: '攤位',
@@ -112,8 +104,6 @@ export default defineMessages({
     openForm: '開啟訂購表單',
     openFormNumbered: '開啟訂購表單 {index}',
     openSource: '開啟原始貼文',
-    autoParsed: '已自動填入（準確度：{confidence}%）',
     source: '來源：{url}',
-    itemsAfterSaveHint: '💡 請在儲存後，到攤位詳細頁面新增商品',
   },
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractClosedItems } from './partial-json';
+import { extractClosedItems, parsePartialWire } from './partial-json';
 
 const FULL = JSON.stringify({
   booth: { number: 'A-1', circle: 'x { "items": [ {', event: null, zone: null, mailOrder: false },
@@ -37,5 +37,31 @@ describe('extractClosedItems', () => {
   it('returns nothing for non-JSON text', () => {
     expect(extractClosedItems('')).toEqual([]);
     expect(extractClosedItems('I cannot help with that.')).toEqual([]);
+  });
+});
+
+describe('parsePartialWire', () => {
+  it('surfaces the currency as soon as its value is complete, before any item', () => {
+    const currencyEnd = FULL.indexOf('"JPY"') + '"JPY"'.length;
+    for (let cut = 0; cut <= FULL.length; cut++) {
+      const { currency } = parsePartialWire(FULL.slice(0, cut));
+      expect(currency, `prefix length ${cut}`).toBe(cut >= currencyEnd ? 'JPY' : undefined);
+    }
+    expect(parsePartialWire(FULL.slice(0, currencyEnd)).items).toEqual([]);
+  });
+
+  it('reads a null currency once the value is followed by the next key', () => {
+    const json = '{"booth":{"number":null},"currency":null,"items":[{"name":"a"}';
+    expect(parsePartialWire(json)).toEqual({ currency: null, items: [{ name: 'a' }] });
+    expect(parsePartialWire('{"booth":{},"currency":nu').currency).toBeUndefined();
+    expect(parsePartialWire('{"booth":{},"currency":null').currency).toBeUndefined();
+  });
+
+  it('ignores a currency key inside the booth or an item, and handles whitespace', () => {
+    const json = '{"booth":{"currency":"KRW"},"items":[{"name":"x","currency":"USD"}';
+    expect(parsePartialWire(json).currency).toBeUndefined();
+    const pretty = JSON.stringify(JSON.parse(FULL), null, 2);
+    expect(parsePartialWire(pretty).currency).toBe('JPY');
+    expect(parsePartialWire('{ "currency" : "TWD" }').currency).toBe('TWD');
   });
 });

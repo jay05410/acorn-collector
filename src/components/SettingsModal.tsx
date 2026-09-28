@@ -127,7 +127,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-(--z-overlay) animate-fadeIn"
       onClick={handleBackdropClick}
     >
       <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md mx-4 animate-slideUp">

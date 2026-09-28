@@ -24,10 +24,12 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useUIStore } from '@/stores/useUIStore';
 import { t, tp, useLanguage } from '@/i18n';
+import type { AppSettings } from '@/lib/settings-types';
 import type { Booth } from '@/types';
 
 interface BoothDetailProps {
   boothId: string;
+  settings?: AppSettings | null;
   onOpenSettings?: () => void;
 }
 
@@ -39,7 +41,7 @@ function hostnameOf(url: string): string | null {
   }
 }
 
-export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
+export function BoothDetail({ boothId, settings = null, onOpenSettings }: BoothDetailProps) {
   useLanguage();
   const { booth, isLoading } = useBooth(boothId);
   const { updateBooth, deleteBooth } = useBooths(booth?.eventId || '');
@@ -183,7 +185,9 @@ export function BoothDetail({ boothId, onOpenSettings }: BoothDetailProps) {
       <ItemChecklist
         boothId={boothId}
         imageUrls={booth.imageUrls}
+        sourceText={booth.sourceText}
         currency={event?.currency ?? null}
+        settings={settings}
         onOpenSettings={onOpenSettings}
       />
 

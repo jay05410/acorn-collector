@@ -64,6 +64,15 @@ async function emit(value: CaptureHandoff) {
   });
 }
 
+/** Types into a controlled input the way React listens for it. */
+function type(input: HTMLInputElement, value: string) {
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  act(() => {
+    setValue?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
 function inputValues(): string[] {
   return [...document.querySelectorAll('input')].map((input) => input.value);
 }
@@ -89,14 +98,51 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('side panel capture adapter', () => {
-  it("opens the add form prefilled from this window's capture and consumes it", async () => {
+function dialog(): HTMLElement | null {
+  return document.querySelector('[role="dialog"]');
+}
+
+describe('side panel capture review', () => {
+  it("opens the review sheet prefilled from this window's capture and keeps the handoff until dismissed", async () => {
     await emit(handoff(3));
     await vi.waitFor(() => expect(inputValues()).toContain('A-12'));
-    expect(inputValues()).toEqual(
-      expect.arrayContaining(['A-12', 'Circle Acorn', 'https://forms.example.org/f1'])
-    );
+    expect(inputValues()).toEqual(expect.arrayContaining(['A-12', 'Circle Acorn']));
+    expect(dialog()?.textContent).toContain('forms.example.org');
+    // Opening does not consume the capture: reopening the panel shows it again.
+    expect(sessionRemove).not.toHaveBeenCalled();
+
+    const close = dialog()?.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+    await act(async () => close?.click());
     await vi.waitFor(() => expect(sessionRemove).toHaveBeenCalledWith(CAPTURE_HANDOFF_KEY));
+    expect(dialog()).toBeNull();
+  });
+
+  it('keeps the review sheet and its edits under Settings, then gives them back', async () => {
+    await emit(handoff(3));
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain('Connect AI'));
+    const boothNumber = [...document.querySelectorAll('input')].find((input) => input.value === 'A-12');
+    type(boothNumber!, 'B-34');
+    expect(inputValues()).toContain('B-34');
+
+    const connect = [...(dialog()?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === 'Connect AI'
+    );
+    await act(async () => connect?.click());
+    // Settings cover the sheet, which stays mounted but inert.
+    expect(document.body.textContent).toContain('Settings');
+    expect(dialog()).not.toBeNull();
+    expect(dialog()?.closest('[inert]')).not.toBeNull();
+    // The capture is kept while Settings is open.
+    expect(sessionRemove).not.toHaveBeenCalled();
+
+    const closeSettings = [
+      ...document.querySelectorAll<HTMLButtonElement>('button[aria-label="Close"]'),
+    ].find((button) => button.closest('[inert]') === null);
+    await act(async () => closeSettings?.click());
+    expect(dialog()?.closest('[inert]')).toBeNull();
+    expect(inputValues()).toContain('B-34');
+    expect(inputValues()).not.toContain('A-12');
+    expect(sessionRemove).not.toHaveBeenCalled();
   });
 
   it("ignores another window's capture", async () => {
