@@ -13,6 +13,7 @@ import errors from './messages/errors';
 import events from './messages/events';
 import exportMessages from './messages/export';
 import items from './messages/items';
+import review from './messages/review';
 import settings from './messages/settings';
 import support from './messages/support';
 import themes from './messages/themes';
@@ -30,6 +31,7 @@ export const namespaces = {
   events,
   export: exportMessages,
   items,
+  review,
   settings,
   support,
   themes,
