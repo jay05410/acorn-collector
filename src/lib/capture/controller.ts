@@ -283,12 +283,19 @@ export function createCaptureController(deps: CaptureControllerDeps) {
   ): boolean {
     if (!isCaptureRequestMessage(message)) return false;
     if (sender.id !== api.runtime.id || sender.tab) return false;
-    onPanelRequest(message)
+    void onPanelRequest(message)
       .catch((error: unknown): CaptureRequestResponse => {
         warn('[acorn] capture request failed', error);
         return { ok: false, code: 'unsupported-page' };
       })
-      .then(sendResponse);
+      .then((response) => {
+        try {
+          sendResponse(response);
+        } catch (error) {
+          // The panel closed before the capture finished.
+          warn('[acorn] capture response not delivered', error);
+        }
+      });
     return true;
   }
 

@@ -269,6 +269,18 @@ describe('side panel request', () => {
     expect(api.sidePanel.open).not.toHaveBeenCalled();
   });
 
+  it('survives a panel that closed before the response', async () => {
+    const { controller, warn } = setup({ replies: [result(pageSnapshot({ site: 'x', url: 'https://x.com/a' }))] });
+    const sendResponse = vi.fn(() => {
+      throw new Error('The message port closed before a response was received.');
+    });
+    controller.onRuntimeMessage({ type: 'acorn:request-capture' }, extensionPage, sendResponse);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(
+      '[acorn] capture response not delivered',
+      expect.any(Error)
+    ));
+  });
+
   it('rejects requests from content scripts and unrelated messages', () => {
     const { controller } = setup();
     const sendResponse = vi.fn();
