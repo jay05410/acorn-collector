@@ -1,6 +1,8 @@
 /**
  * Deterministic merge of per-image extraction calls. Results must be passed
- * in call order: call #1 carries the post text, so its booth fields win.
+ * in call order: call #1 carries the post text, so its booth fields and its
+ * currency win when set; otherwise the currency is the majority of the other
+ * calls (ties go to the earliest call).
  */
 import { dedupeItems, type WireBooth, type WireItem } from './schema';
 import type { WireExtraction } from './types';
@@ -46,7 +48,7 @@ export function mergeWire(results: readonly WireExtraction[]): WireExtraction {
       zone: firstNonNull(results, 'zone'),
       mailOrder: results.some((r) => r.booth.mailOrder),
     },
-    currency: mostFrequent(results.map((r) => r.currency)),
+    currency: results[0]?.currency ?? mostFrequent(results.slice(1).map((r) => r.currency)),
     items: mergeItems(results.map((r) => r.items)),
   };
 }

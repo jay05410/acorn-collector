@@ -153,6 +153,8 @@ describe('validateWire', () => {
   it('rejects invalid currency codes and missing booth', () => {
     const wire = validateWire({ currency: '원', items: [] });
     expect(wire.currency).toBeNull();
+    expect(validateWire({ currency: 392, items: [] }).currency).toBeNull();
+    expect(validateWire({ currency: ' jpy ', items: [] }).currency).toBe('JPY');
     expect(wire.booth).toEqual({
       number: null,
       circle: null,

@@ -33,10 +33,32 @@ export const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
 const APP_URL = 'https://github.com/jay05410/acorn-collector';
 const APP_TITLE = 'Acorn Collector';
 
+/**
+ * Typed error codes (https://openrouter.ai/docs/api-reference/errors) that can
+ * arrive as a string `error.code` in mid-stream error chunks (the streaming
+ * docs show `"code":"server_error"`) or as `metadata.error_type`.
+ */
+const TYPED_ERROR_CODES: Readonly<Record<string, AIErrorCode>> = {
+  rate_limit_exceeded: 'rate_limit',
+  timeout: 'timeout',
+  server: 'unavailable',
+  server_error: 'unavailable',
+  provider_overloaded: 'unavailable',
+  provider_unavailable: 'unavailable',
+  unmapped: 'unavailable',
+  content_policy_violation: 'refused',
+  refusal: 'refused',
+};
+
 export function classifyOpenRouterError(info: ProviderErrorInfo): AIErrorCode {
   // 403 is also used for moderation blocks, which carry metadata.reasons.
-  if (info.status === 403 && info.metadata && 'reasons' in info.metadata) return 'refused';
-  return classifyStatus(info.status);
+  const moderated = info.metadata !== undefined && 'reasons' in info.metadata;
+  if (moderated && (info.status === 403 || info.status === undefined)) return 'refused';
+  if (info.status !== undefined) return classifyStatus(info.status);
+  const typed = [info.code, stringField(info.metadata?.error_type)]
+    .map((code) => (code === undefined ? undefined : TYPED_ERROR_CODES[code]))
+    .find((code) => code !== undefined);
+  return typed ?? 'unknown';
 }
 
 function headers(apiKey: string): HeadersInit {
@@ -93,10 +115,18 @@ export function applyOpenRouterChunk(
   apiKey: string,
   onText?: (textSoFar: string) => void
 ): void {
+  const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : undefined;
   if (isRecord(chunk.error)) {
-    // Mid-stream failures arrive as HTTP 200 chunks carrying {error: {code, message}}.
+    // Mid-stream failures arrive as HTTP 200 chunks carrying {error: {code, message}}
+    // and finish_reason 'error'; the code is an HTTP status or a string.
     const info = errorInfoFromBody(chunk, undefined, apiKey);
-    throw new AIError(classifyOpenRouterError(info), info.message, 'openrouter', info.status);
+    let code = classifyOpenRouterError(info);
+    // An unrecognized string code that ends the stream is an upstream failure,
+    // retryable like finish_reason 'error' without an error object.
+    if (code === 'unknown' && info.status === undefined && isRecord(choice) && choice.finish_reason === 'error') {
+      code = 'unavailable';
+    }
+    throw new AIError(code, info.message, 'openrouter', info.status);
   }
   state.model = stringField(chunk.model) ?? state.model;
   const usage = recordField(chunk, 'usage');
@@ -104,7 +134,6 @@ export function applyOpenRouterChunk(
     state.inputTokens = numberField(usage.prompt_tokens) ?? state.inputTokens;
     state.outputTokens = numberField(usage.completion_tokens) ?? state.outputTokens;
   }
-  const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : undefined;
   if (!isRecord(choice)) return;
   const delta = recordField(choice, 'delta');
   const refusal = stringField(delta?.refusal);

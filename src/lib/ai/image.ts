@@ -158,27 +158,55 @@ export async function prepareImage<T extends DecodedImage = ImageBitmap>(
   };
 }
 
-/** Prepares images with bounded concurrency, preserving input order. */
+export interface PreparedImages {
+  /** Prepared images in input order, without the skipped ones. */
+  images: ImageInput[];
+  /** Input indices that could not be downloaded or decoded, ascending. */
+  skipped: number[];
+  /** Failure of the lowest skipped index; set whenever `skipped` is non-empty. */
+  firstError?: AIError;
+}
+
+/**
+ * Prepares images with bounded concurrency, preserving input order. An image
+ * that fails to download, decode or encode (including a timeout of `signal`)
+ * is skipped instead of failing the batch. Cancellation (`signal` aborting for
+ * any other reason) aborts in-flight downloads, starts no new work and rejects
+ * with AIError('cancelled').
+ */
 export async function prepareImages<T extends DecodedImage = ImageBitmap>(
   sources: ReadonlyArray<string | Blob>,
   options: PrepareImageOptions<T>
-): Promise<ImageInput[]> {
-  const results: ImageInput[] = new Array<ImageInput>(sources.length);
+): Promise<PreparedImages> {
+  const { signal } = options;
+  const prepared = new Array<ImageInput | undefined>(sources.length);
+  const errors = new Array<AIError | undefined>(sources.length);
+  const cancelled = () => signal?.aborted === true && abortedError(signal).code === 'cancelled';
   let next = 0;
-  let failed = false;
   const worker = async () => {
-    while (!failed && next < sources.length) {
+    while (next < sources.length && !cancelled()) {
       const index = next++;
       const source = sources[index];
       if (source === undefined) continue;
       try {
-        results[index] = await prepareImage(source, options);
+        prepared[index] = await prepareImage(source, options);
       } catch (error) {
-        failed = true;
-        throw error;
+        errors[index] = toAIError(error, undefined, signal);
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, sources.length) }, worker));
-  return results;
+  if (signal && cancelled()) throw abortedError(signal);
+
+  const result: PreparedImages = { images: [], skipped: [] };
+  for (let index = 0; index < sources.length; index++) {
+    const image = prepared[index];
+    if (image) {
+      result.images.push(image);
+      continue;
+    }
+    result.skipped.push(index);
+    result.firstError ??= errors[index] ?? new AIError('unknown', 'The image could not be prepared');
+  }
+  return result;
 }

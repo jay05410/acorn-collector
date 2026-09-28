@@ -3,6 +3,8 @@
  * untrusted model output into a clean `WireExtraction` and then into the
  * app-facing `ExtractionResult`.
  */
+// The submodule, not '@/i18n': the barrel pulls in React.
+import { normalizeCurrencyCode } from '@/i18n/format';
 import { ITEM_CATEGORIES, type ItemCategory } from '@/types';
 import { isRecord } from './guards';
 import {
@@ -100,7 +102,6 @@ export function wireSchema(style: SchemaStyle): JsonSchema {
 const CATEGORY_SET: ReadonlySet<string> = new Set(ITEM_CATEGORIES);
 const GROUPED_THOUSANDS = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
 const PLAIN_NUMBER = /^\d+(?:\.\d+)?$/;
-const CURRENCY_CODE = /^[A-Z]{3}$/;
 
 function cleanString(value: unknown): string | null {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -124,8 +125,7 @@ function coerceCategory(value: unknown): ItemCategory {
 }
 
 function coerceCurrency(value: unknown): string | null {
-  const code = cleanString(value)?.toUpperCase() ?? null;
-  return code !== null && CURRENCY_CODE.test(code) ? code : null;
+  return typeof value === 'string' ? normalizeCurrencyCode(value) : null;
 }
 
 function uniqueStrings(values: Iterable<string>): string[] {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MODEL_TABLE, SELECTABLE_MODELS } from '../models';
+import type { AIError } from '../types';
 import { WIRE_SCHEMA, WIRE_SCHEMA_ANY_OF } from '../schema';
 import {
   extractionRequest,
@@ -127,17 +128,31 @@ describe('openrouterProvider.extract', () => {
     expect((error as Error).message).not.toContain(KEY);
   });
 
-  it('maps mid-stream error chunks (HTTP 200) by their code', async () => {
+  it.each([
+    [{ code: 502, message: 'Upstream died', metadata: { error_type: 'provider_error' } }, 'unavailable', true],
+    // String codes, as in OpenRouter's streaming docs.
+    [{ code: 'server_error', message: 'Provider disconnected unexpectedly' }, 'unavailable', true],
+    [{ code: 'provider_overloaded', message: 'Overloaded' }, 'unavailable', true],
+    [{ code: 'some_new_upstream_error', message: 'Upstream failed' }, 'unavailable', true],
+    [{ code: 'timeout', message: 'Provider timed out' }, 'timeout', true],
+    [{ code: 'rate_limit_exceeded', message: 'Slow down' }, 'rate_limit', true],
+    [{ code: 403, message: 'Flagged', metadata: { reasons: ['violence'], flagged_input: 'x' } }, 'refused', false],
+    [{ code: 'content_policy_violation', message: 'Flagged' }, 'refused', false],
+    [{ code: 'moderation', message: 'Flagged', metadata: { reasons: ['violence'] } }, 'refused', false],
+    [{ code: 400, message: 'Too long', metadata: { error_type: 'context_length_exceeded' } }, 'unknown', false],
+  ])('maps the mid-stream error chunk %j to %s', async (error, code, retryable) => {
     const errorChunk = `data: ${JSON.stringify({
       id: 'gen-1',
       object: 'chat.completion.chunk',
-      error: { code: 502, message: 'Upstream died', metadata: { error_type: 'provider_error' } },
+      error,
       choices: [{ index: 0, delta: { content: '' }, finish_reason: 'error' }],
     })}\n\n`;
     mockFetch(() => sseResponse(chatTranscript('{"booth"', { finish: null, tail: errorChunk })));
-    await expect(
-      openrouterProvider.extract(extractionRequest(), { apiKey: KEY, model: FAST })
-    ).rejects.toMatchObject({ code: 'unavailable', status: 502, retryable: true });
+    const failure = await openrouterProvider
+      .extract(extractionRequest(), { apiKey: KEY, model: FAST })
+      .catch((e: unknown) => e);
+    expect(failure).toMatchObject({ name: 'AIError', code, retryable, message: error.message });
+    expect((failure as AIError).status).toBe(typeof error.code === 'number' ? error.code : undefined);
   });
 
   it('maps finish reasons length, content_filter and refusals', async () => {
@@ -162,6 +177,15 @@ describe('openrouterProvider.extract', () => {
     const result = await openrouterProvider.extract(extractionRequest(), { apiKey: KEY, model: FAST });
     expect(result.wire.items).toHaveLength(2);
     expect(result.inputTokens).toBeUndefined();
+  });
+
+  it('treats a final chunk cut before its blank line as a retryable network error', async () => {
+    const complete = chatTranscript(WIRE_JSON, { tail: '' });
+    // The finish chunk arrives without its terminating blank line.
+    mockFetch(() => sseResponse(complete.slice(0, -2)));
+    await expect(
+      openrouterProvider.extract(extractionRequest(), { apiKey: KEY, model: FAST })
+    ).rejects.toMatchObject({ code: 'network', retryable: true });
   });
 
   it('treats a stream cut before any finish as network, and aborts as cancelled', async () => {

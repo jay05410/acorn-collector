@@ -44,12 +44,18 @@ export class SSEParser {
     return out;
   }
 
-  /** Flushes at end of stream, dispatching a final event without its blank line. */
+  /**
+   * Ends the stream. A trailing CR held back by push() still ends its line,
+   * but an unterminated line and an event without its blank line are
+   * discarded (WHATWG: incomplete events are not dispatched at end of file),
+   * so a truncated stream is reported as ended early, not as a short event.
+   */
   end(): SSEMessage[] {
     const out: SSEMessage[] = [];
-    if (this.buffer !== '') this.processLine(this.buffer.replace(/\r$/, ''), out);
+    if (this.buffer.endsWith('\r')) this.processLine(this.buffer.slice(0, -1), out);
     this.buffer = '';
-    this.dispatch(out);
+    this.dataLines = [];
+    this.eventName = '';
     return out;
   }
 

@@ -92,14 +92,31 @@ export async function exchangeCode({ code, verifier, signal }: ExchangeCodeOptio
 
 /**
  * Accepts a bare code or anything containing `code=` (a pasted callback URL),
- * trimming whitespace. Returns null when nothing usable is found.
+ * trimming whitespace. Returns null when nothing usable is found, including
+ * malformed percent-encoding.
  */
 export function parseAuthCode(input: string): string | null {
   const trimmed = input.trim();
   if (trimmed === '') return null;
   const match = /[?&#]code=([^&#\s]+)/.exec(trimmed);
-  if (match?.[1]) return decodeURIComponent(match[1]);
+  if (match?.[1]) {
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return null; // URIError: e.g. "%E0%A4%A" or "%ZZ" in a mangled paste.
+    }
+  }
   return /^[\w.~-]+$/.test(trimmed) ? trimmed : null;
+}
+
+/** The `code` query parameter of the web auth flow's final redirect URL. */
+function codeFromRedirect(responseUrl: string | undefined): string | null {
+  if (!responseUrl) return null;
+  try {
+    return new URL(responseUrl).searchParams.get('code');
+  } catch {
+    throw new AIError('bad_response', 'OpenRouter redirected to an invalid URL', 'openrouter');
+  }
 }
 
 /** The chrome.identity subset used here (injectable for tests). */
@@ -145,7 +162,7 @@ export async function connectWithRedirect({
     const code = /did not approve|cancel/i.test(message) ? 'cancelled' : 'auth';
     throw new AIError(code, message, 'openrouter');
   }
-  const code = responseUrl ? new URL(responseUrl).searchParams.get('code') : null;
+  const code = codeFromRedirect(responseUrl);
   if (!code) throw new AIError('auth', 'OpenRouter did not return an authorization code', 'openrouter');
   return exchangeCode({ code, verifier, signal });
 }

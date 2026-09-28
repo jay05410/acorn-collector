@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_AI_SETTINGS, type AISettings } from '@/lib/settings-types';
-import { createMemoryCacheStore, type AnalysisCacheStore } from './cache';
-import { extractBooth, resolveTarget, type ExtractBoothInput, type ExtractBoothOptions } from './engine';
+import { createMemoryCacheStore, type AnalysisCacheStore, type CachedAnalysis } from './cache';
+import {
+  CALL_TIMEOUTS,
+  extractBooth,
+  resolveTarget,
+  type ExtractBoothInput,
+  type ExtractBoothOptions,
+} from './engine';
 import type { DecodedImage, ImageCodec } from './image';
 import { MODEL_TABLE } from './models';
 import { getProvider, registerProvider } from './providers';
@@ -71,6 +77,22 @@ const ok = (w: WireExtraction, extra: Partial<ProviderRawResult> = {}): Provider
   ...extra,
 });
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** fetch() stub: 404 for URLs containing "missing", never settles (until aborted) for "stalled". */
+function stubImageFetch() {
+  const signals: AbortSignal[] = [];
+  const fetchMock = vi.fn((url: string, init: RequestInit) => {
+    if (init.signal) signals.push(init.signal);
+    if (url.includes('missing')) return Promise.resolve(new Response('gone', { status: 404 }));
+    return new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+    });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return { fetchMock, signals };
+}
+
 /** Resolves when the call's signal aborts, rejecting like a provider would. */
 function untilAborted(opts: ProviderCallOptions): Promise<never> {
   return new Promise((_resolve, reject) => {
@@ -107,6 +129,7 @@ beforeEach(() => {
 
 afterEach(() => {
   registerProvider(builtinOpenAI);
+  vi.unstubAllGlobals();
 });
 
 describe('resolveTarget', () => {
@@ -186,7 +209,8 @@ describe('extractBooth', () => {
       zone: null,
       isMailOrder: true,
     });
-    expect(result.currency).toBe('JPY');
+    // The text-bearing first call's currency wins over the image-only majority.
+    expect(result.currency).toBe('KRW');
     expect(result.items.map((i) => [i.name, i.options])).toEqual([
       ['Keyring', ['A', 'B']],
       ['Sticker', []],
@@ -231,6 +255,61 @@ describe('extractBooth', () => {
       expect(provider.calls).toHaveLength(5);
     });
 
+    it('treats cached entries that fail validation as a miss and replaces them', async () => {
+      const entries = new Map<string, unknown>();
+      const store: AnalysisCacheStore = {
+        get: async (key) => entries.get(key) as CachedAnalysis | undefined,
+        set: async (key, value) => {
+          entries.set(key, value);
+        },
+      };
+      useProvider(async () => ok(wire({ currency: 'KRW', items: [item('Tape', 4000)] })));
+      await extractBooth(input(), options({ cache: store }));
+      const [key] = [...entries.keys()];
+      const good = entries.get(key ?? '') as CachedAnalysis;
+      const corrupt: unknown[] = [
+        null,
+        'stale',
+        { result: null },
+        { result: { ...good.result, items: 'Tape' } },
+        { result: { ...good.result, booth: null } },
+        { result: { ...good.result, meta: { ...good.result.meta, model: 7 } } },
+        { result: { ...good.result, items: [{ name: '', price: 1 }] } },
+        { result: { ...good.result, items: [...good.result.items, 'garbage'] } },
+      ];
+      for (const entry of corrupt) {
+        entries.set(key ?? '', entry);
+        expect((await extractBooth(input(), options({ cache: store }))).meta.cached).toBe(false);
+      }
+      expect(provider.calls).toHaveLength(1 + corrupt.length);
+
+      const hit = await extractBooth(input(), options({ cache: store }));
+      expect(hit.meta.cached).toBe(true);
+      expect(hit).toMatchObject({ currency: 'KRW', items: [{ name: 'Tape', price: 4000 }] });
+      expect(provider.calls).toHaveLength(1 + corrupt.length);
+    });
+
+    it("reports this call's skipped images on a cache hit", async () => {
+      stubImageFetch();
+      const cache = createMemoryCacheStore();
+      const first = await extractBooth(
+        input({ images: [image(1), 'https://x.test/missing.jpg'] }),
+        options({ cache })
+      );
+      expect(first.meta).toMatchObject({ cached: false, skippedImages: [1] });
+
+      const reordered = await extractBooth(
+        input({ images: ['https://x.test/missing.jpg', image(1)] }),
+        options({ cache })
+      );
+      expect(reordered.meta).toMatchObject({ cached: true, skippedImages: [0] });
+
+      const clean = await extractBooth(input({ images: [image(1)] }), options({ cache }));
+      expect(clean.meta.cached).toBe(true);
+      expect(clean.meta).not.toHaveProperty('skippedImages');
+      expect(provider.calls).toHaveLength(1);
+    });
+
     it('treats a failing store as a miss', async () => {
       const broken: AnalysisCacheStore = {
         get: async () => {
@@ -272,13 +351,48 @@ describe('extractBooth', () => {
       expect(provider.calls).toHaveLength(1);
     });
 
-    it('times out each attempt and reports timeout', async () => {
-      useProvider((_req, opts) => untilAborted(opts));
-      await expect(extractBooth(input(), options({ callTimeoutMs: 15 }))).rejects.toMatchObject({
-        name: 'AIError',
-        code: 'timeout',
+    it('times out an attempt that goes quiet and reports timeout', async () => {
+      useProvider((_req, opts) => {
+        opts.onText?.('{"booth"');
+        return untilAborted(opts);
       });
+      await expect(
+        extractBooth(input(), options({ idleTimeoutMs: 15, callTimeoutMs: 5000 }))
+      ).rejects.toMatchObject({ name: 'AIError', code: 'timeout' });
       expect(provider.calls).toHaveLength(2);
+    });
+
+    it('keeps a call alive past the idle limit while it streams', async () => {
+      useProvider(async (_req, opts) => {
+        for (let i = 1; i <= 6; i++) {
+          opts.onText?.('{"items":['.slice(0, i));
+          await sleep(20);
+        }
+        return ok(wire({ items: [item('Tape', 1)] }));
+      });
+      const result = await extractBooth(input(), options({ idleTimeoutMs: 50, callTimeoutMs: 5000 }));
+      expect(result.items).toHaveLength(1);
+      expect(provider.calls).toHaveLength(1);
+    });
+
+    it('caps a call that keeps streaming past the overall limit', async () => {
+      useProvider(async (_req, opts) => {
+        while (!opts.signal?.aborted) {
+          opts.onText?.('{');
+          await sleep(5);
+        }
+        throw opts.signal.reason;
+      });
+      await expect(
+        extractBooth(input(), options({ idleTimeoutMs: 5000, callTimeoutMs: 40 }))
+      ).rejects.toMatchObject({ name: 'AIError', code: 'timeout' });
+      expect(provider.calls).toHaveLength(2);
+    });
+
+    it('uses longer budgets for the accurate tier', () => {
+      expect(CALL_TIMEOUTS.fast).toEqual({ idleMs: 30_000, totalMs: 180_000 });
+      expect(CALL_TIMEOUTS.accurate.idleMs).toBeGreaterThan(CALL_TIMEOUTS.fast.idleMs);
+      expect(CALL_TIMEOUTS.accurate.totalMs).toBeGreaterThan(CALL_TIMEOUTS.fast.totalMs);
     });
 
     it('stops without retrying when the caller cancels', async () => {
@@ -293,24 +407,67 @@ describe('extractBooth', () => {
       expect(provider.calls).toHaveLength(1);
     });
 
-    it('times out a stalled image download without calling the provider', async () => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(
-          (_url: string, init: RequestInit) =>
-            new Promise((_resolve, reject) => {
-              init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
-            })
+    it('times out a stalled image download without calling the provider when nothing else is left', async () => {
+      stubImageFetch();
+      await expect(
+        extractBooth(
+          input({ text: '', images: ['https://pbs.twimg.com/media/stalled.jpg'] }),
+          options({ imageTimeoutMs: 15 })
         )
+      ).rejects.toMatchObject({ name: 'AIError', code: 'timeout' });
+      expect(provider.calls).toHaveLength(0);
+    });
+
+    it('skips images that cannot be loaded and analyzes the rest', async () => {
+      stubImageFetch();
+      const result = await extractBooth(
+        input({ images: ['https://x.test/stalled.jpg', image(1), 'https://x.test/missing.jpg'] }),
+        // Long enough that the local blob always finishes before the stalled URL is cut off.
+        options({ imageTimeoutMs: 250 })
       );
-      try {
-        await expect(
-          extractBooth(input({ images: ['https://pbs.twimg.com/media/stalled.jpg'] }), options({ callTimeoutMs: 15 }))
-        ).rejects.toMatchObject({ name: 'AIError', code: 'timeout' });
-        expect(provider.calls).toHaveLength(0);
-      } finally {
-        vi.unstubAllGlobals();
-      }
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.req).toMatchObject({ text: 'Booth A-01 price list' });
+      expect(provider.calls[0]?.req.images).toHaveLength(1);
+      expect(result.meta.skippedImages).toEqual([0, 2]);
+    });
+
+    it('falls back to the text alone when every image fails', async () => {
+      stubImageFetch();
+      const result = await extractBooth(input({ images: ['https://x.test/missing.jpg'] }), options());
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.req.images).toEqual([]);
+      expect(result.meta.skippedImages).toEqual([0]);
+    });
+
+    it('throws the first image error when there is no text and no image loads', async () => {
+      stubImageFetch();
+      const corrupt: ImageCodec<DecodedImage> = {
+        ...codec,
+        decode: async () => {
+          throw new Error('corrupt');
+        },
+      };
+      await expect(
+        extractBooth(
+          input({ text: ' ', images: ['https://x.test/missing.jpg', image(1)] }),
+          options({ codec: corrupt })
+        )
+      ).rejects.toMatchObject({ name: 'AIError', code: 'network', status: 404 });
+      expect(provider.calls).toHaveLength(0);
+    });
+
+    it('aborts in-flight image downloads when the caller cancels', async () => {
+      const { signals } = stubImageFetch();
+      const controller = new AbortController();
+      const pending = extractBooth(
+        input({ images: ['https://x.test/stalled-1.jpg', 'https://x.test/stalled-2.jpg'], signal: controller.signal }),
+        options()
+      );
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ name: 'AIError', code: 'cancelled' });
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      expect(provider.calls).toHaveLength(0);
     });
 
     it('rejects immediately when already cancelled', async () => {

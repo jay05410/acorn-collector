@@ -90,6 +90,9 @@ describe('parseAuthCode', () => {
     ['http://localhost:3000/?code=zz', 'zz'],
     ['', null],
     ['not a code!', null],
+    // Malformed percent-encoding must not escape as URIError.
+    ['https://abc.chromiumapp.org/openrouter?code=%E0%A4%A', null],
+    ['?code=%ZZ', null],
   ])('%j -> %j', (input, expected) => {
     expect(parseAuthCode(input)).toBe(expected);
   });
@@ -143,6 +146,16 @@ describe('connectWithRedirect', () => {
     });
   });
 
+  it('maps an unparseable redirect URL to bad_response without calling the API', async () => {
+    const fetchMock = mockFetch(() => jsonResponse(200, { key: 'sk-or-v1-k' }));
+    const garbled = fakeIdentity(async () => 'not a url');
+    await expect(connectWithRedirect({ keyLabel: 'k', identity: garbled.identity })).rejects.toMatchObject({
+      name: 'AIError',
+      code: 'bad_response',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('reports a missing identity permission as not_configured', async () => {
     await expect(connectWithRedirect({ keyLabel: 'k' })).rejects.toMatchObject({
       code: 'not_configured',
@@ -166,6 +179,10 @@ describe('createHeadlessFlow', () => {
     const fetchMock = mockFetch(() => jsonResponse(200, {}));
     const flow = await createHeadlessFlow('Acorn');
     await expect(flow.complete('hello world')).rejects.toMatchObject({ code: 'auth' });
+    await expect(flow.complete('https://x.test/?code=%E0%A4%A')).rejects.toMatchObject({
+      name: 'AIError',
+      code: 'auth',
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

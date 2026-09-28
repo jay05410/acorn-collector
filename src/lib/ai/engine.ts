@@ -1,16 +1,18 @@
 /**
  * Extraction engine (ADR-001 section 3): resolve provider/model/key from
- * settings, prepare images for the model, serve from the local cache when
- * possible, otherwise fan out one call per image in parallel (call #1 also
- * carries the post text), stream merged partial items, merge deterministically
- * and cache the result. Every failure surfaces as AIError.
+ * settings, prepare images for the model (skipping ones that cannot be
+ * loaded), serve from the local cache when possible, otherwise fan out one
+ * call per image in parallel (call #1 also carries the post text), stream
+ * merged partial items, merge deterministically and cache the result. Every
+ * failure surfaces as AIError.
  */
 import type { AppLanguage } from '@/i18n/languages';
 import type { AISettings } from '@/lib/settings-types';
 import { cacheKey, type AnalysisCacheStore, type CachedAnalysis } from './cache';
 import { sha256Hex } from './encoding';
 import { abortedError, toAIError } from './errors';
-import { prepareImages, type DecodedImage, type ImageCodec } from './image';
+import { isRecord, numberField } from './guards';
+import { prepareImages, type DecodedImage, type ImageCodec, type PreparedImages } from './image';
 import { mergeItems, mergeWire } from './merge';
 import { imageLimitsFor } from './models';
 import { extractClosedItems } from './partial-json';
@@ -29,14 +31,26 @@ import {
   type AIProvider,
   type ExtractionRequest,
   type ExtractionResult,
-  type ImageInput,
+  type ModelTier,
   type PartialExtraction,
   type ProviderId,
   type ProviderRawResult,
+  type WireExtraction,
 } from './types';
 
-/** Per-call budget (and image-preparation budget); combined with the caller's signal. */
-export const CALL_TIMEOUT_MS = 60_000;
+/**
+ * Per-call budgets, combined with the caller's signal: a call is aborted after
+ * `idleMs` without streamed output (every text delta resets it) or after
+ * `totalMs` overall. The engine only observes text deltas (`onText`), and
+ * reasoning runs silently before the first one, so the accurate tier gets a
+ * longer quiet period.
+ */
+export const CALL_TIMEOUTS: Readonly<Record<ModelTier, { idleMs: number; totalMs: number }>> = {
+  fast: { idleMs: 30_000, totalMs: 180_000 },
+  accurate: { idleMs: 60_000, totalMs: 300_000 },
+};
+/** Bound on downloading and preparing all images; images still pending are skipped. */
+export const IMAGE_TIMEOUT_MS = 60_000;
 const RETRY_DELAY_MS = 1000;
 /** One retry for retryable failures (rate_limit, network, timeout, unavailable). */
 const MAX_ATTEMPTS = 2;
@@ -60,7 +74,12 @@ export interface ExtractBoothOptions {
   now?: () => number;
   /** Image decoder/encoder; defaults to createImageBitmap + OffscreenCanvas. */
   codec?: ImageCodec<DecodedImage>;
+  /** Per-call inactivity limit; defaults to CALL_TIMEOUTS[tier].idleMs. */
+  idleTimeoutMs?: number;
+  /** Per-call overall limit; defaults to CALL_TIMEOUTS[tier].totalMs. */
   callTimeoutMs?: number;
+  /** Image preparation limit; defaults to IMAGE_TIMEOUT_MS. */
+  imageTimeoutMs?: number;
   retryDelayMs?: number;
 }
 
@@ -87,23 +106,40 @@ export function resolveTarget(settings: AISettings): Target {
   return { provider, model, apiKey };
 }
 
-/** A child signal that aborts with the parent or with a TimeoutError after `ms`. */
-function timeoutSignal(
-  parent: AbortSignal | undefined,
-  ms: number
-): { signal: AbortSignal; dispose: () => void } {
+interface Deadline {
+  signal: AbortSignal;
+  /** Records activity, restarting the idle timer. */
+  touch(): void;
+  dispose(): void;
+}
+
+/**
+ * A child signal that aborts with the parent, or with a TimeoutError after
+ * `totalMs`, or (when `idleMs` is given) after `idleMs` without `touch()`.
+ */
+function deadline(parent: AbortSignal | undefined, totalMs: number, idleMs?: number): Deadline {
   const controller = new AbortController();
   const onAbort = () => controller.abort(parent?.reason);
   if (parent?.aborted) onAbort();
   else parent?.addEventListener('abort', onAbort, { once: true });
-  const timer = setTimeout(
-    () => controller.abort(new DOMException(`No response within ${ms} ms`, 'TimeoutError')),
-    ms
-  );
+  const expire = (message: string) => () =>
+    controller.abort(new DOMException(message, 'TimeoutError'));
+  const total = setTimeout(expire(`No complete response within ${totalMs} ms`), totalMs);
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  let active = true;
+  const touch = () => {
+    if (idleMs === undefined || !active || controller.signal.aborted) return;
+    clearTimeout(idle);
+    idle = setTimeout(expire(`No data for ${idleMs} ms`), idleMs);
+  };
+  touch();
   return {
     signal: controller.signal,
+    touch,
     dispose() {
-      clearTimeout(timer);
+      active = false;
+      clearTimeout(total);
+      clearTimeout(idle);
       parent?.removeEventListener('abort', onAbort);
     },
   };
@@ -178,6 +214,50 @@ async function readCache(
   }
 }
 
+/**
+ * Re-validates a cache hit, since persistent stores can hold entries from an
+ * older build or corrupted data: the entry must have the ExtractionResult
+ * shape and pass validateWire with every item intact. Undefined means a miss.
+ */
+function validCachedResult(entry: unknown, provider: ProviderId): ExtractionResult | undefined {
+  const result = isRecord(entry) ? entry.result : undefined;
+  if (!isRecord(result) || !isRecord(result.booth) || !isRecord(result.meta)) return undefined;
+  const { booth, meta, items } = result;
+  if (!Array.isArray(items) || typeof meta.model !== 'string') return undefined;
+  let wire: WireExtraction;
+  try {
+    wire = validateWire({
+      booth: {
+        number: booth.boothNumber,
+        circle: booth.circleName,
+        event: booth.eventName,
+        zone: booth.zone,
+        mailOrder: booth.isMailOrder,
+      },
+      currency: result.currency,
+      items: items.map((item: unknown) =>
+        isRecord(item)
+          ? { name: item.name, orig: item.originalName, price: item.price, cat: item.category, opts: item.options }
+          : null
+      ),
+    });
+  } catch {
+    return undefined;
+  }
+  // validateWire drops unusable items; a partly corrupt entry is still a miss.
+  if (wire.items.length !== items.length) return undefined;
+  const inputTokens = numberField(meta.inputTokens);
+  const outputTokens = numberField(meta.outputTokens);
+  return toResult(wire, {
+    provider,
+    model: meta.model,
+    latencyMs: 0,
+    cached: true,
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+  });
+}
+
 async function writeCache(
   cache: AnalysisCacheStore | undefined,
   key: string,
@@ -200,7 +280,8 @@ interface CallPlan {
   requests: ExtractionRequest[];
   signal: AbortSignal | undefined;
   onPartial: ExtractBoothInput['onPartial'];
-  timeoutMs: number;
+  idleMs: number;
+  totalMs: number;
   retryDelayMs: number;
 }
 
@@ -216,7 +297,7 @@ async function runCalls(plan: CallPlan): Promise<ProviderRawResult[]> {
   const runOne = async (request: ExtractionRequest, index: number): Promise<ProviderRawResult> => {
     for (let attempt = 1; ; attempt++) {
       partials.reset(index);
-      const call = timeoutSignal(group.signal, plan.timeoutMs);
+      const call = deadline(group.signal, plan.totalMs, plan.idleMs);
       try {
         return await target.provider.extract(
           { ...request, signal: call.signal },
@@ -224,7 +305,10 @@ async function runCalls(plan: CallPlan): Promise<ProviderRawResult[]> {
             apiKey: target.apiKey,
             model: target.model,
             signal: call.signal,
-            onText: (text) => partials.update(index, text),
+            onText: (text) => {
+              call.touch();
+              partials.update(index, text);
+            },
           }
         );
       } catch (error) {
@@ -265,12 +349,12 @@ export async function extractBooth(
     throw new AIError('unknown', 'Nothing to analyze: no text and no images', providerId);
   }
 
-  const timeoutMs = options.callTimeoutMs ?? CALL_TIMEOUT_MS;
-  // Image downloads get the same budget so a stalled URL cannot hang analysis.
-  const prep = timeoutSignal(input.signal, timeoutMs);
-  let images: ImageInput[];
+  // Image downloads get their own bound so a stalled URL cannot hang analysis.
+  // Cancellation rejects here and aborts downloads still in flight.
+  const prep = deadline(input.signal, options.imageTimeoutMs ?? IMAGE_TIMEOUT_MS);
+  let prepared: PreparedImages;
   try {
-    images = await prepareImages(input.images, {
+    prepared = await prepareImages(input.images, {
       ...imageLimitsFor(target.model),
       signal: prep.signal,
       codec: options.codec,
@@ -278,6 +362,13 @@ export async function extractBooth(
   } finally {
     prep.dispose();
   }
+  if (input.signal?.aborted) throw abortedError(input.signal, providerId);
+  const { images, skipped } = prepared;
+  // Images that failed to load are dropped; fail only when nothing is left.
+  if (images.length === 0 && input.text.trim() === '') {
+    throw prepared.firstError ?? new AIError('unknown', 'No image could be loaded', providerId);
+  }
+  const skippedMeta = skipped.length > 0 ? { skippedImages: skipped } : {};
 
   const textHash = await sha256Hex(
     JSON.stringify([
@@ -293,12 +384,10 @@ export async function extractBooth(
     textHash,
     images.map((image) => image.hash)
   );
-  const cached = await readCache(options.cache, key);
+  const cached = validCachedResult(await readCache(options.cache, key), providerId);
   if (cached) {
-    return {
-      ...cached.result,
-      meta: { ...cached.result.meta, cached: true, latencyMs: now() - startedAt },
-    };
+    // skippedImages describes this call's input, not the one that filled the cache.
+    return { ...cached, meta: { ...cached.meta, latencyMs: now() - startedAt, ...skippedMeta } };
   }
 
   const base = { targetLanguage: input.targetLanguage, tier: settings.tier, hints: input.hints };
@@ -312,7 +401,8 @@ export async function extractBooth(
     requests,
     signal: input.signal,
     onPartial: input.onPartial,
-    timeoutMs,
+    idleMs: options.idleTimeoutMs ?? CALL_TIMEOUTS[settings.tier].idleMs,
+    totalMs: options.callTimeoutMs ?? CALL_TIMEOUTS[settings.tier].totalMs,
     retryDelayMs: options.retryDelayMs ?? RETRY_DELAY_MS,
   });
 
@@ -326,6 +416,7 @@ export async function extractBooth(
     cached: false,
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...skippedMeta,
   });
   await writeCache(options.cache, key, { result, storedAt: now() });
   return result;

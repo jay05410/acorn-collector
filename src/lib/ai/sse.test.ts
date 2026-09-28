@@ -31,8 +31,13 @@ describe('SSEParser', () => {
     expect(parseAll([stream])).toEqual([{ event: 'message', data: '[DONE]' }]);
   });
 
-  it('flushes a final event that lacks the trailing blank line', () => {
-    expect(parseAll(['data: tail'])).toEqual([{ event: 'message', data: 'tail' }]);
+  it('discards a final event that lacks its blank line (truncated stream)', () => {
+    expect(parseAll(['data: tail'])).toEqual([]);
+    expect(parseAll(['data: a\n\ndata: tail\n'])).toEqual([{ event: 'message', data: 'a' }]);
+  });
+
+  it('treats a CR at the very end of the stream as a line ending', () => {
+    expect(parseAll(['data: x\r', '\r'])).toEqual([{ event: 'message', data: 'x' }]);
   });
 });
 
@@ -51,6 +56,13 @@ describe('readSSE', () => {
     const messages: SSEMessage[] = [];
     for await (const m of readSSE(streamOf([bytes.slice(0, 8), bytes.slice(8)]))) messages.push(m);
     expect(messages).toEqual([{ event: 'message', data: '缶バッジ' }]);
+  });
+
+  it('does not yield an event cut off before its blank line', async () => {
+    const messages: SSEMessage[] = [];
+    const body = streamOf([new TextEncoder().encode('data: 1\n\ndata: {"trunc')]);
+    for await (const m of readSSE(body)) messages.push(m);
+    expect(messages).toEqual([{ event: 'message', data: '1' }]);
   });
 
   it('cancels the body when the consumer stops early', async () => {

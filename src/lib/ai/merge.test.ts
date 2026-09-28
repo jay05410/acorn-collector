@@ -39,8 +39,14 @@ describe('mergeWire', () => {
     expect(mergeWire([wire({}, null, []), wire({ mailOrder: true }, null, [])]).booth.mailOrder).toBe(true);
   });
 
-  it('picks the most frequent currency, breaking ties by first appearance', () => {
-    expect(mergeWire([wire({}, 'KRW', []), wire({}, 'JPY', []), wire({}, 'JPY', [])]).currency).toBe('JPY');
+  it('takes the currency of the text-bearing first call when it has one', () => {
+    expect(mergeWire([wire({}, 'KRW', []), wire({}, 'JPY', []), wire({}, 'JPY', [])]).currency).toBe('KRW');
+  });
+
+  it('otherwise picks the most frequent currency of the other calls, ties by first appearance', () => {
+    expect(
+      mergeWire([wire({}, null, []), wire({}, 'JPY', []), wire({}, 'CNY', []), wire({}, 'CNY', [])]).currency
+    ).toBe('CNY');
     expect(mergeWire([wire({}, null, []), wire({}, 'TWD', []), wire({}, 'CNY', [])]).currency).toBe('TWD');
     expect(mergeWire([wire({}, null, [])]).currency).toBeNull();
   });

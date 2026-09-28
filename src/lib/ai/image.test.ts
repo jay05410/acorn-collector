@@ -181,26 +181,67 @@ describe('prepareImages', () => {
       encodeJpeg: async () => new Blob([bytes(JPEG_MAGIC)]),
     };
     const sources = Array.from({ length: 9 }, (_, i) => new Blob([bytes(JPEG_MAGIC, 10 + i)]));
-    const images = await prepareImages(sources, { maxEdge: 2048, codec });
+    const { images, skipped } = await prepareImages(sources, { maxEdge: 2048, codec });
     expect(images.map((i) => i.width)).toEqual(sources.map((s) => s.size));
+    expect(skipped).toEqual([]);
     expect(peak).toBe(4);
   });
 
-  it('stops starting new work after a failure', async () => {
+  it('skips images that fail to download or decode and keeps the rest', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('gone', { status: 404 })));
     const decode = vi.fn(async (blob: Blob) => {
       if (blob.size === 11) throw new Error('corrupt');
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      return { width: 1, height: 1, close: () => undefined };
+      return { width: blob.size, height: 1, close: () => undefined };
     });
-    const codec: ImageCodec<DecodedImage> = { decode, encodeJpeg: async () => new Blob() };
-    const sources = Array.from({ length: 12 }, (_, i) => new Blob([bytes(JPEG_MAGIC, 10 + i)]));
-    await expect(prepareImages(sources, { maxEdge: 2048, codec })).rejects.toMatchObject({
-      name: 'AIError',
-    });
-    expect(decode.mock.calls.length).toBeLessThan(sources.length);
+    const codec: ImageCodec<DecodedImage> = { decode, encodeJpeg: async () => new Blob([bytes(JPEG_MAGIC)]) };
+    const sources = [
+      new Blob([bytes(JPEG_MAGIC, 10)]),
+      'https://x.test/missing.jpg',
+      new Blob([bytes(JPEG_MAGIC, 11)]),
+      new Blob([bytes(JPEG_MAGIC, 12)]),
+    ];
+    const result = await prepareImages(sources, { maxEdge: 2048, codec });
+    expect(result.images.map((i) => i.width)).toEqual([10, 12]);
+    expect(result.skipped).toEqual([1, 2]);
+    // The lowest skipped index reports, not the first failure to happen.
+    expect(result.firstError).toMatchObject({ name: 'AIError', code: 'network', status: 404 });
   });
 
-  it('returns an empty list for no sources', async () => {
-    expect(await prepareImages([], { maxEdge: 2048 })).toEqual([]);
+  it('records a timeout of the signal as skipped images, not a rejection', async () => {
+    const { codec } = fakeCodec({ width: 10, height: 10 });
+    const timedOut = new AbortController();
+    timedOut.abort(new DOMException('slow', 'TimeoutError'));
+    const result = await prepareImages([new Blob([bytes(JPEG_MAGIC)]), 'https://x.test/a.jpg'], {
+      maxEdge: 2048,
+      codec,
+      signal: timedOut.signal,
+    });
+    expect(result).toMatchObject({ images: [], skipped: [0, 1], firstError: { code: 'timeout' } });
+  });
+
+  it('on cancellation aborts in-flight downloads, starts no new work and rejects', async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            if (init.signal) signals.push(init.signal);
+            init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+          })
+      )
+    );
+    const controller = new AbortController();
+    const sources = Array.from({ length: 8 }, (_, i) => `https://x.test/${i}.jpg`);
+    const pending = prepareImages(sources, { maxEdge: 2048, signal: controller.signal });
+    await vi.waitFor(() => expect(signals).toHaveLength(4));
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AIError', code: 'cancelled' });
+    expect(signals).toHaveLength(4);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
+
+  it('returns an empty result for no sources', async () => {
+    expect(await prepareImages([], { maxEdge: 2048 })).toEqual({ images: [], skipped: [] });
   });
 });

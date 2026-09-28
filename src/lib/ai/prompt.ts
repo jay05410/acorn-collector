@@ -4,6 +4,8 @@
  * baseline (ADR-001 section 2); change it only with benchmark evidence and
  * bump SCHEMA_VERSION when its meaning changes.
  */
+// Submodules, not '@/i18n': the barrel pulls in React.
+import { normalizeCurrencyCode } from '@/i18n/format';
 import { LANGUAGE_INFO, type AppLanguage } from '@/i18n/languages';
 import type { ExtractionRequest } from './types';
 
@@ -11,7 +13,6 @@ import type { ExtractionRequest } from './types';
 const MAX_TEXT_CHARS = 8000;
 const MAX_EVENT_HINTS = 30;
 const MAX_EVENT_NAME_CHARS = 100;
-const CURRENCY_CODE = /^[A-Z]{3}$/;
 
 export function buildSystemPrompt(languageName: string): string {
   return `You extract structured data from doujin/convention booth announcements (post text and price-list images).
@@ -49,8 +50,8 @@ export function buildUserContent(text: string, hints?: ExtractionRequest['hints'
       `Known events (if the post is for one of these, use its exact name for booth.event):\n${eventNames.map((n) => `- ${n}`).join('\n')}`
     );
   }
-  const currency = hints?.defaultCurrency?.trim().toUpperCase();
-  if (currency && CURRENCY_CODE.test(currency)) {
+  const currency = normalizeCurrencyCode(hints?.defaultCurrency);
+  if (currency !== null) {
     lines.push(`Default currency if the prices show no symbol or unit: ${currency}`);
   }
 

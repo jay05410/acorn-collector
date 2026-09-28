@@ -84,6 +84,8 @@ export interface ExtractionMeta {
   cached: boolean;
   inputTokens?: number;
   outputTokens?: number;
+  /** Indices (into the requested images) of images that could not be loaded; absent when none. */
+  skippedImages?: number[];
 }
 
 export interface ExtractionResult {
