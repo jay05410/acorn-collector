@@ -22,16 +22,35 @@ const EXCLUDED: readonly RegExp[] = [
   /^entrypoints\/background\.ts$/,
 ];
 
+/**
+ * Non-UI data files (model prompts, keyword dictionaries, fixtures) may opt
+ * out with this marker in their first five lines, followed by a reason:
+ *   // i18n-scan-ignore-file: <reason>
+ */
+const OPT_OUT = /^\s*\/\/ i18n-scan-ignore-file: \S/;
+
+function optedOut(file: string): boolean {
+  return readFileSync(SRC + file, 'utf8')
+    .split('\n', 5)
+    .some((line) => OPT_OUT.test(line));
+}
+
 function sourceFiles(): string[] {
   return readdirSync(SRC, { recursive: true, encoding: 'utf8' })
     .map((file) => file.split('\\').join('/'))
     .filter((file) => /\.tsx?$/.test(file))
-    .filter((file) => !EXCLUDED.some((pattern) => pattern.test(file)));
+    .filter((file) => !EXCLUDED.some((pattern) => pattern.test(file)))
+    .filter((file) => !optedOut(file));
 }
 
 describe('UI text', () => {
   it('scans the source tree', () => {
     expect(sourceFiles()).toContain('components/SettingsModal.tsx');
+  });
+
+  it('requires a reason on opt-out markers', () => {
+    expect(OPT_OUT.test('// i18n-scan-ignore-file: model prompt')).toBe(true);
+    expect(OPT_OUT.test('// i18n-scan-ignore-file:')).toBe(false);
   });
 
   it('has no hardcoded Hangul, Kana or Han outside i18n messages', () => {
