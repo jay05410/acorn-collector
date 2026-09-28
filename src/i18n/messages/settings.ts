@@ -4,14 +4,7 @@ export default defineMessages({
   en: {
     title: 'Settings',
     colorTheme: 'Color Theme',
-    colorThemeDesc:
-      'Dark mode is automatically applied based on browser settings',
     language: 'Language',
-    aiFeatures: 'AI Features',
-    aiDesc: 'Automatically extract products from images with AI.',
-    aiComingSoon:
-      'AI connection settings are moving to a dedicated AI settings screen.',
-    dataBackup: 'Data Backup',
     exportData: 'Export Data (JSON)',
     importData: 'Import Data',
     importSuccess:
@@ -22,12 +15,7 @@ export default defineMessages({
   ko: {
     title: '설정',
     colorTheme: '컬러 테마',
-    colorThemeDesc: '다크모드는 브라우저 설정에 따라 자동 적용됩니다',
     language: '언어',
-    aiFeatures: 'AI 기능',
-    aiDesc: 'AI로 이미지에서 상품을 자동 추출합니다.',
-    aiComingSoon: 'AI 연결 설정은 별도의 AI 설정 화면에서 제공될 예정입니다.',
-    dataBackup: '데이터 백업',
     exportData: '데이터 내보내기 (JSON)',
     importData: '데이터 가져오기',
     importSuccess:
@@ -38,12 +26,7 @@ export default defineMessages({
   ja: {
     title: '設定',
     colorTheme: 'カラーテーマ',
-    colorThemeDesc: 'ダークモードはブラウザ設定に従って自動適用されます',
     language: '言語',
-    aiFeatures: 'AI機能',
-    aiDesc: 'AIで画像から商品を自動抽出します。',
-    aiComingSoon: 'AI接続の設定は、専用のAI設定画面で提供される予定です。',
-    dataBackup: 'データバックアップ',
     exportData: 'データエクスポート (JSON)',
     importData: 'データインポート',
     importSuccess:
@@ -54,12 +37,7 @@ export default defineMessages({
   'zh-CN': {
     title: '设置',
     colorTheme: '颜色主题',
-    colorThemeDesc: '深色模式根据浏览器设置自动应用',
     language: '语言',
-    aiFeatures: 'AI功能',
-    aiDesc: '使用AI自动从图片中提取商品。',
-    aiComingSoon: 'AI 连接设置将在专门的 AI 设置界面中提供。',
-    dataBackup: '数据备份',
     exportData: '导出数据 (JSON)',
     importData: '导入数据',
     importSuccess: '导入完成：{events} 个活动、{booths} 个展位、{items} 件商品',
@@ -69,12 +47,7 @@ export default defineMessages({
   'zh-TW': {
     title: '設定',
     colorTheme: '主題色彩',
-    colorThemeDesc: '深色模式會依照瀏覽器設定自動套用',
     language: '語言',
-    aiFeatures: 'AI 功能',
-    aiDesc: '使用 AI 自動從圖片中擷取商品。',
-    aiComingSoon: 'AI 連線設定將在專屬的 AI 設定畫面中提供。',
-    dataBackup: '資料備份',
     exportData: '匯出資料 (JSON)',
     importData: '匯入資料',
     importSuccess: '匯入完成：{events} 個活動、{booths} 個攤位、{items} 件商品',

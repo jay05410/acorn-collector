@@ -7,7 +7,9 @@ import {
   type ReviewSource,
   type SavedBooth,
 } from '@/components/capture/CaptureReviewSheet';
-import { SettingsModal } from '@/components/SettingsModal';
+import { SettingsView } from '@/components/settings/SettingsView';
+import type { SettingsSectionId } from '@/components/settings/section-ids';
+import { FirstRunNotice } from '@/components/onboarding/FirstRunNotice';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
 import { SponsorSlot } from '@/components/support/SponsorSlot';
 import { CoveredLayer } from '@/components/ui/Layer';
@@ -58,6 +60,7 @@ export default function App({ initialSettings }: AppProps) {
     initialSettings ?? null
   );
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>();
   const [showExport, setShowExport] = useState(false);
   const [exportEventId, setExportEventId] = useState<string | null>(null);
   const [reviewSource, setReviewSource] = useState<ReviewSource | null>(null);
@@ -243,6 +246,13 @@ export default function App({ initialSettings }: AppProps) {
           onOpenSettings={onOpenSettings}
         />
 
+        <FirstRunNotice
+          onConnectAi={() => {
+            setSettingsSection('ai');
+            setShowSettings(true);
+          }}
+        />
+
         {showExport && exportEventId && (
           <ChecklistReceipt
             eventId={exportEventId}
@@ -254,11 +264,19 @@ export default function App({ initialSettings }: AppProps) {
         )}
       </CoveredLayer>
 
-      {/* Settings: a layer above the panel and its dialogs (--z-overlay). */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
+      {/* Settings: a full view with its own top bar, in a layer above the
+          panel and its dialogs (--z-overlay). */}
+      {showSettings && (
+        <div className="fixed inset-0 z-(--z-overlay) flex flex-col bg-canvas">
+          <SettingsView
+            initialSection={settingsSection}
+            onBack={() => {
+              setShowSettings(false);
+              setSettingsSection(undefined);
+            }}
+          />
+        </div>
+      )}
 
       <ToastViewport />
     </div>

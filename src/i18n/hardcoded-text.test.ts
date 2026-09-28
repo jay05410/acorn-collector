@@ -42,7 +42,7 @@ function sourceFiles(): string[] {
 
 describe('UI text', () => {
   it('scans the source tree', () => {
-    expect(sourceFiles()).toContain('components/SettingsModal.tsx');
+    expect(sourceFiles()).toContain('components/settings/SettingsView.tsx');
   });
 
   it('requires a reason on opt-out markers', () => {
