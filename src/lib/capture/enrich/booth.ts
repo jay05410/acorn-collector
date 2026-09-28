@@ -1,3 +1,4 @@
+// i18n-scan-ignore-file: BOOTH category keyword dictionary, never shown in the UI
 /**
  * BOOTH (booth.pm) item data from the unofficial `/ja/items/<id>.json`
  * endpoint. Name, variations and prices map straight to prefilled items, so

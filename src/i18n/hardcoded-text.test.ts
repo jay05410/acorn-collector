@@ -17,9 +17,6 @@ const EXCLUDED: readonly RegExp[] = [
   // Keyword dictionaries for the offline text parser.
   /^lib\/parser\//,
   /\.test\.tsx?$/,
-  // Context-menu title; this entrypoint belongs to ACORN-5 and must move to
-  // chrome.i18n there. Remove this entry once it has.
-  /^entrypoints\/background\.ts$/,
 ];
 
 /**
