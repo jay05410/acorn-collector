@@ -13,6 +13,7 @@ import events from './messages/events';
 import exportMessages from './messages/export';
 import items from './messages/items';
 import settings from './messages/settings';
+import support from './messages/support';
 import themes from './messages/themes';
 import ui from './messages/ui';
 
@@ -28,6 +29,7 @@ export const namespaces = {
   export: exportMessages,
   items,
   settings,
+  support,
   themes,
   ui,
 };
