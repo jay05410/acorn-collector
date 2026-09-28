@@ -9,11 +9,13 @@ export function useEvents() {
   );
 
   const createEvent = async (
-    data: Omit<Event, 'id' | 'createdAt' | 'updatedAt'>
+    data: Omit<Event, 'id' | 'createdAt' | 'updatedAt' | 'currency'> &
+      Partial<Pick<Event, 'currency'>>
   ): Promise<string> => {
     const now = Date.now();
     const id = generateId();
     await db.events.add({
+      currency: null,
       ...data,
       id,
       createdAt: now,

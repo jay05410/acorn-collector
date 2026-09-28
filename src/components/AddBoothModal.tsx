@@ -91,6 +91,7 @@ export function AddBoothModal({
       formUrl: formUrl.trim() || null,
       memo: memo || null,
       imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : null,
+      sourceText: initialText || null,
       order: maxOrder,
       createdAt: now,
       updatedAt: now,
