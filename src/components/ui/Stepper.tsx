@@ -15,7 +15,7 @@ interface StepperProps {
 }
 
 const STEP_BUTTON =
-  'flex w-10 shrink-0 cursor-pointer items-center justify-center text-fg-muted transition-colors duration-150 ease-out hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:size-4';
+  'flex w-11 shrink-0 cursor-pointer items-center justify-center text-fg-muted transition-colors duration-150 ease-out hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:size-4';
 
 /**
  * Quantity input (WAI-ARIA spinbutton): type a number, use Arrow Up/Down,

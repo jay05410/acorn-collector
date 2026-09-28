@@ -393,7 +393,7 @@ function ItemFields({
             className="tabular-nums"
           />
         </Field>
-        <Field label={t('items', 'quantity')} group className="w-32 shrink-0">
+        <Field label={t('items', 'quantity')} group className="w-36 shrink-0">
           <Stepper
             value={draft.quantity}
             onChange={(quantity) => onChange({ quantity })}
