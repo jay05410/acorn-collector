@@ -17,7 +17,7 @@
 | 다국어 필수, 외국 이미지 분석                       | 한국어·영어·일본어·중국어(간체·번체). 이미지 속 언어와 통화를 그대로 인식하고 상품명은 UI 언어로 번역, 원문은 별도 보관    | ACORN-3·9, 3장 |
 | 확장성                                              | 언어는 폴더 추가로 확장(`docs/v2/I18N.md`), 프로바이더·사이트 추출기·광고 슬롯은 등록 방식                                 | ACORN-9 등     |
 | 디자인 개선                                         | 디자인 시스템(토큰·컴포넌트), 명암비 AA, 다크 모드, 레이아웃 결함 수정                                                     | 4장            |
-| 프로덕트 급 품질                                    | 테스트 0개 → 1,756개, CI(타입·린트·테스트·빌드·원격 코드 검사·i18n 검사), PR 리뷰 지적 90건 반영                           | 5장            |
+| 프로덕트 급 품질                                    | 테스트 0개 → 1,756개, CI(타입·린트·테스트·빌드·원격 코드 검사·i18n 검사), PR 리뷰 지적 90건 수정 또는 근거 답변            | 5장            |
 
 ## 2. 요청 전제에 대한 확인 결과
 
@@ -36,13 +36,13 @@
 
 합성 가격표 6장(한국어, 일본어, 번체, 간체, 영어, 손글씨체 한국어), 이미지 1장당 1회 호출. 실제 사진(반사, 기울어짐)보다 쉬운 조건이라는 한계가 있다.
 
-| 구성                                    | 호출당 지연                             | 상품 인식           | 가격 | 통화       |
-| --------------------------------------- | --------------------------------------- | ------------------- | ---- | ---------- |
-| 기존: gemini-2.5-flash, thinking 기본값 | 약 8.0~8.2초 (성공 2회, 나머지 503·429) | 2/2 정확            | 정확 | 측정 안 함 |
-| **새 기본값: gpt-6-luna, 추론 none**    | **2.2~4.2초**                           | 6/6 전부            | 6/6  | 6/6        |
-| gpt-6-luna, 추론 low                    | 4.3~7.9초                               | 1장에서 1개 누락    | —    | 6/6        |
-| gpt-6-sol, 추론 none                    | 4.1~5.2초                               | 6/6                 | 6/6  | 6/6        |
-| 로컬 CLI(Claude Code 구독)              | 이미지당 9.8~13.3초                     | 정확(일본어 픽스처) | 정확 | —          |
+| 구성                                                     | 호출당 지연                             | 상품 인식           | 가격 | 통화       |
+| -------------------------------------------------------- | --------------------------------------- | ------------------- | ---- | ---------- |
+| 기존: gemini-2.5-flash, thinking 기본값                  | 약 8.0~8.2초 (성공 2회, 나머지 503·429) | 2/2 정확            | 정확 | 측정 안 함 |
+| **새 기본값: gpt-6-luna, 추론 none**                     | **2.2~4.2초**                           | 6/6 전부            | 6/6  | 6/6        |
+| gpt-6-luna, 추론 low                                     | 4.3~7.9초                               | 1장에서 1개 누락    | —    | 6/6        |
+| gpt-6-sol, 추론 none                                     | 4.1~5.2초                               | 6/6                 | 6/6  | 6/6        |
+| 로컬 CLI(Claude Code 구독, Chrome 없이 호스트 직접 호출) | 이미지당 9.8~13.3초                     | 정확(일본어 픽스처) | 정확 | —          |
 
 | 여러 장 처리 방식(3장)    | 벽시계 시간 |
 | ------------------------- | ----------- |
@@ -72,7 +72,7 @@
 | ![](report/before-06-add-booth-from-post.png) | ![](report/after-06-capture-review.png)     |
 | 부스 번호를 "통판"으로 오인식                 | B-12, 통판 표시, 행사 자동 매칭             |
 
-추가 화면: [첫 실행 안내](report/x-first-run.png), [분석 완료](report/after-04b-analysis-done.png), [저장된 부스(₩·JP¥)](report/x-saved-booth-krw-jpy.png), [로컬 CLI 상태](report/x-cli-status.png), [OpenRouter 연결](report/x-openrouter-connected.png), [후원·광고](report/x-settings-bottom-support.png), [다크 모드](report/x-dark-events.png), [일본어](report/x-ja-events.png), [번체 중국어](report/x-zhTW-events.png), [영어](report/x-en-events.png).
+추가 화면: [첫 실행 안내](report/x-first-run.png), [분석 완료](report/after-04b-analysis-done.png), [저장된 부스(₩·JP¥)](report/x-saved-booth-krw-jpy.png), [로컬 CLI 상태(네이티브 메시징 응답은 모의)](report/x-cli-status.png), [OpenRouter 연결](report/x-openrouter-connected.png), [후원·광고](report/x-settings-bottom-support.png), [다크 모드](report/x-dark-events.png), [일본어](report/x-ja-events.png), [번체 중국어](report/x-zhTW-events.png), [영어](report/x-en-events.png).
 
 ## 5. 품질 지표
 
@@ -97,7 +97,7 @@
 2. GitHub Sponsors 활성화(현재 링크가 프로필로 리다이렉트) 또는 `VITE_GH_SPONSORS_URL=off`, Buy Me a Coffee 주소 `VITE_BMC_URL` 설정.
 3. 스토어 등록 후 `VITE_CWS_URL`, 개인정보 처리방침 URL 설정. 스토어 문구는 `docs/STORE_LISTING.md`.
 4. 번들에 포함되는 Kakao·Google Places 키는 각 콘솔에서 API·할당량 제한을 걸 것.
-5. 실제 계정으로 확인 필요: OpenRouter 로그인(chromiumapp.org 콜백 수락 여부), Anthropic 키 실호출, Windows·Whale용 CLI 브리지 설치.
+5. 실제 계정으로 확인 필요: OpenRouter 로그인(chromiumapp.org 콜백 수락 여부), Anthropic 키 실호출, Chrome을 경유한 CLI 브리지 왕복(macOS 포함), Windows·Whale용 CLI 브리지 설치.
 
 ## 8. 알려진 한계와 위험
 
