@@ -158,6 +158,23 @@ describe('lazy locales', () => {
     expect(i18n.t('common', 'save')).toBe('ja:Save');
   });
 
+  it('notifies subscribers when a retry loads the language that is already current', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const ja = vi
+      .fn<Loader>()
+      .mockRejectedValueOnce(new Error('chunk failed'))
+      .mockResolvedValueOnce(fakeLocale('ja'));
+    const i18n = await loadI18n({ ja });
+    await i18n.setLanguage('ja');
+    const listener = vi.fn();
+    i18n.subscribeLanguage(listener);
+
+    // Same language again (e.g. App's layout effect after a failed startup load).
+    await i18n.setLanguage('ja');
+    expect(i18n.t('common', 'save')).toBe('ja:Save');
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
   it('rejects ensureLanguageLoaded for a language without messages', async () => {
     const i18n = await loadI18n({});
     await expect(i18n.ensureLanguageLoaded('ko')).rejects.toThrow(

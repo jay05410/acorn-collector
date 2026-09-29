@@ -38,10 +38,24 @@ export function registerLanguageLoader(next: LanguageLoader): void {
   loader = next;
 }
 
+function notify(): void {
+  for (const listener of [...listeners]) listener();
+}
+
 function apply(language: AppLanguage): void {
   if (language === current) return;
   current = language;
-  for (const listener of [...listeners]) listener();
+  notify();
+}
+
+/**
+ * Called by ./catalog when a language's messages finish loading. If that
+ * language is already the current one (it was applied with English
+ * fallbacks after an earlier failed load), subscribers re-render so the
+ * translated strings appear.
+ */
+export function notifyLanguageLoaded(language: AppLanguage): void {
+  if (language === current) notify();
 }
 
 /**

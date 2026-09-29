@@ -6,7 +6,7 @@
 import type { LocaleMessages } from './define';
 import { FALLBACK_LANGUAGE, type AppLanguage } from './languages';
 import { englishMessages, localeLoaders } from './registry';
-import { registerLanguageLoader } from './state';
+import { notifyLanguageLoaded, registerLanguageLoader } from './state';
 
 export { englishMessages };
 
@@ -40,6 +40,7 @@ export function ensureLanguageLoaded(language: AppLanguage): Promise<void> {
     )
       .then((messages) => {
         loaded.set(language, messages);
+        notifyLanguageLoaded(language);
       })
       .finally(() => {
         pending.delete(language);

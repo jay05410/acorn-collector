@@ -16,6 +16,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildExport } from './export.mjs';
 import {
   I18nToolError,
@@ -68,11 +69,13 @@ function guessChromeLocale(lang) {
   return CHROME_LOCALES.has(base) ? base : null;
 }
 
-function dayPickerLocaleExists(id) {
+export function dayPickerLocaleExists(id) {
   if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(id)) return false;
   try {
-    import.meta.resolve(`react-day-picker/locale/${id}`);
-    return true;
+    // resolve() maps any id through the package's "./locale/*" exports
+    // pattern without checking the file, so confirm the file exists.
+    const url = import.meta.resolve(`react-day-picker/locale/${id}`);
+    return url.startsWith('file:') && existsSync(fileURLToPath(url));
   } catch {
     // Runners without import.meta.resolve: look at the package files.
     return existsSync(

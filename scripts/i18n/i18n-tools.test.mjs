@@ -25,7 +25,7 @@ import {
   readLocale,
   toValue,
 } from './lib.mjs';
-import { scaffoldLanguage } from './new.mjs';
+import { scaffoldLanguage, dayPickerLocaleExists } from './new.mjs';
 
 /** Every locale of the repo as the TypeScript toolchain sees it, by folder. */
 const COMPILED = Object.fromEntries(
@@ -468,5 +468,17 @@ describe('i18n:new', () => {
     await expect(scaffoldLanguage(root, 'de')).rejects.toThrow(
       'de is already a draft.'
     );
+  });
+});
+
+describe('dayPickerLocaleExists', () => {
+  it('accepts calendar locales that ship with react-day-picker', () => {
+    expect(dayPickerLocaleExists('ja')).toBe(true);
+    expect(dayPickerLocaleExists('zh-TW')).toBe(true);
+  });
+
+  it('rejects ids that only match the exports pattern', () => {
+    expect(dayPickerLocaleExists('xx-NOPE')).toBe(false);
+    expect(dayPickerLocaleExists('es-419')).toBe(false);
   });
 });
