@@ -62,7 +62,7 @@ function isAlive(pid) {
 }
 
 /** @param {() => boolean | Promise<boolean>} check */
-async function waitFor(check, timeoutMs = 5000) {
+async function waitFor(check, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
   while (!(await check())) {
     if (Date.now() > deadline) throw new Error('condition not met in time');
@@ -129,7 +129,9 @@ function startHost(origin, configFile) {
   };
 }
 
-describe('host.mjs', () => {
+// These tests spawn real child processes (the host and a fake CLI). Under a
+// loaded parallel test run they can take longer than the 5 s default.
+describe('host.mjs', { timeout: 30_000 }, () => {
   it('answers ping and exits cleanly when stdin closes', async () => {
     const host = startHost(ORIGIN, await writeConfig());
     host.send({ id: 'p1', op: 'ping' });
