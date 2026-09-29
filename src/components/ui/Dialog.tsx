@@ -15,7 +15,7 @@ import { t, useLanguage } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { Button } from './Button';
 import { IconButton } from './IconButton';
-import { useCovered } from './layer-context';
+import { useCovered, useLayerLevel } from './layer-context';
 
 export interface DialogProps {
   open: boolean;
@@ -114,6 +114,7 @@ function DialogPanel({
   const contentRef = useRef<HTMLDivElement>(null);
   const tokenRef = useRef<symbol | null>(null);
   const covered = useCovered();
+  const layerLevel = useLayerLevel();
   const coveredRef = useRef(covered);
   coveredRef.current = covered;
   /** Last element focused inside the panel, to return to when uncovered. */
@@ -217,7 +218,11 @@ function DialogPanel({
     <DialogDepth.Provider value={depth}>
       <div
         inert={covered}
-        className="fixed inset-0 z-(--z-dialog) flex items-end justify-center sm:items-center sm:p-6"
+        className={cn(
+          'fixed inset-0 flex items-end justify-center sm:items-center sm:p-6',
+          // Above the layer it was opened from (see OverlayLayer).
+          layerLevel === 'overlay' ? 'z-(--z-overlay-dialog)' : 'z-(--z-dialog)'
+        )}
       >
         <div
           aria-hidden="true"

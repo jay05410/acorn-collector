@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { EventList } from '@/components/EventList';
 import { BoothDetail } from '@/components/BoothDetail';
 import { Header } from '@/components/Header';
@@ -7,18 +7,21 @@ import {
   type ReviewSource,
   type SavedBooth,
 } from '@/components/capture/CaptureReviewSheet';
-import { SettingsModal } from '@/components/SettingsModal';
+import { SettingsView } from '@/components/settings/SettingsView';
+import type { SettingsSectionId } from '@/components/settings/section-ids';
+import { useSettings } from '@/components/settings/useSettings';
+import { FirstRunNotice } from '@/components/onboarding/FirstRunNotice';
 import { ChecklistReceipt } from '@/components/ChecklistReceipt';
 import { SponsorSlot } from '@/components/support/SponsorSlot';
-import { CoveredLayer } from '@/components/ui/Layer';
+import { CoveredLayer, OverlayLayer } from '@/components/ui/Layer';
 import { ToastViewport } from '@/components/ui/ToastViewport';
 import { showToast } from '@/components/ui/toast-store';
 import { useUIStore } from '@/stores/useUIStore';
-import { getSettings, watchSettings } from '@/lib/storage';
 import { ensureAIRuntime, setRuntimeAISettings } from '@/lib/ai/runtime';
 import { requestCapture, useCaptureHandoff } from '@/lib/capture/client';
 import type { CaptureRequestFailure } from '@/lib/capture/messages';
-import type { AppSettings, ColorTheme } from '@/lib/settings-types';
+import type { AppSettings } from '@/lib/settings-types';
+import { applyColorTheme, followSystemDarkMode } from '@/lib/theme';
 import { LANGUAGE_INFO } from '@/i18n/languages';
 import { setLanguage, t, tp, useLanguage, type MessageKey } from '@/i18n';
 
@@ -30,22 +33,6 @@ const CAPTURE_FAILURES: Record<CaptureRequestFailure, MessageKey<'capture'>> = {
   superseded: 'captureSuperseded',
 };
 
-function getSystemPrefersDark(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-
-function applyColorTheme(colorTheme: ColorTheme): void {
-  document.documentElement.setAttribute('data-theme', colorTheme);
-}
-
-function applyDarkMode(isDark: boolean): void {
-  if (isDark) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
-}
-
 interface AppProps {
   /** Settings read at bootstrap; App reads them itself when absent. */
   initialSettings?: AppSettings;
@@ -54,10 +41,15 @@ interface AppProps {
 export default function App({ initialSettings }: AppProps) {
   const language = useLanguage();
   const [currentView, setCurrentView] = useState<View>('events');
-  const [settings, setSettings] = useState<AppSettings | null>(
-    initialSettings ?? null
+  // The one settings state of the panel (optimistic: a change shows at once
+  // and is undone if it cannot be saved), shared with Settings and the
+  // first-run notice.
+  const { settings, update: updateSettings } = useSettings(
+    undefined,
+    initialSettings
   );
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>();
   const [showExport, setShowExport] = useState(false);
   const [exportEventId, setExportEventId] = useState<string | null>(null);
   const [reviewSource, setReviewSource] = useState<ReviewSource | null>(null);
@@ -80,38 +72,21 @@ export default function App({ initialSettings }: AppProps) {
     ensureAIRuntime();
   }, []);
 
+  // Settings reach the document and the AI runtime here only. Layout
+  // effects: a new language or theme is applied before the next paint.
+  const colorTheme = settings?.colorTheme;
+  const settingsLanguage = settings?.language;
+  const aiSettings = settings?.ai;
+  useLayoutEffect(() => {
+    if (colorTheme) applyColorTheme(colorTheme);
+  }, [colorTheme]);
+  useLayoutEffect(() => {
+    if (settingsLanguage) setLanguage(settingsLanguage);
+  }, [settingsLanguage]);
   useEffect(() => {
-    const applySettings = (next: AppSettings) => {
-      applyColorTheme(next.colorTheme);
-      setLanguage(next.language);
-      setRuntimeAISettings(next.ai);
-      setSettings(next);
-      applyDarkMode(getSystemPrefersDark());
-    };
-
-    if (initialSettings) {
-      applySettings(initialSettings);
-    } else {
-      getSettings()
-        .then(applySettings)
-        .catch((error: unknown) => {
-          console.error('Failed to load settings:', error);
-        });
-    }
-
-    const unwatch = watchSettings(applySettings);
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleSystemChange = (e: MediaQueryListEvent) => {
-      applyDarkMode(e.matches);
-    };
-    mediaQuery.addEventListener('change', handleSystemChange);
-
-    return () => {
-      unwatch();
-      mediaQuery.removeEventListener('change', handleSystemChange);
-    };
-  }, [initialSettings]);
+    if (aiSettings) setRuntimeAISettings(aiSettings);
+  }, [aiSettings]);
+  useEffect(() => followSystemDarkMode(), []);
 
   const { handoff, consume } = useCaptureHandoff();
 
@@ -176,7 +151,16 @@ export default function App({ initialSettings }: AppProps) {
     }
   }, []);
 
-  const onOpenSettings = useCallback(() => setShowSettings(true), []);
+  const openSettings = useCallback((section?: SettingsSectionId) => {
+    setSettingsSection(section);
+    setShowSettings(true);
+  }, []);
+  // From an analysis (connect, or a key or provider error): the AI section.
+  const openAiSettings = useCallback(() => openSettings('ai'), [openSettings]);
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setSettingsSection(undefined);
+  }, []);
 
   const handleExportEvent = (eventId: string) => {
     setExportEventId(eventId);
@@ -211,7 +195,7 @@ export default function App({ initialSettings }: AppProps) {
           onBack={handleBack}
           showBack={currentView !== 'events'}
           onAddClick={() => openManualReview(null)}
-          onSettingsClick={onOpenSettings}
+          onSettingsClick={() => openSettings()}
           onCaptureClick={() => void handleCapture()}
           capturing={capturing}
         />
@@ -227,7 +211,7 @@ export default function App({ initialSettings }: AppProps) {
             <BoothDetail
               boothId={selectedBoothId}
               settings={settings}
-              onOpenSettings={onOpenSettings}
+              onOpenSettings={openAiSettings}
             />
           )}
         </main>
@@ -240,7 +224,13 @@ export default function App({ initialSettings }: AppProps) {
           fallbackEventId={selectedEventId}
           onDismiss={() => releaseReview(reviewSource)}
           onSaved={handleSaved}
-          onOpenSettings={onOpenSettings}
+          onOpenSettings={openAiSettings}
+        />
+
+        <FirstRunNotice
+          settings={settings}
+          update={updateSettings}
+          onConnectAi={openAiSettings}
         />
 
         {showExport && exportEventId && (
@@ -254,11 +244,18 @@ export default function App({ initialSettings }: AppProps) {
         )}
       </CoveredLayer>
 
-      {/* Settings: a layer above the panel and its dialogs (--z-overlay). */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
+      {/* Settings: a full view with its own top bar, in a layer above the
+          panel and its dialogs. Back returns to the panel as it was. */}
+      {showSettings && (
+        <OverlayLayer>
+          <SettingsView
+            settings={settings}
+            update={updateSettings}
+            initialSection={settingsSection}
+            onBack={closeSettings}
+          />
+        </OverlayLayer>
+      )}
 
       <ToastViewport />
     </div>
