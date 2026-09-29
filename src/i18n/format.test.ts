@@ -7,7 +7,7 @@ import {
   toIsoDate,
 } from './format';
 import { getLanguage, setLanguage } from './state';
-import type { AppLanguage } from './languages';
+import { APP_LANGUAGES, LANGUAGE_INFO, type AppLanguage } from './languages';
 
 let initial: AppLanguage;
 
@@ -102,5 +102,28 @@ describe('formatDate', () => {
     expect(formatDate(null)).toBe('');
     expect(formatDate('')).toBe('');
     expect(formatDate('soon')).toBe('soon');
+  });
+});
+
+describe.each(APP_LANGUAGES)('formatting in %s', (language) => {
+  const { intlLocale, defaultCurrency } = LANGUAGE_INFO[language];
+
+  it('follows the language registry', () => {
+    setLanguage(language);
+    expect(formatPrice(1200)).toBe(
+      new Intl.NumberFormat(intlLocale, {
+        style: 'currency',
+        currency: defaultCurrency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(1200)
+    );
+    expect(formatDate('2026-10-03')).toBe(
+      new Intl.DateTimeFormat(intlLocale, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      }).format(new Date(2026, 9, 3))
+    );
   });
 });
