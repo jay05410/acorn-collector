@@ -81,7 +81,9 @@ export default function App({ initialSettings }: AppProps) {
     if (colorTheme) applyColorTheme(colorTheme);
   }, [colorTheme]);
   useLayoutEffect(() => {
-    if (settingsLanguage) setLanguage(settingsLanguage);
+    // Switches before the next paint when the language is loaded; otherwise
+    // the current language stays until its messages arrive.
+    if (settingsLanguage) void setLanguage(settingsLanguage);
   }, [settingsLanguage]);
   useEffect(() => {
     if (aiSettings) setRuntimeAISettings(aiSettings);

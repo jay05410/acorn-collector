@@ -1,8 +1,9 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { APP_LANGUAGES, LANGUAGE_INFO } from './languages';
-import { catalogs } from './registry';
+import type { LocaleMessages } from './define';
+import { APP_LANGUAGES, LANGUAGE_INFO, type AppLanguage } from './languages';
+import { englishMessages, localeLoaders } from './registry';
 
 /**
  * Runtime twin of the compile-time contract (`satisfies LocaleMessages`) and
@@ -26,12 +27,27 @@ function namespaceFiles(language: string): string[] {
     .sort();
 }
 
+const catalogs = Object.fromEntries(
+  await Promise.all(
+    APP_LANGUAGES.map(async (language) => {
+      const load = localeLoaders[language];
+      const messages = language === 'en' ? englishMessages : await load?.();
+      return [language, messages ?? {}] as const;
+    })
+  )
+) as Record<AppLanguage, LocaleMessages>;
 const english = catalogs.en as Record<string, Table>;
 const namespaces = Object.keys(english).sort();
 
 describe('locale folders', () => {
   it('registers every English namespace file in locales/en/index.ts', () => {
     expect(namespaces).toEqual(namespaceFiles('en'));
+  });
+
+  it('lazy-loads exactly the non-English app languages', () => {
+    expect(Object.keys(localeLoaders).sort()).toEqual(
+      APP_LANGUAGES.filter((language) => language !== 'en').sort()
+    );
   });
 
   it.each(APP_LANGUAGES)('gives %s the same namespace files', (language) => {

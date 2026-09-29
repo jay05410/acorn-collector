@@ -1,8 +1,10 @@
 /**
  * i18n entry point:
  * `import { t, tp, tn, useLanguage, formatPrice } from '@/i18n'`.
- * Strings live in ./locales/<lang>/<namespace>.ts (docs/v2/I18N.md); a
- * missing string falls back to English per key.
+ * Strings live in ./locales/<lang>/<namespace>.ts (docs/v2/I18N.md).
+ * English is bundled; other languages load on demand through setLanguage()
+ * or ensureLanguageLoaded(). Until a language is loaded, and for any key it
+ * lacks, strings fall back to English per key.
  */
 import { useSyncExternalStore } from 'react';
 import { PRESET_BADGE_IDS } from '@/constants/presetBadges';
@@ -18,9 +20,10 @@ import {
   LANGUAGE_INFO,
   type AppLanguage,
 } from './languages';
-import { catalogs, englishMessages } from './registry';
+import { englishMessages, getCatalog } from './catalog';
 import { getLanguage, subscribeLanguage } from './state';
 
+export { ensureLanguageLoaded } from './catalog';
 export {
   formatDate,
   formatNumber,
@@ -58,7 +61,7 @@ function messages(
   language: AppLanguage,
   namespace: Namespace
 ): LooseTable | undefined {
-  return catalogs[language]?.[namespace];
+  return getCatalog(language)?.[namespace];
 }
 
 function lookup(namespace: Namespace, key: string): string {

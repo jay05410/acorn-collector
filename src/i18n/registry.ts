@@ -1,21 +1,32 @@
 /**
- * Message catalogs by language. Each language lives in ./locales/<lang>/
- * (one file per namespace plus an index); English defines the keys.
+ * Where messages come from. English is bundled (it defines the keys and is
+ * the per-key fallback); every other app language is a separate chunk,
+ * found by folder name under ./locales and imported on first use.
  */
 import type { LocaleMessages } from './define';
-import type { AppLanguage } from './languages';
+import { isAppLanguage, type AppLanguage } from './languages';
 import en from './locales/en';
-import ja from './locales/ja';
-import ko from './locales/ko';
-import zhCN from './locales/zh-CN';
-import zhTW from './locales/zh-TW';
 
 export const englishMessages = en;
 
-export const catalogs: Record<AppLanguage, LocaleMessages> = {
-  ko,
-  en,
-  ja,
-  'zh-CN': zhCN,
-  'zh-TW': zhTW,
-};
+type LocaleModule = { default: LocaleMessages };
+
+const modules = import.meta.glob<LocaleModule>([
+  './locales/*/index.ts',
+  '!./locales/en/index.ts',
+]);
+
+/**
+ * Loaders for the non-English app languages. A locale folder whose language
+ * is not in APP_LANGUAGES (a draft) gets no loader, so it is never fetched.
+ */
+export const localeLoaders: Partial<
+  Record<AppLanguage, () => Promise<LocaleMessages>>
+> = {};
+
+for (const [path, load] of Object.entries(modules)) {
+  const language = path.split('/')[2];
+  if (isAppLanguage(language)) {
+    localeLoaders[language] = () => load().then((module) => module.default);
+  }
+}
