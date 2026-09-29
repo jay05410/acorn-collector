@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { byText, cleanup, click, press, render } from '@/components/ui/test-utils';
 import { clearToasts, getToasts } from '@/components/ui/toast-store';
 import { setLanguage } from '@/i18n';
+import { APP_LANGUAGES, LANGUAGE_INFO } from '@/i18n/languages';
 import type { HeadlessFlow, OpenRouterCredentials } from '@/lib/ai/openrouter-oauth';
 import { bridgeError } from '@/lib/bridge/errors';
 import {
@@ -219,21 +220,17 @@ describe('SettingsView', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('offers the five app languages by their own names and saves a pick', async () => {
+  it('offers every app language by its own name and saves a pick', async () => {
     const store = await renderView(settings());
     const options = [
       ...document.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
     ].filter((input) => input.closest('fieldset')?.textContent?.includes('Language'));
-    expect(options.map((input) => input.value)).toEqual(['ko', 'en', 'ja', 'zh-CN', 'zh-TW']);
-    expect(options.map((input) => input.closest('label')?.textContent)).toEqual([
-      '한국어',
-      'English',
-      '日本語',
-      '简体中文',
-      '繁體中文',
-    ]);
+    expect(options.map((input) => input.value)).toEqual([...APP_LANGUAGES]);
+    expect(options.map((input) => input.closest('label')?.textContent)).toEqual(
+      APP_LANGUAGES.map((code) => LANGUAGE_INFO[code].nativeName)
+    );
     expect(options.find((input) => input.checked)?.value).toBe('en');
-    act(() => radio('日本語').click());
+    act(() => radio(LANGUAGE_INFO.ja.nativeName).click());
     await settle();
     expect(store.stored.language).toBe('ja');
   });

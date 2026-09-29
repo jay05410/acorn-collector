@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isAppLanguage } from '@/i18n/languages';
 import { DEFAULT_AI_SETTINGS, type AppSettings } from './settings-types';
 import {
   applySettingsPatch,
@@ -88,12 +89,16 @@ describe('migrateSettings', () => {
   });
 
   it('re-detects languages that are no longer shipped', () => {
-    // Offered briefly before the 2026-09-29 decision to ship five languages.
-    for (const language of ['th', 'id', 'vi', 'es', 'fr', 'de', 'pt-BR']) {
+    // Offered briefly before the 2026-09-29 decision to ship five languages
+    // (skipped here if one of them ships again).
+    const removed = ['th', 'id', 'vi', 'es', 'fr', 'de', 'pt-BR'].filter(
+      (language) => !isAppLanguage(language)
+    );
+    for (const language of removed) {
       expect(migrateSettings({ language }).language, language).toBe('ja');
     }
-    vi.stubGlobal('navigator', { language: 'th-TH' });
-    expect(migrateSettings({ language: 'th' }).language).toBe('en');
+    vi.stubGlobal('navigator', { language: 'x-unknown' });
+    expect(migrateSettings({ language: 'x-removed' }).language).toBe('en');
   });
 
   it('returns defaults for non-object input', () => {

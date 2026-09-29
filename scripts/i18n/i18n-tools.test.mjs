@@ -15,10 +15,6 @@ import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as languagesModule from '../../src/i18n/languages.ts';
 import enMessages from '../../src/i18n/locales/en/index.ts';
-import jaMessages from '../../src/i18n/locales/ja/index.ts';
-import koMessages from '../../src/i18n/locales/ko/index.ts';
-import zhCNMessages from '../../src/i18n/locales/zh-CN/index.ts';
-import zhTWMessages from '../../src/i18n/locales/zh-TW/index.ts';
 import { checkI18n } from './check.mjs';
 import { buildExport } from './export.mjs';
 import { importTranslation } from './import.mjs';
@@ -31,27 +27,47 @@ import {
 } from './lib.mjs';
 import { scaffoldLanguage } from './new.mjs';
 
-const COMPILED = {
-  en: enMessages,
-  ko: koMessages,
-  ja: jaMessages,
-  'zh-CN': zhCNMessages,
-  'zh-TW': zhTWMessages,
-};
+/** Every locale of the repo as the TypeScript toolchain sees it, by folder. */
+const COMPILED = Object.fromEntries(
+  Object.entries(
+    import.meta.glob('../../src/i18n/locales/*/index.ts', {
+      eager: true,
+      import: 'default',
+    })
+  ).map(([path, messages]) => [path.split('/').at(-2), messages])
+);
 
 let root;
+
+/**
+ * The languages these tests are written against. The fixture pins them, so
+ * shipping or drafting another language in the app does not change the
+ * tests (they scaffold fr, ru and de themselves).
+ */
+const FIXTURE_LANGUAGES = ['ko', 'en', 'ja', 'zh-CN', 'zh-TW'];
 
 /** A throwaway copy of the files the tools read and write. */
 function copyRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'acorn-i18n-'));
-  for (const path of [
-    'src/i18n/languages.ts',
-    'src/i18n/locales',
-    'src/public/_locales',
-    '.prettierrc',
-  ]) {
-    cpSync(join(REPO_ROOT, path), join(dir, path), { recursive: true });
+  const { info } = readLanguages(REPO_ROOT);
+  const fixtureInfo = Object.fromEntries(
+    FIXTURE_LANGUAGES.map((lang) => [lang, info[lang]])
+  );
+  for (const lang of FIXTURE_LANGUAGES) {
+    const chromeLocale = `src/public/_locales/${info[lang].chromeLocale}`;
+    for (const path of [`src/i18n/locales/${lang}`, chromeLocale]) {
+      cpSync(join(REPO_ROOT, path), join(dir, path), { recursive: true });
+    }
   }
+  cpSync(join(REPO_ROOT, '.prettierrc'), join(dir, '.prettierrc'));
+  writeFileSync(
+    join(dir, 'src/i18n/languages.ts'),
+    `export const APP_LANGUAGES = ${JSON.stringify(FIXTURE_LANGUAGES)} as const;\n\n` +
+      `export const LANGUAGE_INFO = ${JSON.stringify(fixtureInfo, null, 2)} as const;\n\n` +
+      'export const DRAFT_LANGUAGE_INFO: Readonly<\n' +
+      '  Record<string, LanguageInfo<string>>\n' +
+      '> = {};\n'
+  );
   return dir;
 }
 
@@ -126,6 +142,9 @@ describe('literal parser', () => {
   });
 
   it('reads every locale exactly as the compiler does', () => {
+    expect(Object.keys(COMPILED)).toEqual(
+      expect.arrayContaining([...languagesModule.APP_LANGUAGES])
+    );
     for (const [lang, compiled] of Object.entries(COMPILED)) {
       expect(readLocale(REPO_ROOT, lang).namespaces, lang).toEqual(
         JSON.parse(JSON.stringify(compiled))
@@ -143,7 +162,12 @@ describe('literal parser', () => {
 
 describe('i18n:check', () => {
   it('passes on the repository', () => {
-    expect(checkI18n(REPO_ROOT)).toEqual({ problems: [], notes: [] });
+    // Notes only describe drafts in progress.
+    expect(checkI18n(REPO_ROOT).problems).toEqual([]);
+  });
+
+  it('passes on the test copy with nothing to note', () => {
+    expect(checkI18n(root)).toEqual({ problems: [], notes: [] });
   });
 
   it('reports missing and extra keys, placeholders, plurals and _locales', () => {
@@ -208,7 +232,7 @@ describe('i18n:export / i18n:import', () => {
     ).toBe(true);
   });
 
-  it.each(['ko', 'ja', 'zh-CN', 'zh-TW'])(
+  it.each(FIXTURE_LANGUAGES.filter((lang) => lang !== 'en'))(
     'round-trips %s without changing a byte',
     async (lang) => {
       const before = snapshot(root);
@@ -337,7 +361,7 @@ describe('i18n:new', () => {
       'src/i18n/locales/fr/translation.json',
     ]);
     const languages = readLanguages(root);
-    expect(languages.enabled).toEqual(['ko', 'en', 'ja', 'zh-CN', 'zh-TW']);
+    expect(languages.enabled).toEqual(FIXTURE_LANGUAGES);
     expect(languages.drafts).toEqual({ fr: info });
     // Chrome's folder ships, so it is created by the import, not here.
     expect(existsSync(file('src/public/_locales/fr'))).toBe(false);
