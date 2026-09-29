@@ -1,7 +1,10 @@
 /**
  * i18n entry point:
  * `import { t, tp, tn, useLanguage, formatPrice } from '@/i18n'`.
- * Strings live in ./messages/<namespace>.ts; missing keys fall back to English.
+ * Strings live in ./locales/<lang>/<namespace>.ts (docs/v2/I18N.md).
+ * English is bundled; other languages load on demand through setLanguage()
+ * or ensureLanguageLoaded(). Until a language is loaded, and for any key it
+ * lacks, strings fall back to English per key.
  */
 import { useSyncExternalStore } from 'react';
 import { PRESET_BADGE_IDS } from '@/constants/presetBadges';
@@ -17,9 +20,10 @@ import {
   LANGUAGE_INFO,
   type AppLanguage,
 } from './languages';
-import { namespaces } from './registry';
+import { englishMessages, getCatalog } from './catalog';
 import { getLanguage, subscribeLanguage } from './state';
 
+export { ensureLanguageLoaded } from './catalog';
 export {
   formatDate,
   formatNumber,
@@ -36,10 +40,10 @@ export {
   subscribeLanguage,
 } from './state';
 
-type Namespaces = typeof namespaces;
+type Namespaces = typeof englishMessages;
 export type Namespace = keyof Namespaces;
 export type MessageKey<N extends Namespace> = Extract<
-  keyof Namespaces[N]['en'],
+  keyof Namespaces[N],
   string
 >;
 export type MessageParams = Record<string, string | number>;
@@ -50,11 +54,22 @@ type PluralBase<K extends string> = K extends `${infer Base}_other`
 /** Base keys of namespace N that have an `<base>_other` plural form. */
 export type PluralKey<N extends Namespace> = PluralBase<MessageKey<N>>;
 
-type LooseTable = Partial<Record<AppLanguage, Partial<Record<string, string>>>>;
+type LooseTable = Partial<Record<string, string>>;
+
+/** One namespace of a language, or undefined while it is not loaded. */
+function messages(
+  language: AppLanguage,
+  namespace: Namespace
+): LooseTable | undefined {
+  return getCatalog(language)?.[namespace];
+}
 
 function lookup(namespace: Namespace, key: string): string {
-  const table: LooseTable = namespaces[namespace];
-  return table[getLanguage()]?.[key] || table[FALLBACK_LANGUAGE]?.[key] || key;
+  return (
+    messages(getLanguage(), namespace)?.[key] ||
+    messages(FALLBACK_LANGUAGE, namespace)?.[key] ||
+    key
+  );
 }
 
 export function t<N extends Namespace>(
@@ -102,13 +117,10 @@ function lookupPlural(
   baseKey: string,
   count: number
 ): string {
-  const table: LooseTable = namespaces[namespace];
   const pick = (language: AppLanguage): string | undefined => {
-    const messages = table[language];
+    const table = messages(language, namespace);
     const category = pluralCategory(language, count);
-    return (
-      messages?.[`${baseKey}_${category}`] || messages?.[`${baseKey}_other`]
-    );
+    return table?.[`${baseKey}_${category}`] || table?.[`${baseKey}_other`];
   };
   return pick(getLanguage()) || pick(FALLBACK_LANGUAGE) || `${baseKey}_other`;
 }

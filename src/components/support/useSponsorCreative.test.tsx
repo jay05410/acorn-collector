@@ -10,7 +10,7 @@ import {
   it,
   vi,
 } from 'vitest';
-import type { AppLanguage } from '@/i18n/languages';
+import { APP_LANGUAGES, type AppLanguage } from '@/i18n/languages';
 import type { Creative, Placement, SponsorFeed } from '@/lib/sponsor/feed';
 import { FEED_CACHE_KEY, type FeedCacheEntry } from '@/lib/sponsor/loader';
 
@@ -52,9 +52,15 @@ async function page(creatives: Creative[]) {
     import('./SponsorSlot'),
     import('@/i18n'),
   ]);
+  // Fresh modules: load the languages again so switching is synchronous.
+  await Promise.all(
+    APP_LANGUAGES.map((language) => i18n.ensureLanguageLoaded(language))
+  );
   return {
     SponsorSlot: SponsorSlot as ComponentType<{ placement: Placement }>,
-    setLanguage: (language: AppLanguage) => i18n.setLanguage(language),
+    setLanguage: (language: AppLanguage) => {
+      void i18n.setLanguage(language);
+    },
   };
 }
 

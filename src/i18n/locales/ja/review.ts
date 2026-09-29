@@ -1,0 +1,50 @@
+import type { LocaleMessages } from '../../define';
+
+/** Items review list and AI analysis status (capture and booth sheets). */
+export default {
+  itemsTitle: '商品',
+  selectAll: 'すべて選択',
+  total: '合計',
+  addAs: '追加するバッジ',
+  itemNumber: '商品 {index}',
+  includeItem: '{name}を追加',
+  itemNameOf: '商品 {index} の名前',
+  originalName: '原文',
+  priceOf: '{name}の価格',
+  noPrice: '価格',
+  quantityOf: '{name}の数量',
+  optionOf: '{name}のオプション',
+  addVariantOf: '{name}の別のオプションを追加',
+  excluded: '追加しない',
+  alreadyAdded: 'リストに追加済み',
+  providerCli: 'ローカルCLI',
+  elapsed: '{seconds}秒',
+  statusStarting: '分析を開始しました',
+  statusFinding: '商品を探しています',
+  statusReadingText: '投稿を読み取り中...',
+  statusStreaming_one: 'これまでに{count}件見つかりました...',
+  statusStreaming_other: 'これまでに{count}件見つかりました...',
+  statusDone_one: '{count}件の商品が見つかりました',
+  statusDone_other: '{count}件の商品が見つかりました',
+  statusNone: '商品が見つかりませんでした',
+  tierAccurate: '精度優先',
+  cached: '保存済みの結果',
+  connectTitle: 'AIを接続すると画像から商品を抽出できます',
+  connectBody:
+    'ブース情報は投稿から自動入力しました。自分のAIアカウントを接続すると、画像内の商品と価格もリストにします。',
+  connectAction: 'AIを接続',
+  startHint: 'AIで投稿内の商品と価格を整理します。',
+  start: '分析する',
+  stop: '停止',
+  runAccurate: '精度優先モード',
+  runAccurateHint: '時間はかかりますが、複雑な価格表に強いです',
+  runAgain: 'もう一度分析',
+  aiMayBeWrong: 'AIは間違えることがあります。保存前に確認してください。',
+  skippedImages_one:
+    '{count}枚の画像を読み込めなかったため、スキップしました。',
+  skippedImages_other:
+    '{count}枚の画像を読み込めなかったため、スキップしました。',
+  currencyOf: '{name}の通貨',
+  currencyUnknown:
+    '通貨を判別できませんでした。別の通貨を選ばない場合は{currency}で保存されます。',
+} satisfies LocaleMessages['review'];

@@ -1,49 +1,32 @@
 /**
- * Every message namespace, imported explicitly so bundlers can see them.
- * Register a new file under ./messages here (the registry test enforces it).
+ * Where messages come from. English is bundled (it defines the keys and is
+ * the per-key fallback); every other app language is a separate chunk,
+ * found by folder name under ./locales and imported on first use.
  */
-import aiConnect from './messages/aiConnect';
-import aiErrors from './messages/aiErrors';
-import analysis from './messages/analysis';
-import badges from './messages/badges';
-import booths from './messages/booths';
-import bridgeUi from './messages/bridgeUi';
-import capture from './messages/capture';
-import categories from './messages/categories';
-import common from './messages/common';
-import currency from './messages/currency';
-import errors from './messages/errors';
-import events from './messages/events';
-import exportMessages from './messages/export';
-import items from './messages/items';
-import onboarding from './messages/onboarding';
-import review from './messages/review';
-import settings from './messages/settings';
-import settingsView from './messages/settingsView';
-import support from './messages/support';
-import themes from './messages/themes';
-import ui from './messages/ui';
+import type { LocaleMessages } from './define';
+import { isAppLanguage, type AppLanguage } from './languages';
+import en from './locales/en';
 
-export const namespaces = {
-  aiConnect,
-  aiErrors,
-  analysis,
-  badges,
-  booths,
-  bridgeUi,
-  capture,
-  categories,
-  common,
-  currency,
-  errors,
-  events,
-  export: exportMessages,
-  items,
-  onboarding,
-  review,
-  settings,
-  settingsView,
-  support,
-  themes,
-  ui,
-};
+export const englishMessages = en;
+
+type LocaleModule = { default: LocaleMessages };
+
+const modules = import.meta.glob<LocaleModule>([
+  './locales/*/index.ts',
+  '!./locales/en/index.ts',
+]);
+
+/**
+ * Loaders for the non-English app languages. A locale folder whose language
+ * is not in APP_LANGUAGES (a draft) gets no loader, so it is never fetched.
+ */
+export const localeLoaders: Partial<
+  Record<AppLanguage, () => Promise<LocaleMessages>>
+> = {};
+
+for (const [path, load] of Object.entries(modules)) {
+  const language = path.split('/')[2];
+  if (isAppLanguage(language)) {
+    localeLoaders[language] = () => load().then((module) => module.default);
+  }
+}

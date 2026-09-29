@@ -11,60 +11,45 @@ import { DayPicker, type DayPickerLocale } from 'react-day-picker';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDate, parseIsoDate, t, toIsoDate, useLanguage } from '@/i18n';
-import type { AppLanguage } from '@/i18n/languages';
+import {
+  LANGUAGE_INFO,
+  type AppLanguage,
+  type DayPickerLocaleId,
+} from '@/i18n/languages';
+import { DAY_PICKER_LOCALES } from './day-picker-locales';
 import {
   controlClassName,
   useFieldControl,
   useFieldLabelId,
 } from './field-context';
 
-type LocaleLanguage = Exclude<AppLanguage, 'en'>;
+const loadedLocales = new Map<DayPickerLocaleId, DayPickerLocale>();
 
-/**
- * Calendar locales load on demand, one small chunk per language. English uses
- * DayPicker's built-in en-US locale.
- */
-const LOCALE_LOADERS: Record<LocaleLanguage, () => Promise<DayPickerLocale>> = {
-  ko: () => import('react-day-picker/locale/ko').then((m) => m.ko),
-  ja: () => import('react-day-picker/locale/ja').then((m) => m.ja),
-  'zh-CN': () => import('react-day-picker/locale/zh-CN').then((m) => m.zhCN),
-  'zh-TW': () => import('react-day-picker/locale/zh-TW').then((m) => m.zhTW),
-  th: () => import('react-day-picker/locale/th').then((m) => m.th),
-  id: () => import('react-day-picker/locale/id').then((m) => m.id),
-  vi: () => import('react-day-picker/locale/vi').then((m) => m.vi),
-  es: () => import('react-day-picker/locale/es').then((m) => m.es),
-  fr: () => import('react-day-picker/locale/fr').then((m) => m.fr),
-  de: () => import('react-day-picker/locale/de').then((m) => m.de),
-  'pt-BR': () => import('react-day-picker/locale/pt-BR').then((m) => m.ptBR),
-};
-
-const loadedLocales = new Map<AppLanguage, DayPickerLocale>();
-
+/** The calendar locale of `language`, loaded on first use (see LANGUAGE_INFO). */
 function useDayPickerLocale(
   language: AppLanguage
 ): DayPickerLocale | undefined {
+  const id = LANGUAGE_INFO[language].dayPickerLocale;
   const [, setVersion] = useState(0);
 
   useEffect(() => {
-    if (language === 'en' || loadedLocales.has(language)) return;
+    const load = DAY_PICKER_LOCALES[id];
+    if (!load || loadedLocales.has(id)) return;
     let active = true;
-    LOCALE_LOADERS[language]()
+    load()
       .then((locale) => {
-        loadedLocales.set(language, locale);
+        loadedLocales.set(id, locale);
         if (active) setVersion((v) => v + 1);
       })
       .catch((error: unknown) => {
-        console.error(
-          `[DatePicker] could not load the ${language} locale`,
-          error
-        );
+        console.error(`[DatePicker] could not load the ${id} locale`, error);
       });
     return () => {
       active = false;
     };
-  }, [language]);
+  }, [id]);
 
-  return loadedLocales.get(language);
+  return loadedLocales.get(id);
 }
 
 const NAV_BUTTON =

@@ -13,6 +13,8 @@ export default defineConfig({
       'scripts/**/*.test.mjs',
     ],
     environment: 'node',
+    // Preloads the lazily loaded locales (see the file).
+    setupFiles: ['src/i18n/test-setup.ts'],
     restoreMocks: true,
   },
 });

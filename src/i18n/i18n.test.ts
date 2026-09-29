@@ -31,11 +31,6 @@ describe('t', () => {
     setLanguage('zh-TW');
     expect(t('booths', 'title')).toBe('攤位');
   });
-
-  it('falls back to English for languages without the namespace', () => {
-    setLanguage('th');
-    expect(t('common', 'save')).toBe('Save');
-  });
 });
 
 describe('tp', () => {
@@ -92,13 +87,6 @@ describe('tn', () => {
   it('falls back to the _other form when the category has no message', () => {
     vi.spyOn(Intl.PluralRules.prototype, 'select').mockReturnValue('few');
     expect(tn('events', 'boothCount', 3)).toBe('3 booths');
-  });
-
-  it('applies English plural rules to the English fallback', () => {
-    // French has no messages yet; its rules call 0 "one", English's "other".
-    setLanguage('fr');
-    expect(tn('events', 'boothCount', 0)).toBe('0 booths');
-    expect(tn('events', 'boothCount', 1)).toBe('1 booth');
   });
 
   it('only accepts base keys that have an _other form', () => {

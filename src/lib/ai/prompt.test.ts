@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { APP_LANGUAGES, LANGUAGE_INFO } from '@/i18n/languages';
 import { buildSystemPrompt, buildUserContent, systemPromptFor } from './prompt';
 
 describe('buildSystemPrompt', () => {
@@ -12,6 +13,13 @@ describe('buildSystemPrompt', () => {
 
   it('resolves app languages to English names', () => {
     expect(systemPromptFor('zh-TW')).toContain('translated into Traditional Chinese');
+  });
+
+  it.each(APP_LANGUAGES)('has an English name for %s to translate into', (language) => {
+    const { englishName } = LANGUAGE_INFO[language];
+    // A plain English name (no native script) that the model can follow.
+    expect(englishName).toMatch(/^[A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)*$/);
+    expect(systemPromptFor(language)).toContain(`translated into ${englishName};`);
   });
 });
 

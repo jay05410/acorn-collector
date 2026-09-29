@@ -26,38 +26,38 @@
 - 범위: `api/` Cloudflare Worker(D1 사용자·크레딧·분석 세션·이미지 URL 저장, 결제, OAuth 로그인) 삭제. 확장 쪽 로그인·크레딧·결제 UI와 `api-client`, `auth`, `useAuthStore`, `oauth-callback.html` 삭제. 미사용 의존성(`@google/genai`, `tesseract.js`) 제거.
 - 완료 조건: 서버로 사용자 데이터를 보내는 코드 경로 0개. 번들 크기 감소 수치 기록.
 
-### ACORN-3 데이터 계층 v5 + i18n 코어 + 계약 정의 — `IN REVIEW`
+### ACORN-3 데이터 계층 v5 + i18n 코어 + 계약 정의 — `DONE`
 - 범위: Dexie v5 마이그레이션(행사 통화, 상품 통화·원문명·카테고리·옵션, 로컬 분석 캐시 테이블). 반응형 i18n 코어(언어 변경 즉시 반영, 네임스페이스별 메시지 파일, 영어 폴백). 통화·날짜 현지화 유틸. AI·캡처 공용 타입 계약.
 - 완료 조건: v4→v5 마이그레이션 테스트, i18n 키 완전성 테스트.
 
-### ACORN-4 AI 엔진 + 사용자 계정 기반 프로바이더 — `IN REVIEW`
+### ACORN-4 AI 엔진 + 사용자 계정 기반 프로바이더 — `DONE`
 - 범위: 프로바이더 어댑터(OpenAI, Anthropic, OpenRouter OAuth PKCE), 이미지 전처리(축소·재인코딩·해시), 단일 호출 구조화 출력(JSON Schema), 스트리밍 부분 결과, 로컬 캐시, 오류 분류. Gemini 미사용.
 - 완료 조건: 벤치마크 픽스처에서 기존 대비 지연·정확도 수치 비교. 요청 빌더·파서 단위 테스트.
 
-### ACORN-5 페이지 캡처 v2 — `IN REVIEW`
+### ACORN-5 페이지 캡처 v2 — `DONE`
 - 범위: 콘텐츠 스크립트가 현재 렌더링된 DOM을 구조화 스냅샷(본문·작성자·이미지·링크·메타데이터)으로 반환. 사이트별 추출기(X, Bluesky, 일반 페이지). 우클릭 대상 기억, 이미지 우클릭, 단축키, 사이드패널 캡처 버튼. `chrome.storage.session` 핸드오프(디스크에 흔적 없음).
 - 완료 조건: DOM 픽스처 기반 추출 테스트.
 
-### ACORN-6 로컬 CLI 브리지 (Claude Code / Codex) — `IN REVIEW`
+### ACORN-6 로컬 CLI 브리지 (Claude Code / Codex) — `DONE`
 - 범위: Native Messaging 호스트(Node, 무의존성), 설치 스크립트(macOS·Linux·Windows), 확장 쪽 클라이언트와 연결 테스트.
 - 완료 조건: 프로토콜 단위 테스트, 로컬 Claude Code 실호출 검증.
 
-### ACORN-7 스마트 캡처 리뷰 UI + AI 연결 설정 — `TODO`
+### ACORN-7 스마트 캡처 리뷰 UI + AI 연결 설정 — `DONE`
 - 범위: 캡처 즉시 휴리스틱 결과 표시 → AI 결과 스트리밍 반영 → 부스·상품을 한 번에 저장. 기존 부스의 이미지 재분석 시트. 프로바이더 연결 설정 화면.
 - 완료 조건: 기존 AddBoothModal·OCRModal·AnalysisMethodModal 대체.
 
-### ACORN-8 수익화: 광고 + 후원 — `TODO`
+### ACORN-8 수익화: 광고 + 후원 — `DONE`
 - 범위: MV3 정책을 지키는 스폰서 슬롯(원격 JSON 데이터만, 스크립트 없음, "광고" 표기), 후원 링크, 스토어 고지 문구, 개인정보 처리방침.
 - 완료 조건: 원격 코드 로드 0건, 피드 검증 테스트.
 
-### ACORN-9 다국어 확장 — `TODO`
-- 범위: 하드코딩 문자열 제거, 지원 언어 확장, `_locales` 확장, 통화·날짜 현지화 적용.
-- 완료 조건: 모든 언어의 키 완전성 테스트 통과.
+### ACORN-9 다국어 확장성 — `IN REVIEW`
+- 범위 변경(소유자 결정, 2026-09-29): 출시 언어는 한국어·영어·일본어·중국어(간체·번체)만. 대신 언어를 언제든 추가할 수 있는 구조로 만든다.
+- 구현: 언어 레지스트리, 언어별 로케일 폴더(영어 기준 타입 검사), 영어 외 언어 지연 로딩, `i18n:export/import/check/new` 도구, CI 검사, `docs/v2/I18N.md`(언어 추가 4단계).
 
-### ACORN-10 디자인 리프레시 — `TODO`
+### ACORN-10 디자인 리프레시 — `DONE`
 - 범위: 디자인 토큰, 공용 컴포넌트(Sheet·Toast·Segmented 등), 접근성(포커스 트랩·aria), 다크모드 정비.
 
-### ACORN-11 정적 판단 v2 (로컬 결정적 파서) — `IN REVIEW`
+### ACORN-11 정적 판단 v2 (로컬 결정적 파서) — `DONE`
 - 결정: 조사 결과 Jev는 텍스트 전용 판단 모델이라 페이지 캡처를 대체할 수 없고, 호스티드 추출기(Jina·Firecrawl·crawl4ai)는 로그인이 필요한 X 게시글을 읽지 못한다. 그래서 "정적 판단"을 로컬 파서로 고도화했다.
 - 범위: 다국어 부스 번호(코미케 스페이스 표기 포함), 통판 플래그 분리(기존 오인식 버그 수정), 행사 사전 확대와 기존 행사 매칭, 서클명 정제, 주문폼 링크 분류, 필드별 신뢰도.
 
@@ -70,4 +70,13 @@
 |---|---|---|---|
 | ACORN-1 | feat/ACORN-1-tooling-baseline | PR #1. 리뷰 인라인 1건(High): 깨끗한 체크아웃에서 `.wxt` 타입이 없어 CI 타입체크 실패 → `postinstall: wxt prepare`로 수정, 재현 후 검증 | 머지 완료 (a7fd11d) |
 | ACORN-2 | feat/ACORN-2-remove-server-credits | PR #2. 인라인 2건(Low): 미사용 identity 권한, 기존 로그인 데이터 잔존 → 둘 다 수정 | 머지 완료 (ff140b6) |
-| ACORN-3 | feat/ACORN-3-foundation | 진행 중 | — |
+| ACORN-3 | feat/ACORN-3-foundation | PR #3. 인라인 9건: 레거시 가격 통화, v1 백업 통화, 추정 통화 저장, 통화 해석 불일치, 복수형, 설정 쓰기 경합, defuddle 범위 → 7건 수정, 2건은 ACORN-7로 이관 후 해결 | 머지 완료 |
+| ACORN-4 | feat/ACORN-4-ai-engine | PR #4. 인라인 10건: SSE 잘린 이벤트, OpenRouter 문자열 오류 코드, 유휴 타임아웃, 이미지 부분 실패, 캐시 검증, OAuth 디코딩, identity 권한, 통화 병합 우선순위, 중복 정규화 → 9건 수정, 1건(UI 연결)은 설계상 ACORN-7 | 머지 완료 |
+| ACORN-5 | feat/ACORN-5-capture | PR #5. 인라인 10건: scripting 권한, commands, 사이드패널 핸드오프 회귀, defuddle 라이브 DOM 변경, iframe 대상, 클릭 링크 유실, 중복 판정, 창 간 핸드오프, BOOTH 불필요 추출, 중복 가드 → 전부 수정(iframe은 폴백 강화) | 머지 완료 |
+| ACORN-6 | feat/ACORN-6-cli-bridge | PR #6. 인라인 10건: 선택 권한, 프레임 한도, 고아 프로세스, stdout 드레인, 재시도 분류, 대상별 모델, 상태 경고, Windows 인자 길이, 이미지 5MB 한도, 메모리 → 전부 수정 | 머지 완료 |
+| ACORN-11 | feat/ACORN-11-static-judgment | PR #7. 인라인 6건: 숫자 포함 서클명, 핸들 내 행사 약어, 도메인 경계, 연도 오인식, 빈도 표현 요일, 점수 반올림 비교 → 전부 수정 | 머지 완료 |
+| ACORN-8 | feat/ACORN-8-monetization | PR #8. 인라인 10건: 하우스→스폰서 전환, 스트리밍 크기 제한, 장시간 패널 재검증, 정적 import 검사, 슬롯 간 교체, null 필드, 리뷰 URL, 광고 출처 고지, 중복 읽기, URL 검증 중복 → 전부 수정 | 머지 완료 |
+| ACORN-10 | feat/ACORN-10-design-system | PR #9. 인라인 10건: 터치 히트 영역 겹침(오삭제), 수량 상한, 스피너 레이아웃, 날짜 접근성 이름, 다이얼로그 포커스 복원, 토스트 일시정지, 스테퍼 입력, 뱃지 칩 상한, 집계 중복, 뱃지 쿼리 중복 → 전부 수정 | 머지 완료 |
+| ACORN-7a | feat/ACORN-7a-capture-analysis | PR #10. 인라인 10건: 재분석 티어/캐시, 미완료 행 통화, 원문 URL, 설정 진입 시 편집 손실, 첫 이미지 실패, 스트리밍 식별자, 복사 키 충돌, 분산 호출 중복, 캐시 키 힌트, 상태 머신 중복 → 엔진 calls[] 구조로 전부 수정 | 머지 완료 |
+| ACORN-7b | feat/ACORN-7b-settings-onboarding | PR #11. 인라인 10건: 첫 실행 고지 문구, 설정 오버레이, 상태 확인 중복, 키 저장 실패, 모델 필드 동기화, 코드 흐름 정리, 오류 처리, Escape 범위, 테마 적용 중복, 사용 안 하는 코드 → 전부 수정 | 머지 완료 |
+| ACORN-9 | feat/ACORN-9-i18n-extensibility | 리뷰 진행 | — |

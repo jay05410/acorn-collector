@@ -1,23 +1,28 @@
-import type { AppLanguage, CORE_LANGUAGES } from './languages';
+/**
+ * Message typing. English (locales/en) is the source of truth: its keys are
+ * the only valid keys, and every other locale must match them exactly.
+ */
+import type en from './locales/en';
 
-export type CoreLanguage = (typeof CORE_LANGUAGES)[number];
-export type ExtendedLanguage = Exclude<AppLanguage, CoreLanguage>;
-
+/** One namespace of one language: key -> message. */
 export type MessageTable = Record<string, string>;
 
-/**
- * One namespace in every language. `en` defines the key set; the other core
- * languages must match it exactly, extended languages may be partial and fall
- * back to English per key.
- */
-export type NamespaceMessages<T extends MessageTable> = { en: T } & Record<
-  Exclude<CoreLanguage, 'en'>,
-  NoInfer<T>
-> &
-  Partial<Record<ExtendedLanguage, Partial<NoInfer<T>>>>;
+type English = typeof en;
 
-export function defineMessages<T extends MessageTable>(
-  messages: NamespaceMessages<T>
-): NamespaceMessages<T> {
-  return messages;
-}
+type PluralCategory = 'zero' | 'one' | 'two' | 'few' | 'many';
+type PluralBase<K> = K extends `${infer Base}_other` ? Base : never;
+
+/**
+ * A namespace in a non-English locale: exactly English's keys, all strings,
+ * plus optional plural forms English does not need (e.g. `boothCount_few`
+ * for a language whose Intl.PluralRules use "few"). Used with `satisfies`
+ * on an object literal, a missing or unknown key is a compile error.
+ */
+export type NamespaceMessages<T> = { [K in keyof T]: string } & {
+  [K in `${PluralBase<keyof T>}_${PluralCategory}`]?: string;
+};
+
+/** Everything one locale provides (locales/<lang>/index.ts). */
+export type LocaleMessages = {
+  [N in keyof English]: NamespaceMessages<English[N]>;
+};

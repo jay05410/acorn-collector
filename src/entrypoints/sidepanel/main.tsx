@@ -3,28 +3,18 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import '@/app.css';
 import { initializeDatabase, db } from '@/lib/db';
-import { getSettings } from '@/lib/storage';
 import type { AppSettings } from '@/lib/settings-types';
-import { setLanguage, t } from '@/i18n';
+import { t } from '@/i18n';
+import { loadStartupSettings } from './startup';
 
 window.addEventListener('beforeunload', () => {
   db.close();
 });
 
 async function bootstrap(root: ReactDOM.Root): Promise<void> {
-  // Apply the saved language before the first render to avoid a flash of the
-  // browser-detected language. The app still starts if settings can't load.
-  // App gets these settings too, so startup reads (and migrates) them once.
-  const settingsReady = getSettings().then(
-    (settings) => {
-      setLanguage(settings.language);
-      return settings;
-    },
-    (error: unknown) => {
-      console.error('Failed to load settings:', error);
-      return undefined;
-    }
-  );
+  // The saved language's messages are loaded and applied before the first
+  // render (no flash); the app still starts if settings can't load.
+  const settingsReady = loadStartupSettings();
 
   let initialSettings: AppSettings | undefined;
   try {
@@ -34,6 +24,7 @@ async function bootstrap(root: ReactDOM.Root): Promise<void> {
     ]);
   } catch (error) {
     console.error('Failed to open the database:', error);
+    await settingsReady; // the message below in the user's language
     root.render(
       <p role="alert" className="p-4 text-sm text-red-600">
         {t('errors', 'databaseOpenFailed')}

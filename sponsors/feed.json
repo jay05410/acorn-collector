@@ -27,7 +27,7 @@
     {
       "id": "advertise-en",
       "placements": ["analysis"],
-      "locales": ["en", "th", "id", "vi", "es", "fr", "de", "pt-BR"],
+      "locales": ["en"],
       "sponsorName": "Acorn Collector",
       "title": "Reach fans right here",
       "body": "Put your brand in front of fans planning their event shopping. No tracking, language targeting only.",
