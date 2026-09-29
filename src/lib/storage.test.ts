@@ -87,6 +87,15 @@ describe('migrateSettings', () => {
     expect(migrateSettings(undefined).language).toBe('zh-TW');
   });
 
+  it('re-detects languages that are no longer shipped', () => {
+    // Offered briefly before the 2026-09-29 decision to ship five languages.
+    for (const language of ['th', 'id', 'vi', 'es', 'fr', 'de', 'pt-BR']) {
+      expect(migrateSettings({ language }).language, language).toBe('ja');
+    }
+    vi.stubGlobal('navigator', { language: 'th-TH' });
+    expect(migrateSettings({ language: 'th' }).language).toBe('en');
+  });
+
   it('returns defaults for non-object input', () => {
     for (const raw of [undefined, null, 'settings', 42, ['ko']]) {
       expect(migrateSettings(raw)).toEqual(createDefaultSettings());

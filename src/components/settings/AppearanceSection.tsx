@@ -1,10 +1,13 @@
-import { useId, useMemo } from 'react';
+import { useId } from 'react';
 import { Check, Palette } from 'lucide-react';
 import { t, useLanguage } from '@/i18n';
-import { LANGUAGE_INFO, type AppLanguage } from '@/i18n/languages';
+import {
+  APP_LANGUAGES,
+  LANGUAGE_INFO,
+  type AppLanguage,
+} from '@/i18n/languages';
 import type { AppSettings, ColorTheme } from '@/lib/settings-types';
 import { cn } from '@/lib/utils';
-import { pickerLanguages } from './languages';
 import { SettingsSection } from './SettingsSection';
 import { COLOR_THEMES, swatchStyle } from './theme-swatches';
 import type { UpdateSettings } from './useSettings';
@@ -32,10 +35,6 @@ export function AppearanceSection({ settings, update }: AppearanceSectionProps) 
   useLanguage();
   const themeName = useId();
   const languageName = useId();
-  const languages = useMemo(
-    () => pickerLanguages(settings.language),
-    [settings.language]
-  );
 
   const handleTheme = (colorTheme: ColorTheme) => {
     void update({ colorTheme });
@@ -107,7 +106,8 @@ export function AppearanceSection({ settings, update }: AppearanceSectionProps) 
           {t('settings', 'language')}
         </legend>
         <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
-          {languages.map((code) => {
+          {/* Every app language is complete (types + i18n:check), so all are offered. */}
+          {APP_LANGUAGES.map((code) => {
             const info = LANGUAGE_INFO[code];
             const checked = settings.language === code;
             return (

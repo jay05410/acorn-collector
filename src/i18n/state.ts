@@ -1,10 +1,12 @@
 import {
-  APP_LANGUAGES,
   LANGUAGE_INFO,
   detectLanguage,
+  isAppLanguage,
   type AppLanguage,
   type LanguageInfo,
 } from './languages';
+
+export { isAppLanguage };
 
 type Listener = () => void;
 
@@ -13,13 +15,6 @@ const listeners = new Set<Listener>();
 let current: AppLanguage = detectLanguage(
   typeof navigator === 'undefined' ? undefined : navigator.language
 );
-
-export function isAppLanguage(value: unknown): value is AppLanguage {
-  return (
-    typeof value === 'string' &&
-    (APP_LANGUAGES as readonly string[]).includes(value)
-  );
-}
 
 export function getLanguage(): AppLanguage {
   return current;

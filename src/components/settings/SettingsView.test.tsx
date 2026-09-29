@@ -219,6 +219,25 @@ describe('SettingsView', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
+  it('offers the five app languages by their own names and saves a pick', async () => {
+    const store = await renderView(settings());
+    const options = [
+      ...document.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ].filter((input) => input.closest('fieldset')?.textContent?.includes('Language'));
+    expect(options.map((input) => input.value)).toEqual(['ko', 'en', 'ja', 'zh-CN', 'zh-TW']);
+    expect(options.map((input) => input.closest('label')?.textContent)).toEqual([
+      '한국어',
+      'English',
+      '日本語',
+      '简体中文',
+      '繁體中文',
+    ]);
+    expect(options.find((input) => input.checked)?.value).toBe('en');
+    act(() => radio('日本語').click());
+    await settle();
+    expect(store.stored.language).toBe('ja');
+  });
+
   it('goes back on Escape, but not while typing in a field', async () => {
     const onBack = vi.fn();
     await renderView(settings({ ai: { provider: 'openai' } }), { onBack });

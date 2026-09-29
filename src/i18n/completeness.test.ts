@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CORE_LANGUAGES, APP_LANGUAGES } from './languages';
+import { APP_LANGUAGES } from './languages';
 import { namespaces } from './registry';
 
 type Table = Partial<Record<string, Partial<Record<string, string>>>>;
@@ -9,9 +9,6 @@ type Table = Partial<Record<string, Partial<Record<string, string>>>>;
 const PLACEHOLDER = /\{(\w+)\}/g;
 /** Plural forms other than `_other`, which tn() needs as the fallback. */
 const PLURAL_FORM = /^(.+)_(zero|one|two|few|many)$/;
-const EXTENDED_LANGUAGES = APP_LANGUAGES.filter(
-  (lang) => !(CORE_LANGUAGES as readonly string[]).includes(lang)
-);
 
 function placeholders(message: string): string[] {
   return [...message.matchAll(PLACEHOLDER)].map((m) => m[1] ?? '').sort();
@@ -40,19 +37,11 @@ describe.each(entries)('namespace %s', (_name, table) => {
     expect(enKeys.length).toBeGreaterThan(0);
   });
 
-  it.each(CORE_LANGUAGES)('is complete in %s', (lang) => {
+  it.each(APP_LANGUAGES)('is complete in %s', (lang) => {
     const messages = table[lang] ?? {};
     expect(Object.keys(messages).sort()).toEqual(enKeys);
     for (const [key, value] of Object.entries(messages)) {
       expect(typeof value, `${lang}.${key}`).toBe('string');
-      expect(value?.trim(), `${lang}.${key}`).not.toBe('');
-    }
-  });
-
-  it.each(EXTENDED_LANGUAGES)('only uses English keys in %s', (lang) => {
-    const messages = table[lang] ?? {};
-    for (const [key, value] of Object.entries(messages)) {
-      expect(enKeys, `${lang}.${key}`).toContain(key);
       expect(value?.trim(), `${lang}.${key}`).not.toBe('');
     }
   });

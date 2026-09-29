@@ -2,8 +2,11 @@
  * chrome.storage.local access: settings v2 (see settings-types.ts). Captures
  * reach the side panel through the session handoff (lib/capture/client.ts).
  */
-import { detectLanguage, type AppLanguage } from '@/i18n/languages';
-import { isAppLanguage } from '@/i18n/state';
+import {
+  detectLanguage,
+  isAppLanguage,
+  type AppLanguage,
+} from '@/i18n/languages';
 import type { ModelTier, ProviderId } from '@/lib/ai/types';
 import {
   DEFAULT_AI_SETTINGS,
@@ -119,7 +122,8 @@ function migrateAi(value: unknown): AISettings {
  * Pure v1 -> v2 migration and validation. Accepts anything read from storage
  * and always returns complete, valid settings: v1 `aiEnabled` and
  * `geminiApiKey` are dropped, 'zh' becomes 'zh-CN', a missing or unknown
- * language is detected from the browser, invalid fields get defaults.
+ * language (including ones no longer shipped) is detected from the browser,
+ * invalid fields get defaults.
  */
 export function migrateSettings(raw: unknown): AppSettings {
   const value = asRecord(raw);
