@@ -34,7 +34,9 @@ describe('language registry', () => {
   });
 
   it('keeps LANGUAGE_INFO and APP_LANGUAGES in sync', () => {
-    expect(Object.keys(LANGUAGE_INFO).sort()).toEqual([...APP_LANGUAGES].sort());
+    expect(Object.keys(LANGUAGE_INFO).sort()).toEqual(
+      [...APP_LANGUAGES].sort()
+    );
   });
 
   it('keeps drafts out of the shipped languages', () => {

@@ -60,8 +60,9 @@ describe.each(namespaces)('namespace %s', (namespace) => {
   const en = english[namespace] ?? {};
   const enKeys = Object.keys(en).sort();
   const table = (language: string): Table =>
-    (catalogs as Record<string, Record<string, Table>>)[language]?.[namespace] ??
-    {};
+    (catalogs as Record<string, Record<string, Table>>)[language]?.[
+      namespace
+    ] ?? {};
 
   it('has English messages', () => {
     expect(enKeys.length).toBeGreaterThan(0);

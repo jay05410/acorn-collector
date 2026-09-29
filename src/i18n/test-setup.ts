@@ -7,4 +7,6 @@
 import { ensureLanguageLoaded } from '@/i18n';
 import { APP_LANGUAGES } from '@/i18n/languages';
 
-await Promise.all(APP_LANGUAGES.map((language) => ensureLanguageLoaded(language)));
+await Promise.all(
+  APP_LANGUAGES.map((language) => ensureLanguageLoaded(language))
+);

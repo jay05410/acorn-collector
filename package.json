@@ -17,7 +17,11 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm i18n:check",
+    "i18n:check": "node scripts/i18n/check.mjs",
+    "i18n:export": "node scripts/i18n/export.mjs",
+    "i18n:import": "node scripts/i18n/import.mjs",
+    "i18n:new": "node scripts/i18n/new.mjs",
     "postinstall": "wxt prepare"
   },
   "dependencies": {

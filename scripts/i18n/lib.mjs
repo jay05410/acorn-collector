@@ -34,7 +34,9 @@ export class I18nToolError extends Error {
   /** @param {string} message @param {string[]} [details] */
   constructor(message, details = []) {
     super(
-      details.length ? `${message}\n${details.map((d) => `  - ${d}`).join('\n')}` : message
+      details.length
+        ? `${message}\n${details.map((d) => `  - ${d}`).join('\n')}`
+        : message
     );
     this.name = 'I18nToolError';
     this.details = details;
@@ -114,7 +116,8 @@ export function parseLiteral(source, index = 0, file = '<source>') {
       if (quote === '`' && ch === '$' && source[pos + 1] === '{') {
         fail('template literals with ${} are not supported in messages');
       }
-      if ((ch === '\n' || ch === '\r') && quote !== '`') fail('newline in string');
+      if ((ch === '\n' || ch === '\r') && quote !== '`')
+        fail('newline in string');
       if (ch !== '\\') {
         out += ch;
         pos++;
@@ -123,13 +126,27 @@ export function parseLiteral(source, index = 0, file = '<source>') {
       const esc = source[pos + 1];
       pos += 2;
       switch (esc) {
-        case 'n': out += '\n'; break;
-        case 'r': out += '\r'; break;
-        case 't': out += '\t'; break;
-        case 'b': out += '\b'; break;
-        case 'f': out += '\f'; break;
-        case 'v': out += '\v'; break;
-        case '0': out += '\0'; break;
+        case 'n':
+          out += '\n';
+          break;
+        case 'r':
+          out += '\r';
+          break;
+        case 't':
+          out += '\t';
+          break;
+        case 'b':
+          out += '\b';
+          break;
+        case 'f':
+          out += '\f';
+          break;
+        case 'v':
+          out += '\v';
+          break;
+        case '0':
+          out += '\0';
+          break;
         case '\r':
           if (source[pos] === '\n') pos++;
           break;
@@ -148,7 +165,8 @@ export function parseLiteral(source, index = 0, file = '<source>') {
           if (source[pos] === '{') {
             const close = source.indexOf('}', pos);
             const hex = source.slice(pos + 1, close);
-            if (close === -1 || !/^[0-9a-fA-F]{1,6}$/.test(hex)) fail('bad \\u{} escape');
+            if (close === -1 || !/^[0-9a-fA-F]{1,6}$/.test(hex))
+              fail('bad \\u{} escape');
             out += String.fromCodePoint(parseInt(hex, 16));
             pos = close + 1;
           } else {
@@ -228,11 +246,14 @@ export function parseLiteral(source, index = 0, file = '<source>') {
       const value = parseString();
       return { type: 'string', value, start, end: pos };
     }
-    const word = /^(?:true|false|null|-?\d+(?:\.\d+)?)/.exec(source.slice(pos, pos + 40));
+    const word = /^(?:true|false|null|-?\d+(?:\.\d+)?)/.exec(
+      source.slice(pos, pos + 40)
+    );
     if (word) {
       pos += word[0].length;
       const text = word[0];
-      if (text === 'null') return { type: 'null', value: null, start, end: pos };
+      if (text === 'null')
+        return { type: 'null', value: null, start, end: pos };
       if (text === 'true' || text === 'false') {
         return { type: 'boolean', value: text === 'true', start, end: pos };
       }
@@ -248,7 +269,9 @@ export function parseLiteral(source, index = 0, file = '<source>') {
 /** Plain JS value of a parsed node. */
 export function toValue(node) {
   if (node.type === 'object') {
-    return Object.fromEntries(node.entries.map((e) => [e.key, toValue(e.value)]));
+    return Object.fromEntries(
+      node.entries.map((e) => [e.key, toValue(e.value)])
+    );
   }
   if (node.type === 'array') return node.items.map(toValue);
   return node.value;
@@ -275,7 +298,9 @@ export function readLanguages(root = REPO_ROOT) {
   const name = rel(root, file);
   const enabled = toValue(readExportedConst(source, 'APP_LANGUAGES', name));
   const info = toValue(readExportedConst(source, 'LANGUAGE_INFO', name));
-  const drafts = toValue(readExportedConst(source, 'DRAFT_LANGUAGE_INFO', name));
+  const drafts = toValue(
+    readExportedConst(source, 'DRAFT_LANGUAGE_INFO', name)
+  );
   return { enabled, info, drafts };
 }
 
@@ -303,7 +328,9 @@ export function namespaceFiles(root, lang) {
   const dir = localeDir(root, lang);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith('.ts') && f !== 'index.ts' && !f.endsWith('.test.ts'))
+    .filter(
+      (f) => f.endsWith('.ts') && f !== 'index.ts' && !f.endsWith('.test.ts')
+    )
     .map((f) => f.slice(0, -3))
     .sort();
 }
@@ -317,16 +344,24 @@ export function readNamespaceFile(file, root = REPO_ROOT) {
   const marker = source.indexOf('export default');
   if (marker === -1) throw new I18nToolError(`${name}: no "export default"`);
   const node = parseLiteral(source, marker + 'export default'.length, name);
-  if (node.type !== 'object') throw new I18nToolError(`${name}: default export is not an object`);
+  if (node.type !== 'object')
+    throw new I18nToolError(`${name}: default export is not an object`);
   const messages = {};
   for (const entry of node.entries) {
     if (entry.value.type !== 'string') {
       throw new I18nToolError(`${name}: ${entry.key} is not a string literal`);
     }
-    if (entry.key in messages) throw new I18nToolError(`${name}: duplicate key ${entry.key}`);
+    if (entry.key in messages)
+      throw new I18nToolError(`${name}: duplicate key ${entry.key}`);
     messages[entry.key] = entry.value.value;
   }
-  return { file, source, node, messages, header: headerComment(source.slice(0, marker)) };
+  return {
+    file,
+    source,
+    node,
+    messages,
+    header: headerComment(source.slice(0, marker)),
+  };
 }
 
 /** The doc comment right before `export default`, if any. */
@@ -343,7 +378,10 @@ export function readLocale(root, lang) {
   const namespaces = {};
   const files = {};
   for (const ns of namespaceFiles(root, lang)) {
-    const parsed = readNamespaceFile(join(localeDir(root, lang), `${ns}.ts`), root);
+    const parsed = readNamespaceFile(
+      join(localeDir(root, lang), `${ns}.ts`),
+      root
+    );
     files[ns] = parsed;
     namespaces[ns] = parsed.messages;
   }
@@ -364,14 +402,18 @@ export function readChromeMessages(root, chromeLocale) {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
-    throw new I18nToolError(`${rel(root, file)}: invalid JSON (${error.message})`);
+    throw new I18nToolError(
+      `${rel(root, file)}: invalid JSON (${error.message})`
+    );
   }
 }
 
 export function chromeLocaleFolders(root) {
   const dir = paths(root).chromeLocales;
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((f) => statSync(join(dir, f)).isDirectory()).sort();
+  return readdirSync(dir)
+    .filter((f) => statSync(join(dir, f)).isDirectory())
+    .sort();
 }
 
 // ---------------------------------------------------------------------------
@@ -379,8 +421,17 @@ export function chromeLocaleFolders(root) {
 
 /** Placeholder names in order of appearance, repeats included. */
 export function placeholders(message, namespace) {
-  const pattern = namespace === CHROME_NAMESPACE ? CHROME_PLACEHOLDER : APP_PLACEHOLDER;
+  const pattern =
+    namespace === CHROME_NAMESPACE ? CHROME_PLACEHOLDER : APP_PLACEHOLDER;
   return [...String(message).matchAll(pattern)].map((m) => m[1]);
+}
+
+/** "{a}, {b}" or "$A$" for messages; "none" when empty. */
+export function formatPlaceholders(list, namespace) {
+  if (list.length === 0) return 'none';
+  return list
+    .map((p) => (namespace === CHROME_NAMESPACE ? `$${p}$` : `{${p}}`))
+    .join(', ');
 }
 
 /** Same placeholders, compared as sorted lists (the completeness test's rule). */
@@ -465,7 +516,9 @@ export function quote(value) {
 
 /** Local identifier for a namespace import (`export` -> `exportMessages`). */
 export function namespaceIdentifier(ns) {
-  return RESERVED.has(ns) || !IDENTIFIER.test(ns) ? `${ns.replace(/\W/g, '_')}Messages` : ns;
+  return RESERVED.has(ns) || !IDENTIFIER.test(ns)
+    ? `${ns.replace(/\W/g, '_')}Messages`
+    : ns;
 }
 
 function typeImport(lang) {
@@ -486,9 +539,13 @@ export function renderNamespaceFile(
   { header = '', imports = [], englishType } = {}
 ) {
   const english = lang === SOURCE_LANGUAGE;
-  const type = english ? (englishType ?? 'MessageTable') : `LocaleMessages[${quote(ns)}]`;
+  const type = english
+    ? (englishType ?? 'MessageTable')
+    : `LocaleMessages[${quote(ns)}]`;
   const importLines = english && englishType ? imports : [typeImport(lang)];
-  const body = entries.map(([key, value]) => `  ${propertyKey(key)}: ${quote(value)},`).join('\n');
+  const body = entries
+    .map(([key, value]) => `  ${propertyKey(key)}: ${quote(value)},`)
+    .join('\n');
   return `${importLines.join('\n')}\n\n${header ? `${header}\n` : ''}export default {\n${body}\n} satisfies ${type};\n`;
 }
 
@@ -505,7 +562,7 @@ export function renderIndexFile(lang, namespaces) {
     .join('\n');
   const english = lang === SOURCE_LANGUAGE;
   const doc = english
-    ? '/**\n * English: the source of truth for every locale\'s keys, bundled eagerly as\n * the per-key fallback. Generated layout; see docs/v2/I18N.md.\n */'
+    ? "/**\n * English: the source of truth for every locale's keys, bundled eagerly as\n * the per-key fallback. Generated layout; see docs/v2/I18N.md.\n */"
     : `/** ${lang} messages, loaded on demand. Generated layout; see docs/v2/I18N.md. */`;
   const type = english ? 'Record<string, MessageTable>' : 'LocaleMessages';
   return `${typeImport(lang)}\n${imports}\n\n${doc}\nexport default {\n${props}\n} satisfies ${type};\n`;
@@ -527,7 +584,11 @@ export function patchNamespaceSource(parsed, wanted) {
     const existing = byKey.get(key);
     if (existing) {
       if (existing.value.value !== value) {
-        edits.push({ start: existing.value.start, end: existing.value.end, text: quote(value) });
+        edits.push({
+          start: existing.value.start,
+          end: existing.value.end,
+          text: quote(value),
+        });
       }
       anchor = existing;
       continue;
@@ -539,11 +600,16 @@ export function patchNamespaceSource(parsed, wanted) {
     pendingInserts.set(at, list);
   }
   for (const [at, { needsComma, lines }] of pendingInserts) {
-    edits.push({ start: at, end: at, text: `${needsComma ? ',' : ''}${lines.join('')}` });
+    edits.push({
+      start: at,
+      end: at,
+      text: `${needsComma ? ',' : ''}${lines.join('')}`,
+    });
   }
   edits.sort((a, b) => b.start - a.start);
   let out = source;
-  for (const edit of edits) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+  for (const edit of edits)
+    out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
   return out;
 }
 
@@ -555,7 +621,9 @@ export async function formatSource(file, source) {
       prettierModule = await import('prettier');
     } catch {
       prettierModule = null;
-      console.warn('[i18n] prettier is not installed; writing unformatted files');
+      console.warn(
+        '[i18n] prettier is not installed; writing unformatted files'
+      );
     }
   }
   if (!prettierModule) return source;
@@ -566,7 +634,8 @@ export async function formatSource(file, source) {
 /** Formats and writes `source` unless the file already has that content. */
 export async function writeFormatted(file, source) {
   const formatted = await formatSource(file, source);
-  if (existsSync(file) && readFileSync(file, 'utf8') === formatted) return false;
+  if (existsSync(file) && readFileSync(file, 'utf8') === formatted)
+    return false;
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, formatted);
   return true;
@@ -587,7 +656,8 @@ export function parseArgs(argv) {
     }
     const [name, inline] = arg.slice(2).split(/=(.*)/s);
     if (inline !== undefined) options[name] = inline;
-    else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) options[name] = argv[++i];
+    else if (i + 1 < argv.length && !argv[i + 1].startsWith('--'))
+      options[name] = argv[++i];
     else options[name] = true;
   }
   return { positional, options };
@@ -608,7 +678,8 @@ export function runCli(main) {
       process.exitCode = code ?? 0;
     },
     (error) => {
-      if (error instanceof I18nToolError) console.error(`[i18n] ${error.message}`);
+      if (error instanceof I18nToolError)
+        console.error(`[i18n] ${error.message}`);
       else console.error(error);
       process.exitCode = 1;
     }
